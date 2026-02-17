@@ -9,9 +9,9 @@ const port = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
 
 const httpServer = createServer(app);
 
-// Socket.io will be attached to httpServer in Phase 2
-// import { initializeWebSocket } from './websocket/server';
-// initializeWebSocket(httpServer);
+// Socket.io WebSocket server
+import { initializeWebSocket } from './websocket/server';
+initializeWebSocket(httpServer);
 
 httpServer.listen(port, () => {
   logger.info(`Server running on port ${port}`);
