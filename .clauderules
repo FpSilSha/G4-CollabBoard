@@ -1,0 +1,76 @@
+# CollabBoard AI Agent Guardrails
+
+## 1. Architectural Integrity
+- **Monorepo Architecture:** Strictly maintain the TypeScript workspace structure (`apps/backend`, `apps/frontend`, `packages/shared`).
+- **Shared Types:** All TypeScript interfaces, Zod schemas, and WebSocket event enums MUST live in `packages/shared`. Do not duplicate types across apps.
+- **ORM & Migrations:** Use Prisma for all database interactions. `prisma migrate deploy` MUST run during the build step. No manual SQL or `db push`.
+
+## 2. Real-Time Sync & Performance
+- **Throttling:** 
+  - `cursor:move` events MUST be throttled to 50ms (60fps)
+  - Object movement during drag MUST be throttled to 100ms
+- **Final State Rule:** Always emit an unthrottled `object:update` on `mouse:up` or drag end to ensure final consistency.
+- **Object IDs:** Every Fabric.js object MUST store its board object ID in `fabricObject.data.id` (matching BoardObject.id from `packages/shared`). Never sync based on Fabric.js internal IDs or array indices.
+- **Anti-Flooding:** Use Socket.io's `volatile` flag for cursor broadcasts to allow dropping packets under load. Do NOT use volatile for object state updates.
+  ```typescript
+  socket.volatile.to(boardId).emit('cursor:moved', data); // OK to drop
+  socket.to(boardId).emit('object:updated', data);        // MUST arrive
+  ```
+
+## 3. Data Persistence & Safety
+- **Optimistic Locking:** Use PostgreSQL `version` column to prevent lost updates:
+  ```sql
+  UPDATE boards 
+  SET objects = $1, version = version + 1, updated_at = NOW()
+  WHERE id = $2 AND version = $3;
+  ```
+  If 0 rows affected, re-read current state and retry merge.
+- **Timing:** 
+  - Auto-save to Postgres: Every 60 seconds
+  - Version snapshots: Every 5th save (5-minute intervals)
+  - Max 50 versions per board (FIFO deletion)
+- **Final Save:** On `socket:disconnect`, if user is last active on board, trigger immediate save from Redis to Postgres.
+
+## 4. WebSocket Connection Management
+- **Disconnect Handling:** On disconnect, canvas enters read-only mode immediately. Show connection status indicator to user.
+- **Reconnection Flow:**
+  1. Client sends `board:join` on reconnect
+  2. Server responds with full board state
+  3. Client clears canvas and re-renders all objects from server state
+  4. Resume normal operation
+- **Heartbeat:** Client MUST send heartbeat every 10 seconds to maintain presence.
+
+## 5. UI & Logic Constraints
+- **Conflict Strategy:** Implement Last-Write-Wins (LWW) first. Do not build ConflictModal UI until basic sync is 100% verified and stable.
+- **Offline Mode:** If WebSocket connection is lost, canvas MUST enter read-only state. Disable all toolbars and object manipulation.
+- **Cursor Cleanup:** 
+  - Remove cursor from UI immediately on `user:left` event
+  - Fade out cursors with no updates for >5 seconds (stale detection)
+- **State Reconciliation:** Upon reconnection, client MUST fetch full `board:state` from server and re-render (do not merge with local state).
+
+## 6. Testing Requirements
+- **Phase 1 (Backend Foundation):**
+  - Unit tests for services (boardService, objectService, etc.) using Jest/Vitest
+  - Integration tests for REST API endpoints (auth, CRUD operations)
+  - Target: 70%+ coverage for business logic
+  
+- **Phase 2 (WebSocket Infrastructure):**
+  - Integration tests for WebSocket events using Socket.io-client
+  - Test: cursor sync, presence, room joining/leaving
+  - Must verify events broadcast correctly to multiple connected clients
+  
+- **Phase 3+ (Frontend + Full Stack):**
+  - Playwright E2E tests MUST verify multi-browser sync before proceeding
+  - Critical flows: object creation, movement, deletion, cursor sync
+  - Test scenarios: 2+ browsers simultaneously editing same board
+  
+- **Validation Gates:** Each phase MUST pass its tests before moving to next phase. No skipping.
+  
+## 7. Anti-Patterns to Avoid
+- ❌ Never store board state in component state (use Zustand store)
+- ❌ Never emit WebSocket events during Canvas render loop (causes infinite loops)
+- ❌ Never trust client-provided timestamps for conflict resolution (server is source of truth)
+- ❌ Never use `localStorage` for board state (use server + Redis only)
+- ❌ Never sync Fabric.js objects by array index (always use `fabricObject.data.id`)
+- ❌ Never create duplicate type definitions between apps (use `packages/shared`)
+- ❌ Never skip validation checkpoints between Build Sequence phases

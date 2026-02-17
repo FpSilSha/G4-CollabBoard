@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  name               String
+  avatar             String             // 3-letter initials
+  color              String             // Hex color for cursor
+  subscriptionTier   SubscriptionTier   @default(FREE)
+  subscriptionStatus SubscriptionStatus @default(ACTIVE)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  boards        Board[]        @relation("BoardOwner")
+  subscriptions Subscription[]
+  boardVersions BoardVersion[]
+
+  @@index([email])
+}
+
+enum SubscriptionTier {
+  FREE
+  TEAM
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+model Board {
+  id             String    @id @default(uuid())
+  ownerId        String
+  title          String
+  objects        Json      @default("[]") // Array of BoardObject
+  version        Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastAccessedAt DateTime  @default(now())
+  isDeleted      Boolean   @default(false)
+  deletedAt      DateTime?
+  slot           Int       @default(0)
+
+  owner    User           @relation("BoardOwner", fields: [ownerId], references: [id])
+  versions BoardVersion[]
+
+  @@unique([ownerId, slot])
+  @@index([ownerId])
+  @@index([isDeleted])
+  @@index([lastAccessedAt])
+  @@index([id, version])
+}
+
+model Subscription {
+  id                   String             @id @default(uuid())
+  userId               String
+  stripeCustomerId     String             @unique
+  stripeSubscriptionId String             @unique
+  tier                 SubscriptionTier
+  status               SubscriptionStatus
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([stripeCustomerId])
+}
+
+model BoardVersion {
+  id        String   @id @default(uuid())
+  boardId   String
+  snapshot  Json     // Array of BoardObject
+  createdBy String
+  createdAt DateTime @default(now())
+  label     String?
+
+  board   Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  creator User  @relation(fields: [createdBy], references: [id])
+
+  @@index([boardId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  action     String   // e.g., "create_board", "delete_object"
+  entityType String   // e.g., "board", "object", "subscription"
+  entityId   String
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
