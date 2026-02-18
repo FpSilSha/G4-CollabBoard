@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { boardService } from '../services/boardService';
+import { auditService, AuditAction } from '../services/auditService';
 
 export const boardController = {
   /**
@@ -25,6 +26,15 @@ export const boardController = {
       const { sub } = (req as AuthenticatedRequest).user;
       const { title } = req.body;
       const result = await boardService.createBoard(sub, title);
+
+      auditService.log({
+        userId: sub,
+        action: AuditAction.BOARD_CREATE,
+        entityType: 'board',
+        entityId: result.id,
+        metadata: { title },
+      });
+
       res.status(201).json(result);
     } catch (err) {
       next(err);
@@ -39,6 +49,14 @@ export const boardController = {
       const { sub } = (req as AuthenticatedRequest).user;
       const { id } = req.params;
       const result = await boardService.getBoard(id, sub);
+
+      auditService.log({
+        userId: sub,
+        action: AuditAction.BOARD_VIEW,
+        entityType: 'board',
+        entityId: id,
+      });
+
       res.json(result);
     } catch (err) {
       next(err);
@@ -53,6 +71,14 @@ export const boardController = {
       const { sub } = (req as AuthenticatedRequest).user;
       const { id } = req.params;
       const result = await boardService.deleteBoard(id, sub);
+
+      auditService.log({
+        userId: sub,
+        action: AuditAction.BOARD_DELETE,
+        entityType: 'board',
+        entityId: id,
+      });
+
       res.json(result);
     } catch (err) {
       next(err);

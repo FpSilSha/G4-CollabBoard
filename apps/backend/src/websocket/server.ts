@@ -12,6 +12,9 @@ import { registerCursorHandlers } from './handlers/cursorHandler';
 import { registerPresenceHandlers } from './handlers/presenceHandler';
 import { registerObjectHandlers } from './handlers/objectHandler';
 import { checkSocketRateLimit } from './socketRateLimit';
+import { wsMetricsMiddleware, trackedEmit } from './wsMetrics';
+import { metricsService } from '../services/metricsService';
+import { auditService, AuditAction } from '../services/auditService';
 
 /**
  * Extended Socket type with authenticated user data.
@@ -122,10 +125,29 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
       // Store session in Redis
       await presenceService.setSession(socket.id, user.id);
 
+      auditService.log({
+        userId: user.id,
+        action: AuditAction.AUTH_LOGIN,
+        entityType: 'websocket',
+        entityId: socket.id,
+        metadata: { transport: 'websocket', name: user.name },
+        ipAddress: socket.handshake.address,
+      });
+
       logger.info(`WebSocket authenticated: ${user.id} (${user.name})`);
       next();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Authentication failed';
+
+      auditService.log({
+        userId: 'anonymous',
+        action: AuditAction.AUTH_FAILURE,
+        entityType: 'websocket',
+        entityId: socket.id,
+        metadata: { reason: message, transport: 'websocket' },
+        ipAddress: socket.handshake.address,
+      });
+
       logger.warn(`WebSocket auth failed: ${message}`);
       next(new Error('Invalid authentication token'));
     }
@@ -135,6 +157,16 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
   io.on('connection', (socket: Socket) => {
     const authSocket = socket as AuthenticatedSocket;
     logger.info(`Socket connected: ${authSocket.data.userId} (${socket.id})`);
+
+    // --- Connection metrics ---
+    metricsService.incrementWsConnection();
+    socket.on('disconnect', () => {
+      metricsService.decrementWsConnection();
+    });
+
+    // --- Per-socket metrics middleware (BEFORE rate limit) ---
+    // Counts all inbound events, including ones that get rate-limited.
+    socket.use(wsMetricsMiddleware);
 
     // --- Per-socket rate limiting middleware ---
     // Intercept all incoming events and check against the rate limit
@@ -155,7 +187,7 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     });
 
     // Send authenticated user info back to client
-    socket.emit(WebSocketEvent.AUTH_SUCCESS, {
+    trackedEmit(socket, WebSocketEvent.AUTH_SUCCESS, {
       userId: authSocket.data.userId,
       name: authSocket.data.userName,
       avatar: authSocket.data.avatar,

@@ -5,6 +5,7 @@ import app from './app';
 import prisma from './models/index';
 import { redis } from './utils/redis';
 import { logger } from './utils/logger';
+import { metricsService } from './services/metricsService';
 import { DEFAULT_PORT } from 'shared';
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
@@ -15,10 +16,16 @@ const httpServer = createServer(app);
 import { initializeWebSocket } from './websocket/server';
 initializeWebSocket(httpServer);
 
+// Initialize metrics counters in Redis
+metricsService.initialize().catch((err) => {
+  logger.error(`Metrics initialization failed: ${err instanceof Error ? err.message : err}`);
+});
+
 httpServer.listen(port, () => {
   logger.info(`Server running on port ${port}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`Health check: http://localhost:${port}/health`);
+  logger.info(`Metrics endpoint: http://localhost:${port}/metrics`);
 });
 
 // Graceful shutdown — close HTTP, Prisma, and Redis connections
