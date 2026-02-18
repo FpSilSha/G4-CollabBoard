@@ -14,6 +14,7 @@ import { registerObjectHandlers } from './handlers/objectHandler';
 import { checkSocketRateLimit } from './socketRateLimit';
 import { wsMetricsMiddleware, trackedEmit } from './wsMetrics';
 import { metricsService } from '../services/metricsService';
+import { auditService, AuditAction } from '../services/auditService';
 
 /**
  * Extended Socket type with authenticated user data.
@@ -124,10 +125,29 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
       // Store session in Redis
       await presenceService.setSession(socket.id, user.id);
 
+      auditService.log({
+        userId: user.id,
+        action: AuditAction.AUTH_LOGIN,
+        entityType: 'websocket',
+        entityId: socket.id,
+        metadata: { transport: 'websocket', name: user.name },
+        ipAddress: socket.handshake.address,
+      });
+
       logger.info(`WebSocket authenticated: ${user.id} (${user.name})`);
       next();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Authentication failed';
+
+      auditService.log({
+        userId: 'anonymous',
+        action: AuditAction.AUTH_FAILURE,
+        entityType: 'websocket',
+        entityId: socket.id,
+        metadata: { reason: message, transport: 'websocket' },
+        ipAddress: socket.handshake.address,
+      });
+
       logger.warn(`WebSocket auth failed: ${message}`);
       next(new Error('Invalid authentication token'));
     }

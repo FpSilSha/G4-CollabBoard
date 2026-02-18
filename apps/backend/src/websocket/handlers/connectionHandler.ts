@@ -11,6 +11,7 @@ import { presenceService } from '../../services/presenceService';
 import { boardService } from '../../services/boardService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
+import { auditService, AuditAction } from '../../services/auditService';
 import type { AuthenticatedSocket } from '../server';
 
 export function registerConnectionHandlers(io: Server, socket: AuthenticatedSocket): void {
@@ -80,6 +81,13 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
         timestamp: Date.now(),
       };
       trackedEmit(socket.to(boardId), WebSocketEvent.USER_JOINED, joinedPayload);
+
+      auditService.log({
+        userId,
+        action: AuditAction.BOARD_JOIN,
+        entityType: 'board',
+        entityId: boardId,
+      });
 
       logger.info(`User ${userId} joined board ${boardId}`);
     } catch (err: unknown) {
@@ -164,6 +172,13 @@ async function handleLeaveBoard(io: Server, socket: AuthenticatedSocket, boardId
     timestamp: Date.now(),
   };
   trackedEmit(io.to(boardId), WebSocketEvent.USER_LEFT, leftPayload);
+
+  auditService.log({
+    userId,
+    action: AuditAction.BOARD_LEAVE,
+    entityType: 'board',
+    entityId: boardId,
+  });
 
   logger.info(`User ${userId} left board ${boardId}`);
 }

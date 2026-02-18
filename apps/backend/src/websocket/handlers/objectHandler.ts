@@ -10,6 +10,7 @@ import {
   type ObjectDeletedPayload,
 } from 'shared';
 import { boardService } from '../../services/boardService';
+import { auditService, AuditAction } from '../../services/auditService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
 import type { AuthenticatedSocket } from '../server';
@@ -77,6 +78,14 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
       };
 
       trackedEmit(io.to(boardId), WebSocketEvent.OBJECT_CREATED, createdPayload);
+
+      auditService.log({
+        userId,
+        action: AuditAction.OBJECT_CREATE,
+        entityType: 'object',
+        entityId: object.id,
+        metadata: { boardId, objectType: object.type },
+      });
 
       logger.info(`Object ${object.id} created on board ${boardId} by ${userId}`);
     } catch (err: unknown) {
@@ -147,6 +156,14 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
       };
 
       trackedEmit(socket.to(boardId), WebSocketEvent.OBJECT_UPDATED, updatedPayload);
+
+      auditService.log({
+        userId,
+        action: AuditAction.OBJECT_UPDATE,
+        entityType: 'object',
+        entityId: objectId,
+        metadata: { boardId, updatedFields: Object.keys(updates) },
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to update object';
       socket.emit(WebSocketEvent.BOARD_ERROR, {
@@ -197,6 +214,14 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
       };
 
       trackedEmit(socket.to(boardId), WebSocketEvent.OBJECT_DELETED, deletedPayload);
+
+      auditService.log({
+        userId,
+        action: AuditAction.OBJECT_DELETE,
+        entityType: 'object',
+        entityId: objectId,
+        metadata: { boardId },
+      });
 
       logger.info(`Object ${objectId} deleted from board ${boardId} by ${userId}`);
     } catch (err: unknown) {

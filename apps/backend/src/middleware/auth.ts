@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { logger } from '../utils/logger';
+import { auditService, AuditAction, getClientIp } from '../services/auditService';
 
 // JWKS client for Auth0 token verification
 const jwksClient = jwksRsa({
@@ -58,6 +59,15 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     (err, decoded) => {
       if (err) {
         logger.warn('JWT verification failed:', err.message);
+        auditService.log({
+          userId: 'unknown',
+          action: AuditAction.AUTH_FAILURE,
+          entityType: 'auth',
+          entityId: 'http',
+          metadata: { error: err.message },
+          ipAddress: getClientIp(req),
+          userAgent: req.headers['user-agent'] as string | undefined,
+        });
         res.status(401).json({ error: 'Unauthorized', message: 'Invalid or expired token', statusCode: 401 });
         return;
       }
@@ -75,6 +85,16 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
         email: typeof payload.email === 'string' ? payload.email : undefined,
         name: typeof payload.name === 'string' ? payload.name : undefined,
       };
+
+      auditService.log({
+        userId: payload.sub,
+        action: AuditAction.AUTH_LOGIN,
+        entityType: 'auth',
+        entityId: 'http',
+        ipAddress: getClientIp(req),
+        userAgent: req.headers['user-agent'] as string | undefined,
+      });
+
       next();
     }
   );

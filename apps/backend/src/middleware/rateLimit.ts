@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { RATE_LIMITS } from 'shared';
 import { AuthenticatedRequest } from './auth';
+import { auditService, AuditAction } from '../services/auditService';
 import { logger } from '../utils/logger';
 
 /**
@@ -30,7 +31,7 @@ setInterval(() => {
  */
 export function rateLimit(action: string, limit: number, windowMs: number) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const userId = (req as AuthenticatedRequest).user?.sub || req.ip;
+    const userId = (req as AuthenticatedRequest).user?.sub || req.ip || 'unknown';
     const bucket = Math.floor(Date.now() / windowMs);
     const key = `ratelimit:${action}:${userId}:${bucket}`;
 
@@ -45,6 +46,15 @@ export function rateLimit(action: string, limit: number, windowMs: number) {
       res.setHeader('X-RateLimit-Remaining', Math.max(0, limit - current));
 
       if (current > limit) {
+        auditService.log({
+          userId,
+          action: AuditAction.RATE_LIMIT_EXCEEDED,
+          entityType: 'rateLimit',
+          entityId: action,
+          metadata: { current, limit, windowMs },
+          ipAddress: req.ip || undefined,
+        });
+
         res.status(429).json({
           error: 'Rate Limit Exceeded',
           message: 'Too many requests. Please slow down.',
@@ -64,6 +74,15 @@ export function rateLimit(action: string, limit: number, windowMs: number) {
       if (entry && entry.expires > now) {
         entry.count++;
         if (entry.count > limit) {
+          auditService.log({
+            userId,
+            action: AuditAction.RATE_LIMIT_EXCEEDED,
+            entityType: 'rateLimit',
+            entityId: action,
+            metadata: { count: entry.count, limit, windowMs, fallback: true },
+            ipAddress: req.ip || undefined,
+          });
+
           res.status(429).json({
             error: 'Rate Limit Exceeded',
             message: 'Too many requests. Please slow down.',
