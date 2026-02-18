@@ -150,6 +150,57 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       logger.error(`Error during disconnect cleanup for ${userId}: ${message}`);
     }
   });
+
+  /**
+   * board:request_sync — Client requests a full state rebuild.
+   * Used by ConflictModal when user clicks "Accept their changes".
+   * Reads current state from Redis and emits board:sync_response to requester only.
+   */
+  socket.on(WebSocketEvent.BOARD_REQUEST_SYNC, async (payload: unknown) => {
+    const parsed = BoardJoinPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'INVALID_PAYLOAD',
+        message: 'Invalid board:request_sync payload',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const { boardId } = parsed.data;
+    const userId = socket.data.userId;
+
+    if (socket.data.currentBoardId !== boardId) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'NOT_IN_BOARD',
+        message: 'You are not in this board',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    try {
+      const cachedState = await boardService.getOrLoadBoardState(boardId);
+      const users = await presenceService.getBoardUsers(boardId);
+
+      const syncResponse: BoardStatePayload = {
+        boardId,
+        objects: cachedState.objects as BoardStatePayload['objects'],
+        users,
+      };
+
+      trackedEmit(socket, WebSocketEvent.BOARD_SYNC_RESPONSE, syncResponse);
+      logger.debug(`Sync response sent to ${userId} for board ${boardId}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to sync board';
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'SYNC_FAILED',
+        message,
+        timestamp: Date.now(),
+      });
+      logger.error(`board:request_sync failed for ${userId}: ${message}`);
+    }
+  });
 }
 
 /**

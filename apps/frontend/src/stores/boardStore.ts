@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { fabric } from 'fabric';
 import { CANVAS_CONFIG } from 'shared';
-import type { BoardObject } from 'shared';
+import type { BoardObject, ConflictWarningPayload } from 'shared';
 
 interface BoardState {
   // --- Canvas Instance ---
@@ -28,6 +28,20 @@ interface BoardState {
   removeObject: (id: string) => void;
   clearObjects: () => void;
   setObjects: (objects: BoardObject[]) => void;
+
+  // --- Active Edit Tracking ---
+  // Set of object IDs the local user is currently editing (has selected).
+  // Used to determine when to emit edit:start/end WS events.
+  activeEdits: Set<string>;
+  startLocalEdit: (objectId: string) => void;
+  endLocalEdit: (objectId: string) => void;
+  clearLocalEdits: () => void;
+
+  // --- Conflict Warning ---
+  // Set by the WS layer when another user modifies an object we're editing.
+  // Consumed by ConflictModal to show the user their options.
+  conflictWarning: ConflictWarningPayload | null;
+  setConflictWarning: (warning: ConflictWarningPayload | null) => void;
 
   // --- Zoom ---
   zoom: number;
@@ -71,6 +85,24 @@ export const useBoardStore = create<BoardState>((set) => ({
       objects.forEach((obj) => map.set(obj.id, obj));
       return { objects: map };
     }),
+
+  activeEdits: new Set(),
+  startLocalEdit: (objectId) =>
+    set((state) => {
+      const next = new Set(state.activeEdits);
+      next.add(objectId);
+      return { activeEdits: next };
+    }),
+  endLocalEdit: (objectId) =>
+    set((state) => {
+      const next = new Set(state.activeEdits);
+      next.delete(objectId);
+      return { activeEdits: next };
+    }),
+  clearLocalEdits: () => set({ activeEdits: new Set() }),
+
+  conflictWarning: null,
+  setConflictWarning: (warning) => set({ conflictWarning: warning }),
 
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),
