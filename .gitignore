@@ -32,3 +32,6 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# Token usage tracking
+token-usage.md
