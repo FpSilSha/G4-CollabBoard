@@ -135,6 +135,18 @@ export interface UserLeftPayload {
   timestamp: number;
 }
 
+export interface EditStartPayload {
+  boardId: string;
+  objectId: string;
+  timestamp: number;
+}
+
+export interface EditEndPayload {
+  boardId: string;
+  objectId: string;
+  timestamp: number;
+}
+
 export interface ConflictWarningPayload {
   boardId: string;
   objectId: string;

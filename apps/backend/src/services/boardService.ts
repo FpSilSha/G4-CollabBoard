@@ -1,7 +1,15 @@
 import prisma from '../models/index';
 import { Prisma } from '@prisma/client';
-import { TIER_LIMITS, type SubscriptionTier } from 'shared';
+import { TIER_LIMITS, type SubscriptionTier, type CachedBoardState, type BoardObject } from 'shared';
+import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
+import { metricsService } from './metricsService';
 import { AppError } from '../middleware/errorHandler';
+import { logger } from '../utils/logger';
+
+/** Redis key for a board's cached state. */
+function boardStateKey(boardId: string): string {
+  return `board:${boardId}:state`;
+}
 
 export const boardService = {
   async listBoards(userId: string, includeDeleted = false) {
@@ -258,5 +266,202 @@ export const boardService = {
       where: { id: boardId },
       data: { objects: filtered as Prisma.InputJsonArray },
     });
+  },
+
+  // ============================================================
+  // Redis-Backed Board State (Phase 5: Persistence)
+  // ============================================================
+  //
+  // WebSocket object mutations write to Redis instead of Postgres.
+  // A background auto-save worker flushes Redis → Postgres every 60s.
+  // Redis key: "board:{boardId}:state" → JSON CachedBoardState.
+
+  /**
+   * Load a board's state from Postgres into Redis.
+   * Called on first board:join when no Redis cache exists.
+   */
+  async loadBoardToRedis(boardId: string): Promise<CachedBoardState> {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { objects: true, version: true },
+    });
+
+    if (!board) {
+      throw new AppError(404, 'Board not found');
+    }
+
+    const cachedState: CachedBoardState = {
+      objects: (board.objects as unknown as CachedBoardState['objects']) ?? [],
+      postgresVersion: board.version,
+      lastSyncedAt: Date.now(),
+    };
+
+    await redis.set(boardStateKey(boardId), JSON.stringify(cachedState));
+    logger.debug(`Board ${boardId} loaded into Redis (v${board.version}, ${cachedState.objects.length} objects)`);
+    return cachedState;
+  },
+
+  /**
+   * Read the cached board state from Redis.
+   * Returns null if no cache exists (board not yet loaded).
+   */
+  async getBoardStateFromRedis(boardId: string): Promise<CachedBoardState | null> {
+    const rawJson = await redis.get(boardStateKey(boardId));
+    if (!rawJson) return null;
+    return JSON.parse(rawJson) as CachedBoardState;
+  },
+
+  /**
+   * Write a CachedBoardState to Redis.
+   */
+  async saveBoardStateToRedis(boardId: string, state: CachedBoardState): Promise<void> {
+    await redis.set(boardStateKey(boardId), JSON.stringify(state));
+  },
+
+  /**
+   * Get the cached state, loading from Postgres if not yet cached.
+   */
+  async getOrLoadBoardState(boardId: string): Promise<CachedBoardState> {
+    const existingState = await this.getBoardStateFromRedis(boardId);
+    if (existingState) return existingState;
+    return this.loadBoardToRedis(boardId);
+  },
+
+  /**
+   * Add a new object to the board's Redis-cached state.
+   * Does NOT write to Postgres — auto-save handles that.
+   */
+  async addObjectInRedis(boardId: string, object: Record<string, unknown>): Promise<void> {
+    const cachedState = await this.getOrLoadBoardState(boardId);
+
+    const duplicateExists = cachedState.objects.some(
+      (existingObj) => existingObj.id === object.id
+    );
+    if (duplicateExists) {
+      throw new AppError(409, 'Object with this ID already exists', 'DUPLICATE_OBJECT');
+    }
+
+    cachedState.objects.push(object as unknown as BoardObject);
+    await this.saveBoardStateToRedis(boardId, cachedState);
+  },
+
+  /**
+   * Update an object in the board's Redis-cached state (LWW merge).
+   * Does NOT write to Postgres — auto-save handles that.
+   */
+  async updateObjectInRedis(
+    boardId: string,
+    objectId: string,
+    updates: Record<string, unknown>
+  ): Promise<void> {
+    const cachedState = await this.getOrLoadBoardState(boardId);
+
+    const objectIndex = cachedState.objects.findIndex(
+      (obj) => obj.id === objectId
+    );
+
+    if (objectIndex === -1) {
+      throw new AppError(404, 'Object not found on board');
+    }
+
+    // LWW merge: spread existing fields, overwrite with incoming updates
+    cachedState.objects[objectIndex] = {
+      ...cachedState.objects[objectIndex],
+      ...updates,
+    } as CachedBoardState['objects'][number];
+
+    await this.saveBoardStateToRedis(boardId, cachedState);
+  },
+
+  /**
+   * Remove an object from the board's Redis-cached state.
+   * Does NOT write to Postgres — auto-save handles that.
+   */
+  async removeObjectFromRedis(boardId: string, objectId: string): Promise<void> {
+    const cachedState = await this.getOrLoadBoardState(boardId);
+
+    const originalLength = cachedState.objects.length;
+    cachedState.objects = cachedState.objects.filter(
+      (obj) => obj.id !== objectId
+    );
+
+    if (cachedState.objects.length === originalLength) {
+      throw new AppError(404, 'Object not found on board');
+    }
+
+    await this.saveBoardStateToRedis(boardId, cachedState);
+  },
+
+  /**
+   * Flush the Redis-cached board state to Postgres with optimistic locking.
+   *
+   * Uses `WHERE version = expectedVersion` to detect concurrent writes.
+   * On version mismatch: Postgres is authoritative — overwrites Redis with
+   * the current Postgres state.
+   *
+   * Returns { success, newVersion } where success=false means a version
+   * conflict was detected and Redis was overwritten with Postgres state.
+   */
+  async flushRedisToPostgres(boardId: string): Promise<{ success: boolean; newVersion: number }> {
+    const cachedState = await this.getBoardStateFromRedis(boardId);
+    if (!cachedState) {
+      return { success: true, newVersion: 0 };
+    }
+
+    const expectedVersion = cachedState.postgresVersion;
+    const objectsJson = JSON.stringify(cachedState.objects);
+
+    // Optimistic locking write — only succeeds if version matches
+    // Uses $executeRaw because Prisma's update() doesn't support conditional WHERE on version
+    metricsService.incrementDbQuery('Board', 'updateRaw');
+    const rowsAffected: number = await prisma.$executeRaw`
+      UPDATE "Board"
+      SET "objects" = ${objectsJson}::jsonb,
+          "version" = "version" + 1,
+          "updatedAt" = NOW()
+      WHERE "id" = ${boardId}
+        AND "version" = ${expectedVersion}
+    `;
+
+    if (rowsAffected === 0) {
+      // Version mismatch — another process wrote to Postgres.
+      // Postgres is authoritative: re-read and overwrite Redis.
+      logger.warn(`Auto-save version conflict for board ${boardId} (expected v${expectedVersion}). Re-syncing from Postgres.`);
+
+      const currentBoard = await prisma.board.findUnique({
+        where: { id: boardId },
+        select: { objects: true, version: true },
+      });
+
+      if (currentBoard) {
+        const refreshedState: CachedBoardState = {
+          objects: (currentBoard.objects as unknown as CachedBoardState['objects']) ?? [],
+          postgresVersion: currentBoard.version,
+          lastSyncedAt: Date.now(),
+        };
+        await this.saveBoardStateToRedis(boardId, refreshedState);
+        return { success: false, newVersion: currentBoard.version };
+      }
+
+      return { success: false, newVersion: expectedVersion };
+    }
+
+    // Success — update Redis with new version number
+    const newVersion = expectedVersion + 1;
+    cachedState.postgresVersion = newVersion;
+    cachedState.lastSyncedAt = Date.now();
+    await this.saveBoardStateToRedis(boardId, cachedState);
+
+    logger.debug(`Board ${boardId} flushed to Postgres (v${newVersion})`);
+    return { success: true, newVersion };
+  },
+
+  /**
+   * Remove the board's cached state from Redis.
+   * Called after the last user leaves and final flush completes.
+   */
+  async removeBoardFromRedis(boardId: string): Promise<void> {
+    await redis.del(boardStateKey(boardId));
+    logger.debug(`Board ${boardId} removed from Redis cache`);
   },
 };

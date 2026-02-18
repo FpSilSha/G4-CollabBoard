@@ -39,8 +39,8 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
     const userId = socket.data.userId;
 
     try {
-      // Validate board access (will throw if unauthorized)
-      const board = await boardService.getBoard(boardId, userId);
+      // Validate board access (will throw if board not found / deleted)
+      await boardService.getBoard(boardId, userId);
 
       // Leave any previous board room
       if (socket.data.currentBoardId) {
@@ -50,6 +50,9 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       // Join the Socket.io room
       socket.join(boardId);
       socket.data.currentBoardId = boardId;
+
+      // Load board state into Redis cache (or re-use existing cache)
+      const cachedState = await boardService.getOrLoadBoardState(boardId);
 
       // Add to presence tracking in Redis
       const userInfo = {
@@ -66,10 +69,10 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       // Get all currently present users
       const users = await presenceService.getBoardUsers(boardId);
 
-      // Send board state to the joining user
+      // Send board state to the joining user (from Redis cache for consistency)
       const boardState: BoardStatePayload = {
         boardId,
-        objects: board.objects as BoardStatePayload['objects'],
+        objects: cachedState.objects as BoardStatePayload['objects'],
         users,
       };
       trackedEmit(socket, WebSocketEvent.BOARD_STATE, boardState);
@@ -156,6 +159,22 @@ async function handleLeaveBoard(io: Server, socket: AuthenticatedSocket, boardId
 
   // Remove from presence
   await presenceService.removeUser(boardId, userId);
+
+  // Check if this was the last user — if so, flush Redis state to Postgres
+  const remainingUsers = await presenceService.getBoardUsers(boardId);
+  if (remainingUsers.length === 0) {
+    try {
+      const flushResult = await boardService.flushRedisToPostgres(boardId);
+      if (flushResult.success) {
+        logger.info(`Final save for board ${boardId}: flushed to Postgres (v${flushResult.newVersion})`);
+      }
+      await boardService.removeBoardFromRedis(boardId);
+    } catch (flushErr: unknown) {
+      const flushMessage = flushErr instanceof Error ? flushErr.message : 'Unknown error';
+      logger.error(`Final save failed for board ${boardId}: ${flushMessage}`);
+      // Non-fatal: user has already left, auto-save worker is the safety net
+    }
+  }
 
   // Leave Socket.io room
   socket.leave(boardId);
