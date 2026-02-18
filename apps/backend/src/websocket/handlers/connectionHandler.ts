@@ -9,6 +9,7 @@ import {
 } from 'shared';
 import { presenceService } from '../../services/presenceService';
 import { boardService } from '../../services/boardService';
+import { editTrackingService } from '../../services/editTrackingService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
 import { auditService, AuditAction } from '../../services/auditService';
@@ -159,6 +160,9 @@ async function handleLeaveBoard(io: Server, socket: AuthenticatedSocket, boardId
 
   // Remove from presence
   await presenceService.removeUser(boardId, userId);
+
+  // Release any edit locks held by this user
+  await editTrackingService.clearUserEdits(boardId, userId);
 
   // Check if this was the last user — if so, flush Redis state to Postgres
   const remainingUsers = await presenceService.getBoardUsers(boardId);
