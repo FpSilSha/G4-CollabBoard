@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
-import { WebSocketEvent, type HeartbeatPayload } from 'shared';
+import { WebSocketEvent, HeartbeatPayloadSchema } from 'shared';
 import { presenceService } from '../../services/presenceService';
+import { logger } from '../../utils/logger';
 import type { AuthenticatedSocket } from '../server';
 
 export function registerPresenceHandlers(io: Server, socket: AuthenticatedSocket): void {
@@ -8,14 +9,22 @@ export function registerPresenceHandlers(io: Server, socket: AuthenticatedSocket
    * heartbeat — Client sends every 10 seconds to maintain presence.
    * Refreshes the Redis presence TTL (30s) so the user doesn't appear as a ghost.
    */
-  socket.on(WebSocketEvent.HEARTBEAT, async (payload: HeartbeatPayload) => {
-    const { boardId } = payload;
+  socket.on(WebSocketEvent.HEARTBEAT, async (payload: unknown) => {
+    const parsed = HeartbeatPayloadSchema.safeParse(payload);
+    if (!parsed.success) return; // Silently drop malformed heartbeats
+
+    const { boardId } = parsed.data;
     const userId = socket.data.userId;
 
-    if (!boardId || socket.data.currentBoardId !== boardId) {
+    if (socket.data.currentBoardId !== boardId) {
       return;
     }
 
-    await presenceService.refreshPresence(boardId, userId);
+    try {
+      await presenceService.refreshPresence(boardId, userId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      logger.error(`Heartbeat error for ${userId} on board ${boardId}: ${message}`);
+    }
   });
 }

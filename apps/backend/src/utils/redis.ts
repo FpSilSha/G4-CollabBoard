@@ -7,10 +7,10 @@ if (!redisUrl) {
   throw new Error('REDIS_URL environment variable is required');
 }
 
-const isUpstash = redisUrl.startsWith('rediss://');
-
 export const redis = new Redis(redisUrl, {
-  ...(isUpstash ? { tls: { rejectUnauthorized: false } } : {}),
+  // TLS is auto-negotiated from the rediss:// protocol in the URL.
+  // Do NOT set rejectUnauthorized: false — Upstash certs are valid
+  // and disabling verification exposes the connection to MITM attacks.
   maxRetriesPerRequest: 3,
   retryStrategy(times) {
     return Math.min(times * 50, 2000);

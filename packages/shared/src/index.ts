@@ -8,6 +8,7 @@ export * from './types/api.types';
 export * from './schemas/user.schemas';
 export * from './schemas/board.schemas';
 export * from './schemas/validation';
+export * from './schemas/websocket.schemas';
 
 // Constants
 export * from './constants/limits';

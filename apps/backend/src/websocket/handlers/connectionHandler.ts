@@ -1,8 +1,8 @@
 import { Server, Socket } from 'socket.io';
 import {
   WebSocketEvent,
-  type BoardJoinPayload,
-  type BoardLeavePayload,
+  BoardJoinPayloadSchema,
+  BoardLeavePayloadSchema,
   type BoardStatePayload,
   type UserJoinedPayload,
   type UserLeftPayload,
@@ -15,14 +15,25 @@ import type { AuthenticatedSocket } from '../server';
 export function registerConnectionHandlers(io: Server, socket: AuthenticatedSocket): void {
   /**
    * board:join — User joins a board room.
-   * 1. Validate board access
-   * 2. Join Socket.io room
-   * 3. Add to presence tracking
-   * 4. Broadcast user:joined to room
-   * 5. Send board:state to joining user
+   * 1. Validate payload with Zod
+   * 2. Validate board access
+   * 3. Join Socket.io room
+   * 4. Add to presence tracking
+   * 5. Broadcast user:joined to room
+   * 6. Send board:state to joining user
    */
-  socket.on(WebSocketEvent.BOARD_JOIN, async (payload: BoardJoinPayload) => {
-    const { boardId } = payload;
+  socket.on(WebSocketEvent.BOARD_JOIN, async (payload: unknown) => {
+    const parsed = BoardJoinPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'INVALID_PAYLOAD',
+        message: 'Invalid board:join payload',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const { boardId } = parsed.data;
     const userId = socket.data.userId;
 
     try {
@@ -56,7 +67,7 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       // Send board state to the joining user
       const boardState: BoardStatePayload = {
         boardId,
-        objects: board.objects as any[],
+        objects: board.objects as BoardStatePayload['objects'],
         users,
       };
       socket.emit(WebSocketEvent.BOARD_STATE, boardState);
@@ -70,22 +81,38 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       socket.to(boardId).emit(WebSocketEvent.USER_JOINED, joinedPayload);
 
       logger.info(`User ${userId} joined board ${boardId}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to join board';
+      const code = (err as { code?: string }).code || 'JOIN_FAILED';
       socket.emit(WebSocketEvent.BOARD_ERROR, {
-        code: err.code || 'JOIN_FAILED',
-        message: err.message || 'Failed to join board',
+        code,
+        message,
         timestamp: Date.now(),
       });
-      logger.warn(`User ${userId} failed to join board ${boardId}: ${err.message}`);
+      logger.warn(`User ${userId} failed to join board ${boardId}: ${message}`);
     }
   });
 
   /**
    * board:leave — User voluntarily leaves a board room.
    */
-  socket.on(WebSocketEvent.BOARD_LEAVE, async (payload: BoardLeavePayload) => {
-    const { boardId } = payload;
-    await handleLeaveBoard(io, socket, boardId);
+  socket.on(WebSocketEvent.BOARD_LEAVE, async (payload: unknown) => {
+    const parsed = BoardLeavePayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'INVALID_PAYLOAD',
+        message: 'Invalid board:leave payload',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    try {
+      await handleLeaveBoard(io, socket, parsed.data.boardId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to leave board';
+      logger.error(`Error in board:leave for ${socket.data.userId}: ${message}`);
+    }
   });
 
   /**
@@ -97,13 +124,18 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
 
     logger.info(`User ${userId} disconnected: ${reason}`);
 
-    if (boardId) {
-      await handleLeaveBoard(io, socket, boardId);
-    }
+    try {
+      if (boardId) {
+        await handleLeaveBoard(io, socket, boardId);
+      }
 
-    // Clean up: remove from all boards and session
-    await presenceService.removeUserFromAllBoards(userId);
-    await presenceService.removeSession(socket.id);
+      // Clean up: remove from all boards and session
+      await presenceService.removeUserFromAllBoards(userId);
+      await presenceService.removeSession(socket.id);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      logger.error(`Error during disconnect cleanup for ${userId}: ${message}`);
+    }
   });
 }
 

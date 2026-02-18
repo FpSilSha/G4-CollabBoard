@@ -1,4 +1,5 @@
 import prisma from '../models/index';
+import { Prisma } from '@prisma/client';
 import { PERSISTENCE_CONFIG, TIER_LIMITS, type SubscriptionTier } from 'shared';
 import { AppError } from '../middleware/errorHandler';
 
@@ -38,7 +39,7 @@ export const versionService = {
         id: v.id,
         versionNumber: versions.length - index,
         createdAt: v.createdAt,
-        objectCount: Array.isArray(v.snapshot) ? (v.snapshot as unknown[]).length : 0,
+        objectCount: Array.isArray(v.snapshot) ? (v.snapshot as Prisma.JsonArray).length : 0,
       })),
     };
   },
@@ -63,7 +64,7 @@ export const versionService = {
       data: {
         boardId,
         createdBy: userId,
-        snapshot: objects as any,
+        snapshot: objects as Prisma.InputJsonArray,
       },
     });
   },

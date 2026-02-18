@@ -10,6 +10,7 @@ import { logger } from '../utils/logger';
 import { registerConnectionHandlers } from './handlers/connectionHandler';
 import { registerCursorHandlers } from './handlers/cursorHandler';
 import { registerPresenceHandlers } from './handlers/presenceHandler';
+import { checkSocketRateLimit } from './socketRateLimit';
 
 /**
  * Extended Socket type with authenticated user data.
@@ -91,7 +92,13 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
 
     try {
       const decoded = await verifyAuth0Token(token);
-      const userId = decoded.sub!;
+
+      // Runtime validation of JWT payload — ensure sub is a non-empty string
+      if (!decoded.sub || typeof decoded.sub !== 'string') {
+        return next(new Error('Invalid token payload: missing sub claim'));
+      }
+
+      const userId = decoded.sub;
 
       // Ensure user exists in our database (find or create)
       const user = await userService.findOrCreateUser(
@@ -111,8 +118,9 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
 
       logger.info(`WebSocket authenticated: ${user.id} (${user.name})`);
       next();
-    } catch (err: any) {
-      logger.warn(`WebSocket auth failed: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Authentication failed';
+      logger.warn(`WebSocket auth failed: ${message}`);
       next(new Error('Invalid authentication token'));
     }
   });
@@ -121,6 +129,24 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
   io.on('connection', (socket: Socket) => {
     const authSocket = socket as AuthenticatedSocket;
     logger.info(`Socket connected: ${authSocket.data.userId} (${socket.id})`);
+
+    // --- Per-socket rate limiting middleware ---
+    // Intercept all incoming events and check against the rate limit
+    // before they reach the registered handlers.
+    socket.use((event, next) => {
+      if (checkSocketRateLimit(authSocket)) {
+        next();
+      } else {
+        // Event dropped — do not call next()
+        next(new Error('Rate limit exceeded'));
+      }
+    });
+
+    // Suppress rate-limit errors from bubbling up to the client
+    socket.on('error', (err: Error) => {
+      if (err.message === 'Rate limit exceeded') return;
+      logger.error(`Socket error for ${authSocket.data.userId}: ${err.message}`);
+    });
 
     // Register all event handlers
     registerConnectionHandlers(io, authSocket);

@@ -2,6 +2,8 @@
 
 import { createServer } from 'http';
 import app from './app';
+import prisma from './models/index';
+import { redis } from './utils/redis';
 import { logger } from './utils/logger';
 import { DEFAULT_PORT } from 'shared';
 
@@ -19,19 +21,32 @@ httpServer.listen(port, () => {
   logger.info(`Health check: http://localhost:${port}/health`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received. Shutting down gracefully...');
-  httpServer.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
-});
+// Graceful shutdown — close HTTP, Prisma, and Redis connections
+async function shutdown(signal: string): Promise<void> {
+  logger.info(`${signal} received. Shutting down gracefully...`);
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received. Shutting down gracefully...');
-  httpServer.close(() => {
+  httpServer.close(async () => {
     logger.info('HTTP server closed');
+
+    try {
+      await prisma.$disconnect();
+      logger.info('Prisma disconnected');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      logger.error(`Prisma disconnect error: ${message}`);
+    }
+
+    try {
+      redis.disconnect();
+      logger.info('Redis disconnected');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      logger.error(`Redis disconnect error: ${message}`);
+    }
+
     process.exit(0);
   });
-});
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

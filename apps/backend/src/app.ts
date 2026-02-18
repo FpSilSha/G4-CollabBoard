@@ -23,7 +23,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(express.json());
+
+// Explicit body size limit — prevents oversized payloads
+app.use(express.json({ limit: '1mb' }));
 
 // --- Health Check (no auth) ---
 app.get('/health', async (_req, res) => {

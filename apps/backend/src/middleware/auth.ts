@@ -33,6 +33,9 @@ export interface AuthenticatedRequest extends Request {
 /**
  * Express middleware to validate Auth0 JWT tokens.
  * Attaches decoded user info to req.user.
+ *
+ * Includes runtime validation that the decoded payload contains a
+ * non-empty `sub` string — prevents casting an unexpected shape.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
@@ -59,7 +62,19 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
         return;
       }
 
-      (req as AuthenticatedRequest).user = decoded as AuthenticatedRequest['user'];
+      // Runtime validation: ensure decoded payload has a non-empty sub claim
+      const payload = decoded as Record<string, unknown> | undefined;
+      if (!payload || typeof payload.sub !== 'string' || payload.sub.length === 0) {
+        logger.warn('JWT payload missing required sub claim');
+        res.status(401).json({ error: 'Unauthorized', message: 'Invalid token payload', statusCode: 401 });
+        return;
+      }
+
+      (req as AuthenticatedRequest).user = {
+        sub: payload.sub,
+        email: typeof payload.email === 'string' ? payload.email : undefined,
+        name: typeof payload.name === 'string' ? payload.name : undefined,
+      };
       next();
     }
   );
