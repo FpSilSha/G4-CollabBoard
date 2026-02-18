@@ -1,0 +1,116 @@
+.header {
+  height: var(--header-height);
+  min-height: var(--header-height);
+  background: var(--sidebar-bg);
+  border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  color: #ffffff;
+}
+
+.left,
+.center,
+.right {
+  display: flex;
+  align-items: center;
+}
+
+.left {
+  flex: 1;
+}
+
+.center {
+  flex: 0 0 auto;
+}
+
+.right {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.boardTitle {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--border-radius);
+  padding: 4px 8px;
+}
+
+.zoomButton {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--border-radius);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+}
+
+.zoomButton:hover:not(:disabled) {
+  transform: scale(var(--hover-scale));
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.zoomButton:active:not(:disabled) {
+  transform: scale(var(--active-scale));
+}
+
+.zoomButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.zoomLevel {
+  min-width: 44px;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.homeButton {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--border-radius);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+  margin-left: 4px;
+}
+
+.homeButton:hover {
+  transform: scale(var(--hover-scale));
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.homeButton:active {
+  transform: scale(var(--active-scale));
+}
+
+.presencePlaceholder {
+  width: 32px;
+  height: 32px;
+}

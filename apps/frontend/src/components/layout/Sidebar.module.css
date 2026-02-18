@@ -1,0 +1,67 @@
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 12px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.toolGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toolGroup:last-child {
+  border-bottom: none;
+}
+
+.toolButton,
+.draggableItem {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--border-radius);
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+}
+
+.toolButton:hover,
+.draggableItem:hover {
+  transform: scale(var(--hover-scale));
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.toolButton:active,
+.draggableItem:active {
+  transform: scale(var(--active-scale));
+}
+
+.active {
+  background: var(--focus-blue) !important;
+  color: #ffffff;
+}
+
+.draggableItem {
+  cursor: grab;
+}
+
+.draggableItem:active {
+  cursor: grabbing;
+}

@@ -1,0 +1,71 @@
+.colorPicker {
+  padding: 0 12px;
+}
+
+.label {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.customLabel {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 12px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.swatchGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    transform var(--transition-speed) var(--transition-ease),
+    border-color var(--transition-speed) var(--transition-ease);
+  padding: 0;
+}
+
+.swatch:hover:not(:disabled) {
+  transform: scale(var(--hover-scale));
+}
+
+.swatch:active:not(:disabled) {
+  transform: scale(var(--active-scale));
+}
+
+.activeSwatch {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px var(--focus-blue);
+}
+
+/* Custom color slots */
+.customSwatch {
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+}
+
+.customSwatch:not(.emptySwatch) {
+  border-style: solid;
+}
+
+/* Empty custom color slots */
+.emptySwatch {
+  background: rgba(255, 255, 255, 0.05);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.emptySwatch:hover {
+  transform: none;
+}

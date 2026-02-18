@@ -1,0 +1,77 @@
+/* ============================
+   Design Tokens
+   ============================ */
+:root {
+  /* Canvas */
+  --canvas-bg: #E5E5E5;
+  --dot-grid-spacing: 20px;
+  --dot-grid-opacity: 0.2;
+
+  /* Chrome (sidebar, header) */
+  --sidebar-bg: #70726F;
+  --sidebar-border: #333333;
+  --sidebar-width: 200px;
+  --header-height: 48px;
+
+  /* Accent */
+  --focus-blue: #007AFF;
+
+  /* Shapes */
+  --border-radius: 8px;
+
+  /* Transitions / micro-interactions */
+  --transition-speed: 200ms;
+  --transition-ease: ease;
+  --hover-scale: 1.02;
+  --active-scale: 0.98;
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+}
+
+/* ============================
+   Reset
+   ============================ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent text selection while dragging on canvas */
+body.is-panning {
+  user-select: none;
+  cursor: grab;
+}
+
+body.is-panning:active {
+  cursor: grabbing;
+}
+
+/* Remove default button styles for toolbar */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}

@@ -1,0 +1,261 @@
+import { useEffect, useCallback } from 'react';
+import { fabric } from 'fabric';
+import { useUIStore, Tool } from '../stores/uiStore';
+import { useBoardStore } from '../stores/boardStore';
+import {
+  createStickyNote,
+  createRectangle,
+  createCircle,
+  fabricToBoardObject,
+  getStickyChildren,
+} from '../utils/fabricHelpers';
+import { OBJECT_DEFAULTS } from 'shared';
+
+/**
+ * Hook for creating objects on the canvas via click or drag-drop.
+ *
+ * Returns drag-drop event handlers to attach to the canvas container <div>.
+ */
+export function useObjectCreation(
+  fabricRef: React.MutableRefObject<fabric.Canvas | null>
+) {
+  const addObject = useBoardStore((s) => s.addObject);
+
+  // ========================================
+  // Click-to-create on empty canvas area
+  // ========================================
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    const handleMouseDown = (opt: fabric.IEvent) => {
+      const tool = useUIStore.getState().activeTool;
+      const color = useUIStore.getState().activeColor;
+
+      // Only create if a creation tool is active
+      if (tool === 'select' || tool === 'dropper') return;
+      // Only create if clicking on empty canvas (not on existing object)
+      if (opt.target) return;
+
+      const pointer = canvas.getPointer(opt.e);
+      const fabricObj = createFabricObject(tool, pointer.x, pointer.y, color);
+
+      if (fabricObj) {
+        canvas.add(fabricObj);
+        canvas.setActiveObject(fabricObj);
+        canvas.requestRenderAll();
+
+        // Track in Zustand store
+        addObject(fabricToBoardObject(fabricObj));
+
+        // Reset to select tool after placing object
+        useUIStore.getState().setActiveTool('select');
+      }
+    };
+
+    canvas.on('mouse:down', handleMouseDown);
+    return () => {
+      canvas.off('mouse:down', handleMouseDown);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricRef]);
+  // Only depend on the ref, not activeTool/activeColor.
+  // We read activeTool/activeColor from store inside the handler to avoid
+  // re-registering the listener on every tool change.
+
+  // ========================================
+  // Double-click to edit sticky note text
+  // Uses a DOM textarea overlay for proper editing support.
+  // The text is stored in group.data.text and displayed via
+  // the group's child Text object (index 2).
+  // ========================================
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    const handleDblClick = (opt: fabric.IEvent) => {
+      const target = opt.target;
+      if (!target || target.data?.type !== 'sticky') return;
+      if (!(target instanceof fabric.Group)) return;
+
+      const zoom = canvas.getZoom();
+      const vpt = canvas.viewportTransform!;
+      const padding = OBJECT_DEFAULTS.STICKY_PADDING;
+      const w = OBJECT_DEFAULTS.STICKY_WIDTH;
+      const h = OBJECT_DEFAULTS.STICKY_HEIGHT;
+
+      // Calculate screen position of the sticky group
+      const groupLeft = (target.left ?? 0) * zoom + vpt[4];
+      const groupTop = (target.top ?? 0) * zoom + vpt[5];
+      const groupWidth = w * zoom;
+      const groupHeight = h * zoom;
+
+      // Create DOM textarea overlay
+      const textarea = document.createElement('textarea');
+      textarea.value = target.data!.text ?? '';
+      textarea.style.cssText = `
+        position: fixed;
+        left: ${groupLeft + padding * zoom}px;
+        top: ${groupTop + padding * zoom}px;
+        width: ${groupWidth - padding * 2 * zoom}px;
+        height: ${groupHeight - padding * 2 * zoom}px;
+        font-size: ${OBJECT_DEFAULTS.STICKY_FONT_SIZE * zoom}px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        border: none;
+        outline: none;
+        resize: none;
+        background: transparent;
+        color: #000000;
+        overflow-y: auto;
+        padding: 0;
+        margin: 0;
+        line-height: 1.4;
+        z-index: 1000;
+        box-sizing: border-box;
+      `;
+
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+
+      // Hide the group's text child while editing
+      const { text: textChild } = getStickyChildren(target);
+      textChild.set('opacity', 0);
+      canvas.requestRenderAll();
+
+      const finishEditing = () => {
+        const newText = textarea.value;
+        target.data!.text = newText;
+
+        // Update the group's text child
+        textChild.set('text', newText);
+        textChild.set('opacity', 1);
+
+        document.body.removeChild(textarea);
+        canvas.requestRenderAll();
+      };
+
+      textarea.addEventListener('blur', finishEditing, { once: true });
+
+      // Also handle Escape to cancel editing
+      textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          textarea.blur();
+        }
+      });
+    };
+
+    canvas.on('mouse:dblclick', handleDblClick);
+    return () => {
+      canvas.off('mouse:dblclick', handleDblClick);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricRef]);
+
+  // ========================================
+  // Dropper tool: sample color from object
+  // ========================================
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    const handleDropperClick = (opt: fabric.IEvent) => {
+      if (useUIStore.getState().activeTool !== 'dropper') return;
+      if (!opt.target) return;
+
+      const target = opt.target;
+      let fill: string | undefined;
+
+      if (target.data?.type === 'sticky' && target instanceof fabric.Group) {
+        // For sticky groups, sample the base polygon color
+        const { base } = getStickyChildren(target);
+        fill = base.fill as string;
+      } else {
+        fill = target.fill as string | undefined;
+      }
+
+      if (typeof fill === 'string') {
+        // Add to custom color slots and set as active color
+        useUIStore.getState().addCustomColor(fill);
+        useUIStore.getState().setActiveTool('select');
+      }
+    };
+
+    canvas.on('mouse:down', handleDropperClick);
+    return () => {
+      canvas.off('mouse:down', handleDropperClick);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricRef]);
+
+  // ========================================
+  // Drag-drop from sidebar
+  // ========================================
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+
+      const objectType = e.dataTransfer.getData(
+        'application/collabboard-type'
+      ) as Tool;
+      const color =
+        e.dataTransfer.getData('application/collabboard-color') ||
+        useUIStore.getState().activeColor;
+      if (!objectType) return;
+
+      // Convert screen coordinates to canvas coordinates
+      const canvasEl = canvas.getElement();
+      const rect = canvasEl.getBoundingClientRect();
+      const simEvent = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        offsetX: e.clientX - rect.left,
+        offsetY: e.clientY - rect.top,
+      };
+      const pointer = canvas.getPointer(simEvent as unknown as Event);
+
+      // Center the object on the drop point
+      const fabricObj = createFabricObject(objectType, pointer.x, pointer.y, color);
+
+      if (fabricObj) {
+        canvas.add(fabricObj);
+        canvas.setActiveObject(fabricObj);
+        canvas.requestRenderAll();
+        addObject(fabricToBoardObject(fabricObj));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fabricRef, addObject]
+  );
+
+  return { handleDragOver, handleDrop };
+}
+
+// ============================================================
+// Helper: create the right fabric object based on tool type
+// ============================================================
+
+function createFabricObject(
+  tool: Tool,
+  x: number,
+  y: number,
+  color: string
+): fabric.Object | null {
+  switch (tool) {
+    case 'sticky':
+      return createStickyNote({ x, y, color });
+    case 'rectangle':
+      return createRectangle({ x, y, color });
+    case 'circle':
+      return createCircle({ x, y, color });
+    default:
+      return null;
+  }
+}
