@@ -1,4 +1,4 @@
-import { redis } from '../utils/redis';
+import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { WEBSOCKET_CONFIG } from 'shared';
 import type { BoardUserInfo } from 'shared';
 import { logger } from '../utils/logger';

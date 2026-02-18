@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { redis } from '../utils/redis';
+import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { RATE_LIMITS } from 'shared';
 import { AuthenticatedRequest } from './auth';
 import { logger } from '../utils/logger';
