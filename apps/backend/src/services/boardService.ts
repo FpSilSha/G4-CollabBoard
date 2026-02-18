@@ -1,4 +1,5 @@
 import prisma from '../models/index';
+import { Prisma } from '@prisma/client';
 import { TIER_LIMITS, type SubscriptionTier } from 'shared';
 import { AppError } from '../middleware/errorHandler';
 
@@ -108,9 +109,9 @@ export const boardService = {
       throw new AppError(404, 'Board not found');
     }
 
-    if (board.ownerId !== userId) {
-      throw new AppError(403, 'You do not have access to this board');
-    }
+    // Note: ownership check removed to enable link-based sharing.
+    // Any authenticated user can view/join any board via its URL.
+    // Ownership is still enforced for deleteBoard.
 
     if (board.isDeleted) {
       throw new AppError(404, 'Board has been deleted');
@@ -161,5 +162,101 @@ export const boardService = {
       deletedAt: now,
       permanentDeletionAt,
     };
+  },
+
+  /**
+   * Add a new object to a board's objects JSON array.
+   * Reads current objects, appends new one, writes back.
+   */
+  async addObject(boardId: string, object: Record<string, unknown>) {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { objects: true },
+    });
+
+    if (!board) {
+      throw new AppError(404, 'Board not found');
+    }
+
+    const objects = Array.isArray(board.objects)
+      ? (board.objects as Prisma.JsonArray)
+      : [];
+
+    // Check for duplicate ID
+    const existing = (objects as Record<string, unknown>[]).find(
+      (o) => o.id === object.id
+    );
+    if (existing) {
+      throw new AppError(409, 'Object with this ID already exists', 'DUPLICATE_OBJECT');
+    }
+
+    (objects as unknown as unknown[]).push(object);
+
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { objects: objects as Prisma.InputJsonArray },
+    });
+  },
+
+  /**
+   * Update an existing object within a board's objects JSON array.
+   * Finds by object ID, merges updates (LWW), writes back.
+   */
+  async updateObject(boardId: string, objectId: string, updates: Record<string, unknown>) {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { objects: true },
+    });
+
+    if (!board) {
+      throw new AppError(404, 'Board not found');
+    }
+
+    const objects = Array.isArray(board.objects)
+      ? (board.objects as Record<string, unknown>[])
+      : [];
+
+    const index = objects.findIndex((o) => o.id === objectId);
+
+    if (index === -1) {
+      throw new AppError(404, 'Object not found on board');
+    }
+
+    // Merge updates (LWW — last write wins)
+    objects[index] = { ...objects[index], ...updates };
+
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { objects: objects as Prisma.InputJsonArray },
+    });
+  },
+
+  /**
+   * Remove an object from a board's objects JSON array.
+   */
+  async removeObject(boardId: string, objectId: string) {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { objects: true },
+    });
+
+    if (!board) {
+      throw new AppError(404, 'Board not found');
+    }
+
+    const objects = Array.isArray(board.objects)
+      ? (board.objects as Record<string, unknown>[])
+      : [];
+
+    const filtered = objects.filter((o) => o.id !== objectId);
+
+    if (filtered.length === objects.length) {
+      throw new AppError(404, 'Object not found on board');
+    }
+
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { objects: filtered as Prisma.InputJsonArray },
+    });
   },
 };

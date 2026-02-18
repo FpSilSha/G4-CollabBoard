@@ -16,8 +16,13 @@ const app = express();
 
 // --- Global Middleware ---
 app.use(helmet());
+// Parse FRONTEND_URL: supports comma-separated values (e.g. "http://localhost:5173,http://localhost:5174")
+const corsOrigin = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map((u) => u.trim())
+  : ['http://localhost:5173', 'http://localhost:5174'];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],

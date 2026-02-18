@@ -58,6 +58,11 @@ export function ColorPicker() {
     }
 
     canvas.requestRenderAll();
+
+    // Fire object:modified so useCanvasSync picks up the color change
+    // and emits it over the WebSocket. Programmatic property changes
+    // don't trigger this event automatically in Fabric.js.
+    canvas.fire('object:modified', { target: activeObj });
   }, [setActiveColor]);
 
   return (

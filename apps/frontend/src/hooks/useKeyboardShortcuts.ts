@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
+import type { Socket } from 'socket.io-client';
 import { useUIStore } from '../stores/uiStore';
 import { useBoardStore } from '../stores/boardStore';
+import { WebSocketEvent } from 'shared';
 
 /**
  * Global keyboard shortcuts:
@@ -17,8 +19,13 @@ import { useBoardStore } from '../stores/boardStore';
  * Shortcuts are suppressed when:
  * - User is typing in an <input> or <textarea>
  * - A Fabric.js IText is in editing mode (checked via activeObject.isEditing)
+ *
+ * In Phase 4, the optional socketRef parameter enables emitting
+ * `object:delete` to the server when objects are deleted via keyboard.
  */
-export function useKeyboardShortcuts(): void {
+export function useKeyboardShortcuts(
+  socketRef?: React.MutableRefObject<Socket | null>
+): void {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Suppress shortcuts when typing in form elements
@@ -29,6 +36,7 @@ export function useKeyboardShortcuts(): void {
       const canvas = useBoardStore.getState().canvas;
       if (canvas) {
         const activeObj = canvas.getActiveObject();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (activeObj && (activeObj as any).isEditing) return;
       }
 
@@ -75,7 +83,7 @@ export function useKeyboardShortcuts(): void {
 
         case 'delete':
         case 'backspace':
-          handleDeleteSelected();
+          handleDeleteSelected(socketRef?.current ?? null);
           break;
 
         case 'escape':
@@ -91,17 +99,19 @@ export function useKeyboardShortcuts(): void {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 
 /**
  * Delete the currently selected object from both the Fabric.js canvas
- * and the Zustand boardStore.
+ * and the Zustand boardStore. In Phase 4, also emits object:delete
+ * to the server.
  *
  * Sticky notes are now self-contained Groups — deleting the group
  * automatically removes all its children (base, fold, text).
  */
-function handleDeleteSelected(): void {
+function handleDeleteSelected(socket: Socket | null): void {
   const canvas = useBoardStore.getState().canvas;
   if (!canvas) return;
 
@@ -117,5 +127,15 @@ function handleDeleteSelected(): void {
   // Remove from Zustand store
   if (objectId) {
     useBoardStore.getState().removeObject(objectId);
+
+    // Emit to server
+    const boardId = useBoardStore.getState().boardId;
+    if (boardId && socket?.connected) {
+      socket.emit(WebSocketEvent.OBJECT_DELETE, {
+        boardId,
+        objectId,
+        timestamp: Date.now(),
+      });
+    }
   }
 }

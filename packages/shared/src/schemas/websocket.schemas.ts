@@ -34,20 +34,36 @@ export const HeartbeatPayloadSchema = z.object({
   timestamp: z.number().int().positive(),
 });
 
-// object:create
+// object:create — client sends object with client-generated UUID
 export const ObjectCreatePayloadSchema = z.object({
   boardId: z.string().uuid(),
-  object: z.record(z.unknown()), // Validated further by BoardObjectCreateSchema if needed
+  object: z.object({
+    id: z.string().uuid(),
+    type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
+  }).passthrough(), // Allow additional type-specific fields
   timestamp: z.number().int().positive(),
 });
 
-// object:update
+// object:update — partial field updates
 export const ObjectUpdatePayloadSchema = z.object({
   boardId: z.string().uuid(),
   objectId: z.string().min(1),
   updates: z.record(z.unknown()),
   timestamp: z.number().int().positive(),
 });
+
+// object:update fields — validates the allowed update fields
+export const ObjectUpdateFieldsSchema = z.object({
+  x: coordinate.optional(),
+  y: coordinate.optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  text: z.string().max(10000).optional(),
+  width: z.number().min(10).max(5000).optional(),
+  height: z.number().min(10).max(5000).optional(),
+  rotation: z.number().min(-360).max(360).optional(),
+  lastEditedBy: z.string().optional(),
+  updatedAt: z.any().optional(),
+}).passthrough();
 
 // object:delete
 export const ObjectDeletePayloadSchema = z.object({

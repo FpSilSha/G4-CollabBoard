@@ -2,12 +2,16 @@ import { USER_COLORS } from 'shared';
 
 /**
  * Generate a deterministic color from a user ID string.
- * Uses a simple hash to pick from the USER_COLORS palette.
+ * Uses FNV-1a hash for better distribution — the old Java-style hashCode
+ * produced collisions for Auth0 IDs with similar prefixes (e.g.,
+ * "google-oauth2|1100..." and "google-oauth2|1084..." both mapped to green).
  */
 export function generateColorFromUserId(userId: string): string {
-  let hash = 0;
+  // FNV-1a 32-bit hash — much better avalanche behavior
+  let hash = 0x811c9dc5; // FNV offset basis
   for (let i = 0; i < userId.length; i++) {
-    hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
+    hash ^= userId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193); // FNV prime
   }
   const index = Math.abs(hash) % USER_COLORS.length;
   return USER_COLORS[index];

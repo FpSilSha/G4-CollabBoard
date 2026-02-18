@@ -1,21 +1,27 @@
 import { fabric } from 'fabric';
+import { Link } from 'react-router-dom';
+import { useAuth0 } from '@auth0/auth0-react';
 import { CANVAS_CONFIG } from 'shared';
 import { useBoardStore } from '../../stores/boardStore';
+import { usePresenceStore, type ConnectionStatus } from '../../stores/presenceStore';
 import styles from './Header.module.css';
 
 /**
  * Header bar at the top of the main area (right of sidebar).
  *
  * Contains:
- * - Board title (hardcoded "Untitled Board" for Phase 3)
+ * - Board title
  * - Zoom controls (-, percentage display, +, home button)
- * - Placeholder for presence avatars (Phase 4)
+ * - Connection status badge
+ * - Presence avatars for remote users in the board
  */
 export function Header() {
   const zoom = useBoardStore((s) => s.zoom);
   const canvas = useBoardStore((s) => s.canvas);
   const boardTitle = useBoardStore((s) => s.boardTitle);
   const setZoom = useBoardStore((s) => s.setZoom);
+  const connectionStatus = usePresenceStore((s) => s.connectionStatus);
+  const remoteUsers = usePresenceStore((s) => s.remoteUsers);
 
   const handleZoom = (newZoom: number) => {
     if (!canvas) return;
@@ -54,6 +60,11 @@ export function Header() {
   return (
     <header className={styles.header}>
       <div className={styles.left}>
+        <Link to="/" className={styles.backLink} title="Back to Dashboard" aria-label="Back to Dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </Link>
         <h1 className={styles.boardTitle}>{boardTitle}</h1>
       </div>
 
@@ -92,9 +103,113 @@ export function Header() {
       </div>
 
       <div className={styles.right}>
-        {/* Phase 4: Presence avatars will go here */}
-        <div className={styles.presencePlaceholder} />
+        <ConnectionBadge status={connectionStatus} />
+        <PresenceAvatars remoteUsers={remoteUsers} />
+        <UserMenu />
       </div>
     </header>
+  );
+}
+
+// ============================================================
+// Connection Status Badge
+// ============================================================
+
+function ConnectionBadge({ status }: { status: ConnectionStatus }) {
+  if (status === 'connected') return null;
+
+  const label = status === 'connecting' ? 'Connecting…' : 'Offline';
+  const className =
+    status === 'connecting'
+      ? `${styles.connectionBadge} ${styles.connecting}`
+      : `${styles.connectionBadge} ${styles.disconnected}`;
+
+  return <span className={className}>{label}</span>;
+}
+
+// ============================================================
+// Presence Avatars
+// ============================================================
+
+function PresenceAvatars({
+  remoteUsers,
+}: {
+  remoteUsers: Map<string, import('shared').BoardUserInfo>;
+}) {
+  const users = Array.from(remoteUsers.values());
+  if (users.length === 0) return null;
+
+  // Show up to 5 avatars; if more, show a "+N" overflow badge
+  const maxVisible = 5;
+  const visible = users.slice(0, maxVisible);
+  const overflow = users.length - maxVisible;
+
+  return (
+    <div className={styles.presenceAvatars}>
+      {visible.map((user) => (
+        <div
+          key={user.userId}
+          className={styles.avatar}
+          style={{ backgroundColor: user.color }}
+          title={user.name}
+        >
+          {user.avatar ? (
+            <img
+              src={user.avatar}
+              alt={user.name}
+              className={styles.avatarImg}
+            />
+          ) : (
+            <span className={styles.avatarInitial}>
+              {user.name.charAt(0).toUpperCase()}
+            </span>
+          )}
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div className={styles.avatarOverflow} title={`${overflow} more`}>
+          +{overflow}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// User Menu (logout)
+// ============================================================
+
+function UserMenu() {
+  const { user, logout } = useAuth0();
+  const localUserName = usePresenceStore((s) => s.localUserName);
+
+  const displayName = localUserName || user?.name || user?.email || 'User';
+  const initial = displayName.charAt(0).toUpperCase();
+  const picture = user?.picture;
+
+  const handleLogout = () => {
+    logout({ logoutParams: { returnTo: window.location.origin } });
+  };
+
+  return (
+    <div className={styles.userMenu}>
+      <div className={styles.userAvatar} title={displayName}>
+        {picture ? (
+          <img src={picture} alt={displayName} className={styles.userAvatarImg} />
+        ) : (
+          <span className={styles.userAvatarInitial}>{initial}</span>
+        )}
+      </div>
+      <button
+        className={styles.logoutButton}
+        onClick={handleLogout}
+        title="Sign out"
+        aria-label="Sign out"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+        </svg>
+      </button>
+    </div>
   );
 }

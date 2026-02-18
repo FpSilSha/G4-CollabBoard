@@ -15,7 +15,7 @@ interface BoardState {
   // In Phase 3 these are placeholder values. Phase 4 populates from server.
   boardId: string | null;
   boardTitle: string;
-  setBoardId: (id: string) => void;
+  setBoardId: (id: string | null) => void;
   setBoardTitle: (title: string) => void;
 
   // --- Local Object Tracking ---
@@ -27,6 +27,7 @@ interface BoardState {
   updateObject: (id: string, updates: Partial<BoardObject>) => void;
   removeObject: (id: string) => void;
   clearObjects: () => void;
+  setObjects: (objects: BoardObject[]) => void;
 
   // --- Zoom ---
   zoom: number;
@@ -64,6 +65,12 @@ export const useBoardStore = create<BoardState>((set) => ({
       return { objects: next };
     }),
   clearObjects: () => set({ objects: new Map() }),
+  setObjects: (objects) =>
+    set(() => {
+      const map = new Map<string, BoardObject>();
+      objects.forEach((obj) => map.set(obj.id, obj));
+      return { objects: map };
+    }),
 
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),

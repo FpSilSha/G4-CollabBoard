@@ -217,20 +217,27 @@ export function findFabricObjectById(
  * Converts a Fabric.js object into a BoardObject suitable for
  * storing in the Zustand boardStore.
  *
- * Phase 3: createdBy/lastEditedBy are placeholder strings.
- * Phase 4: these come from the authenticated user.
+ * Accepts an optional userId parameter for the authenticated user.
+ * Falls back to 'local-user' if not provided (Phase 3 local-only mode).
  */
-export function fabricToBoardObject(fabricObj: fabric.Object): BoardObject {
+export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): BoardObject {
   const data = fabricObj.data!;
   const now = new Date();
+  const user = userId ?? 'local-user';
+
+  // Fabric.js uses scaleX/scaleY for resize, NOT width/height.
+  // Multiply intrinsic dimensions by scale to get actual rendered size.
+  const scaleX = fabricObj.scaleX ?? 1;
+  const scaleY = fabricObj.scaleY ?? 1;
+
   const base = {
     id: data.id,
     x: fabricObj.left ?? 0,
     y: fabricObj.top ?? 0,
-    createdBy: 'local-user',
+    createdBy: user,
     createdAt: now,
     updatedAt: now,
-    lastEditedBy: 'local-user',
+    lastEditedBy: user,
   };
 
   if (data.type === 'sticky') {
@@ -245,14 +252,14 @@ export function fabricToBoardObject(fabricObj: fabric.Object): BoardObject {
       type: 'sticky' as const,
       text: data.text ?? '',
       color,
-      width: fabricObj.width ?? OBJECT_DEFAULTS.STICKY_WIDTH,
-      height: fabricObj.height ?? OBJECT_DEFAULTS.STICKY_HEIGHT,
+      width: (fabricObj.width ?? OBJECT_DEFAULTS.STICKY_WIDTH) * scaleX,
+      height: (fabricObj.height ?? OBJECT_DEFAULTS.STICKY_HEIGHT) * scaleY,
     };
   }
 
   if (data.type === 'shape' && data.shapeType === 'circle') {
     const circle = fabricObj as fabric.Circle;
-    const diameter = (circle.radius ?? 75) * 2;
+    const diameter = (circle.radius ?? 75) * 2 * scaleX;
     return {
       ...base,
       type: 'shape' as const,
@@ -269,8 +276,8 @@ export function fabricToBoardObject(fabricObj: fabric.Object): BoardObject {
     ...base,
     type: 'shape' as const,
     shapeType: 'rectangle' as const,
-    width: fabricObj.width ?? OBJECT_DEFAULTS.SHAPE_WIDTH,
-    height: fabricObj.height ?? OBJECT_DEFAULTS.SHAPE_HEIGHT,
+    width: (fabricObj.width ?? OBJECT_DEFAULTS.SHAPE_WIDTH) * scaleX,
+    height: (fabricObj.height ?? OBJECT_DEFAULTS.SHAPE_HEIGHT) * scaleY,
     color: (fabricObj as fabric.Rect).fill as string,
     rotation: fabricObj.angle ?? 0,
   };
@@ -279,6 +286,56 @@ export function fabricToBoardObject(fabricObj: fabric.Object): BoardObject {
 // ============================================================
 // Color Utility
 // ============================================================
+
+// ============================================================
+// Conversion: BoardObject -> Fabric Object (for rendering server state)
+// ============================================================
+
+/**
+ * Converts a BoardObject (from server) into a Fabric.js object for rendering.
+ * This is the reverse of fabricToBoardObject — used when loading board:state
+ * or applying object:created events from other users.
+ */
+export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
+  switch (obj.type) {
+    case 'sticky':
+      return createStickyNote({
+        x: obj.x,
+        y: obj.y,
+        color: obj.color,
+        text: obj.text,
+        id: obj.id,
+      });
+
+    case 'shape':
+      if (obj.shapeType === 'circle') {
+        return createCircle({
+          x: obj.x,
+          y: obj.y,
+          color: obj.color,
+          radius: obj.width / 2,
+          id: obj.id,
+        });
+      }
+      if (obj.shapeType === 'rectangle') {
+        const rect = createRectangle({
+          x: obj.x,
+          y: obj.y,
+          color: obj.color,
+          width: obj.width,
+          height: obj.height,
+          id: obj.id,
+        });
+        if (obj.rotation) rect.set('angle', obj.rotation);
+        return rect;
+      }
+      return null;
+
+    // frame, connector, text — not yet supported in Phase 3/4 canvas
+    default:
+      return null;
+  }
+}
 
 /**
  * Darken a hex color by a percentage.

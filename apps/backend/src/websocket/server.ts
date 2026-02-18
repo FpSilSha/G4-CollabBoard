@@ -2,7 +2,7 @@ import { Server, Socket } from 'socket.io';
 import { Server as HttpServer } from 'http';
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
-import { WEBSOCKET_CONFIG } from 'shared';
+import { WEBSOCKET_CONFIG, WebSocketEvent } from 'shared';
 import { presenceService } from '../services/presenceService';
 import { userService } from '../services/userService';
 import { generateColorFromUserId, generateAvatar } from '../utils/helpers';
@@ -10,6 +10,7 @@ import { logger } from '../utils/logger';
 import { registerConnectionHandlers } from './handlers/connectionHandler';
 import { registerCursorHandlers } from './handlers/cursorHandler';
 import { registerPresenceHandlers } from './handlers/presenceHandler';
+import { registerObjectHandlers } from './handlers/objectHandler';
 import { checkSocketRateLimit } from './socketRateLimit';
 
 /**
@@ -72,7 +73,9 @@ function verifyAuth0Token(token: string): Promise<jwt.JwtPayload> {
 export function initializeWebSocket(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+      origin: process.env.FRONTEND_URL
+        ? process.env.FRONTEND_URL.split(',').map((u) => u.trim())
+        : ['http://localhost:5173', 'http://localhost:5174'],
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -107,9 +110,12 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
         decoded.name
       );
 
-      // Attach user data to socket
+      // Attach user data to socket.
+      // Use email prefix as userName for cursor labels — cleaner than
+      // full email, and avoids the numeric Auth0 sub fallback.
+      const emailPrefix = user.email.split('@')[0] || user.name;
       socket.data.userId = user.id;
-      socket.data.userName = user.name;
+      socket.data.userName = emailPrefix;
       socket.data.avatar = user.avatar;
       socket.data.color = user.color;
 
@@ -148,10 +154,19 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
       logger.error(`Socket error for ${authSocket.data.userId}: ${err.message}`);
     });
 
+    // Send authenticated user info back to client
+    socket.emit(WebSocketEvent.AUTH_SUCCESS, {
+      userId: authSocket.data.userId,
+      name: authSocket.data.userName,
+      avatar: authSocket.data.avatar,
+      color: authSocket.data.color,
+    });
+
     // Register all event handlers
     registerConnectionHandlers(io, authSocket);
     registerCursorHandlers(io, authSocket);
     registerPresenceHandlers(io, authSocket);
+    registerObjectHandlers(io, authSocket);
   });
 
   logger.info('WebSocket server initialized');

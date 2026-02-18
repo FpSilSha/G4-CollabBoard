@@ -37,6 +37,35 @@ export const userService = {
           color: generateColorFromUserId(auth0Id),
         },
       });
+    } else {
+      // Recompute color on every login — ensures hash function changes
+      // propagate immediately (e.g., FNV-1a migration from old Java hash).
+      const correctColor = generateColorFromUserId(auth0Id);
+
+      // Update existing user's email/name if they were previously created
+      // with fallback values (e.g., numeric Auth0 sub ID as name)
+      const needsProfileUpdate =
+        (email && user.email !== email && user.email.endsWith('@clients.auth0.local')) ||
+        (name && user.name !== name) ||
+        (email && !name && /^\d+$/.test(user.name));
+
+      if (needsProfileUpdate || user.color !== correctColor) {
+        const updatedName = needsProfileUpdate
+          ? (name || email?.split('@')[0] || user.name)
+          : user.name;
+        const updatedEmail = needsProfileUpdate
+          ? (email || user.email)
+          : user.email;
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            email: updatedEmail,
+            name: updatedName,
+            avatar: generateAvatar(updatedName),
+            color: correctColor,
+          },
+        });
+      }
     }
 
     return user;

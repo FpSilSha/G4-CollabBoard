@@ -34,6 +34,9 @@ export enum WebSocketEvent {
   CONFLICT_WARNING = 'conflict:warning',
   SYNC_CONFLICT = 'sync:conflict',
 
+  // Auth
+  AUTH_SUCCESS = 'auth:success',
+
   // Heartbeat
   HEARTBEAT = 'heartbeat',
 
@@ -81,7 +84,7 @@ export interface CursorMovedPayload {
 
 export interface ObjectCreatePayload {
   boardId: string;
-  object: Omit<BoardObject, 'id' | 'createdAt' | 'updatedAt'>;
+  object: Omit<BoardObject, 'createdAt' | 'updatedAt'>;
   timestamp: number;
 }
 
@@ -139,6 +142,13 @@ export interface ConflictWarningPayload {
   conflictingUserName: string;
   message: string;
   timestamp: number;
+}
+
+export interface AuthSuccessPayload {
+  userId: string;
+  name: string;
+  avatar: string;
+  color: string;
 }
 
 export interface HeartbeatPayload {

@@ -1,7 +1,10 @@
 import { useEffect, useCallback } from 'react';
 import { fabric } from 'fabric';
+import type { Socket } from 'socket.io-client';
 import { useUIStore, Tool } from '../stores/uiStore';
 import { useBoardStore } from '../stores/boardStore';
+import { usePresenceStore } from '../stores/presenceStore';
+import { WebSocketEvent } from 'shared';
 import {
   createStickyNote,
   createRectangle,
@@ -14,10 +17,13 @@ import { OBJECT_DEFAULTS } from 'shared';
 /**
  * Hook for creating objects on the canvas via click or drag-drop.
  *
+ * In Phase 4, also emits `object:create` to the server after local creation.
+ *
  * Returns drag-drop event handlers to attach to the canvas container <div>.
  */
 export function useObjectCreation(
-  fabricRef: React.MutableRefObject<fabric.Canvas | null>
+  fabricRef: React.MutableRefObject<fabric.Canvas | null>,
+  socketRef: React.MutableRefObject<Socket | null>
 ) {
   const addObject = useBoardStore((s) => s.addObject);
 
@@ -45,8 +51,14 @@ export function useObjectCreation(
         canvas.setActiveObject(fabricObj);
         canvas.requestRenderAll();
 
+        const userId = usePresenceStore.getState().localUserId;
+
         // Track in Zustand store
-        addObject(fabricToBoardObject(fabricObj));
+        const boardObj = fabricToBoardObject(fabricObj, userId ?? undefined);
+        addObject(boardObj);
+
+        // Emit to server
+        emitObjectCreate(socketRef.current, boardObj);
 
         // Reset to select tool after placing object
         useUIStore.getState().setActiveTool('select');
@@ -133,6 +145,25 @@ export function useObjectCreation(
 
         document.body.removeChild(textarea);
         canvas.requestRenderAll();
+
+        // Emit text update to server
+        const boardId = useBoardStore.getState().boardId;
+        const socket = socketRef.current;
+        if (boardId && socket?.connected && target.data?.id) {
+          socket.emit(WebSocketEvent.OBJECT_UPDATE, {
+            boardId,
+            objectId: target.data.id,
+            updates: { text: newText },
+            timestamp: Date.now(),
+          });
+        }
+
+        // Update boardStore
+        if (target.data?.id) {
+          useBoardStore.getState().updateObject(target.data.id, {
+            text: newText,
+          } as Partial<import('shared').BoardObject>);
+        }
       };
 
       textarea.addEventListener('blur', finishEditing, { once: true });
@@ -228,7 +259,13 @@ export function useObjectCreation(
         canvas.add(fabricObj);
         canvas.setActiveObject(fabricObj);
         canvas.requestRenderAll();
-        addObject(fabricToBoardObject(fabricObj));
+
+        const userId = usePresenceStore.getState().localUserId;
+        const boardObj = fabricToBoardObject(fabricObj, userId ?? undefined);
+        addObject(boardObj);
+
+        // Emit to server
+        emitObjectCreate(socketRef.current, boardObj);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,4 +295,26 @@ function createFabricObject(
     default:
       return null;
   }
+}
+
+// ============================================================
+// Helper: emit object:create to server
+// ============================================================
+
+function emitObjectCreate(
+  socket: Socket | null,
+  boardObj: import('shared').BoardObject
+): void {
+  const boardId = useBoardStore.getState().boardId;
+  if (!boardId || !socket?.connected) return;
+
+  // Send the full object (including client-generated UUID)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { createdAt, updatedAt, ...objWithoutTimestamps } = boardObj as unknown as Record<string, unknown>;
+
+  socket.emit(WebSocketEvent.OBJECT_CREATE, {
+    boardId,
+    object: objWithoutTimestamps,
+    timestamp: Date.now(),
+  });
 }
