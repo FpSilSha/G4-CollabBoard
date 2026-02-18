@@ -12,6 +12,8 @@ import { registerCursorHandlers } from './handlers/cursorHandler';
 import { registerPresenceHandlers } from './handlers/presenceHandler';
 import { registerObjectHandlers } from './handlers/objectHandler';
 import { checkSocketRateLimit } from './socketRateLimit';
+import { wsMetricsMiddleware, trackedEmit } from './wsMetrics';
+import { metricsService } from '../services/metricsService';
 
 /**
  * Extended Socket type with authenticated user data.
@@ -136,6 +138,16 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     const authSocket = socket as AuthenticatedSocket;
     logger.info(`Socket connected: ${authSocket.data.userId} (${socket.id})`);
 
+    // --- Connection metrics ---
+    metricsService.incrementWsConnection();
+    socket.on('disconnect', () => {
+      metricsService.decrementWsConnection();
+    });
+
+    // --- Per-socket metrics middleware (BEFORE rate limit) ---
+    // Counts all inbound events, including ones that get rate-limited.
+    socket.use(wsMetricsMiddleware);
+
     // --- Per-socket rate limiting middleware ---
     // Intercept all incoming events and check against the rate limit
     // before they reach the registered handlers.
@@ -155,7 +167,7 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     });
 
     // Send authenticated user info back to client
-    socket.emit(WebSocketEvent.AUTH_SUCCESS, {
+    trackedEmit(socket, WebSocketEvent.AUTH_SUCCESS, {
       userId: authSocket.data.userId,
       name: authSocket.data.userName,
       avatar: authSocket.data.avatar,

@@ -10,6 +10,7 @@ import {
 import { presenceService } from '../../services/presenceService';
 import { boardService } from '../../services/boardService';
 import { logger } from '../../utils/logger';
+import { trackedEmit } from '../wsMetrics';
 import type { AuthenticatedSocket } from '../server';
 
 export function registerConnectionHandlers(io: Server, socket: AuthenticatedSocket): void {
@@ -70,7 +71,7 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
         objects: board.objects as BoardStatePayload['objects'],
         users,
       };
-      socket.emit(WebSocketEvent.BOARD_STATE, boardState);
+      trackedEmit(socket, WebSocketEvent.BOARD_STATE, boardState);
 
       // Broadcast user:joined to everyone else in the room
       const joinedPayload: UserJoinedPayload = {
@@ -78,7 +79,7 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
         user: userInfo,
         timestamp: Date.now(),
       };
-      socket.to(boardId).emit(WebSocketEvent.USER_JOINED, joinedPayload);
+      trackedEmit(socket.to(boardId), WebSocketEvent.USER_JOINED, joinedPayload);
 
       logger.info(`User ${userId} joined board ${boardId}`);
     } catch (err: unknown) {
@@ -162,7 +163,7 @@ async function handleLeaveBoard(io: Server, socket: AuthenticatedSocket, boardId
     userId,
     timestamp: Date.now(),
   };
-  io.to(boardId).emit(WebSocketEvent.USER_LEFT, leftPayload);
+  trackedEmit(io.to(boardId), WebSocketEvent.USER_LEFT, leftPayload);
 
   logger.info(`User ${userId} left board ${boardId}`);
 }

@@ -10,6 +10,8 @@ import { apiRateLimit } from './middleware/rateLimit';
 import { userController } from './controllers/userController';
 import { boardController } from './controllers/boardController';
 import { versionController } from './controllers/versionController';
+import { httpMetrics } from './middleware/httpMetrics';
+import { metricsService } from './services/metricsService';
 import prisma from './models/index';
 
 const app = express();
@@ -32,6 +34,9 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 // Explicit body size limit — prevents oversized payloads
 app.use(express.json({ limit: '1mb' }));
 
+// --- HTTP Metrics (before routes so all requests are captured) ---
+app.use(httpMetrics);
+
 // --- Health Check (no auth) ---
 app.get('/health', async (_req, res) => {
   try {
@@ -39,6 +44,16 @@ app.get('/health', async (_req, res) => {
     res.json({ status: 'healthy', database: 'connected' });
   } catch {
     res.status(503).json({ status: 'unhealthy', database: 'disconnected' });
+  }
+});
+
+// --- Metrics Endpoint (no auth — standard for metrics scraping) ---
+app.get('/metrics', async (_req, res) => {
+  try {
+    const snapshot = await metricsService.getAll();
+    res.json(snapshot);
+  } catch {
+    res.status(500).json({ error: 'Failed to retrieve metrics' });
   }
 });
 

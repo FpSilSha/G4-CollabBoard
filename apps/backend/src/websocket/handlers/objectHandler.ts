@@ -11,6 +11,7 @@ import {
 } from 'shared';
 import { boardService } from '../../services/boardService';
 import { logger } from '../../utils/logger';
+import { trackedEmit } from '../wsMetrics';
 import type { AuthenticatedSocket } from '../server';
 
 /**
@@ -75,7 +76,7 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
         timestamp: Date.now(),
       };
 
-      io.to(boardId).emit(WebSocketEvent.OBJECT_CREATED, createdPayload);
+      trackedEmit(io.to(boardId), WebSocketEvent.OBJECT_CREATED, createdPayload);
 
       logger.info(`Object ${object.id} created on board ${boardId} by ${userId}`);
     } catch (err: unknown) {
@@ -145,7 +146,7 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
         timestamp: Date.now(),
       };
 
-      socket.to(boardId).emit(WebSocketEvent.OBJECT_UPDATED, updatedPayload);
+      trackedEmit(socket.to(boardId), WebSocketEvent.OBJECT_UPDATED, updatedPayload);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to update object';
       socket.emit(WebSocketEvent.BOARD_ERROR, {
@@ -195,7 +196,7 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
         timestamp: Date.now(),
       };
 
-      socket.to(boardId).emit(WebSocketEvent.OBJECT_DELETED, deletedPayload);
+      trackedEmit(socket.to(boardId), WebSocketEvent.OBJECT_DELETED, deletedPayload);
 
       logger.info(`Object ${objectId} deleted from board ${boardId} by ${userId}`);
     } catch (err: unknown) {

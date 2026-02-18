@@ -4,6 +4,7 @@ import {
   CursorMovePayloadSchema,
   type CursorMovedPayload,
 } from 'shared';
+import { trackedVolatileEmit } from '../wsMetrics';
 import type { AuthenticatedSocket } from '../server';
 
 export function registerCursorHandlers(io: Server, socket: AuthenticatedSocket): void {
@@ -33,6 +34,6 @@ export function registerCursorHandlers(io: Server, socket: AuthenticatedSocket):
     };
 
     // volatile: OK to drop cursor packets under load
-    socket.volatile.to(boardId).emit(WebSocketEvent.CURSOR_MOVED, movedPayload);
+    trackedVolatileEmit(socket, boardId, WebSocketEvent.CURSOR_MOVED, movedPayload);
   });
 }
