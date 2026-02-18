@@ -4,7 +4,7 @@ import type { Socket } from 'socket.io-client';
 import { useUIStore, Tool } from '../stores/uiStore';
 import { useBoardStore } from '../stores/boardStore';
 import { usePresenceStore } from '../stores/presenceStore';
-import { WebSocketEvent } from 'shared';
+import { WebSocketEvent, THROTTLE_CONFIG } from 'shared';
 import {
   createStickyNote,
   createRectangle,
@@ -13,6 +13,7 @@ import {
   getStickyChildren,
 } from '../utils/fabricHelpers';
 import { OBJECT_DEFAULTS } from 'shared';
+import { throttle } from '../utils/throttle';
 
 /**
  * Hook for creating objects on the canvas via click or drag-drop.
@@ -130,10 +131,36 @@ export function useObjectCreation(
       textarea.focus();
       textarea.select();
 
-      // Hide the group's text child while editing
+      // Hide the group's text child while editing (dimmed ghost shows live text)
       const { text: textChild } = getStickyChildren(target);
       textChild.set('opacity', 0);
       canvas.requestRenderAll();
+
+      // Track which object is being edited (for self-echo prevention)
+      useBoardStore.getState().setEditingObjectId(target.data!.id);
+
+      // --- Live text broadcast (throttled) ---
+      const emitTextUpdate = (text: string) => {
+        const boardId = useBoardStore.getState().boardId;
+        const socket = socketRef.current;
+        if (!boardId || !socket?.connected || !target.data?.id) return;
+        socket.emit(WebSocketEvent.OBJECT_UPDATE, {
+          boardId,
+          objectId: target.data.id,
+          updates: { text },
+          timestamp: Date.now(),
+        });
+      };
+      const throttledTextEmit = throttle(emitTextUpdate, THROTTLE_CONFIG.TEXT_INPUT_MS);
+
+      // Broadcast text on every keystroke (throttled)
+      textarea.addEventListener('input', () => {
+        target.data!.text = textarea.value;
+        textChild.set('text', textarea.value);
+        textChild.set('opacity', 0.3); // dim ghost text behind textarea
+        canvas.requestRenderAll();
+        throttledTextEmit(textarea.value);
+      });
 
       const finishEditing = () => {
         const newText = textarea.value;
@@ -146,17 +173,9 @@ export function useObjectCreation(
         document.body.removeChild(textarea);
         canvas.requestRenderAll();
 
-        // Emit text update to server
-        const boardId = useBoardStore.getState().boardId;
-        const socket = socketRef.current;
-        if (boardId && socket?.connected && target.data?.id) {
-          socket.emit(WebSocketEvent.OBJECT_UPDATE, {
-            boardId,
-            objectId: target.data.id,
-            updates: { text: newText },
-            timestamp: Date.now(),
-          });
-        }
+        // Cancel throttle, emit final state unthrottled (Final State Rule)
+        throttledTextEmit.cancel();
+        emitTextUpdate(newText);
 
         // Update boardStore
         if (target.data?.id) {
@@ -164,11 +183,14 @@ export function useObjectCreation(
             text: newText,
           } as Partial<import('shared').BoardObject>);
         }
+
+        // Clear editing state
+        useBoardStore.getState().setEditingObjectId(null);
       };
 
       textarea.addEventListener('blur', finishEditing, { once: true });
 
-      // Also handle Escape to cancel editing
+      // Also handle Escape to finish editing
       textarea.addEventListener('keydown', (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
           textarea.blur();

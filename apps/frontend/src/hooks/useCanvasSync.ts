@@ -232,6 +232,14 @@ export function useCanvasSync(
       // Detect if this is a drag-in-progress (only x/y fields) and use
       // Fabric.js animate() for smooth interpolation between 100ms updates.
       const u = updates as Record<string, unknown>;
+
+      // If the local user is editing this sticky's text (textarea open),
+      // skip incoming text updates — the textarea is the source of truth.
+      // Other updates (position, color, size) still apply normally.
+      const editingObjectId = useBoardStore.getState().editingObjectId;
+      if (editingObjectId === objectId && u.text !== undefined) {
+        delete u.text;
+      }
       const updateKeys = Object.keys(u).filter(
         (k) => k !== 'updatedAt' && k !== 'lastEditedBy'
       );

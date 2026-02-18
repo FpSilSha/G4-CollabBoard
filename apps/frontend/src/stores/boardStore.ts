@@ -29,6 +29,12 @@ interface BoardState {
   clearObjects: () => void;
   setObjects: (objects: BoardObject[]) => void;
 
+  // --- Text Editing ---
+  // Tracks which object the local user is currently text-editing (textarea open).
+  // Used to prevent incoming WS text updates from overwriting the textarea.
+  editingObjectId: string | null;
+  setEditingObjectId: (id: string | null) => void;
+
   // --- Zoom ---
   zoom: number;
   setZoom: (zoom: number) => void;
@@ -71,6 +77,9 @@ export const useBoardStore = create<BoardState>((set) => ({
       objects.forEach((obj) => map.set(obj.id, obj));
       return { objects: map };
     }),
+
+  editingObjectId: null,
+  setEditingObjectId: (id) => set({ editingObjectId: id }),
 
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),
