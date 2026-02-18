@@ -52,6 +52,11 @@ export function useCanvasSync(
   const throttledCursorRef = useRef<ReturnType<typeof throttle> | null>(null);
   const throttledObjectMoveRef = useRef<ReturnType<typeof throttle> | null>(null);
 
+  // Subscribe to connectionStatus so this effect re-runs when the socket
+  // connects. Without this, the effect captures socketRef.current as null
+  // on page refresh (socket isn't ready yet) and never registers listeners.
+  const connectionStatus = usePresenceStore((s) => s.connectionStatus);
+
   useEffect(() => {
     const canvas = fabricRef.current;
     const socket = socketRef.current;
@@ -389,5 +394,5 @@ export function useCanvasSync(
       throttledObjectMove.cancel();
       clearInterval(staleCursorInterval);
     };
-  }, [socketRef, fabricRef]);
+  }, [socketRef, fabricRef, connectionStatus]);
 }
