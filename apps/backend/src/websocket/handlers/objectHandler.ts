@@ -10,7 +10,6 @@ import {
   type ObjectDeletedPayload,
 } from 'shared';
 import { boardService } from '../../services/boardService';
-import { editTrackingService } from '../../services/editTrackingService';
 import { auditService, AuditAction } from '../../services/auditService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
@@ -146,24 +145,6 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
       // Persist to Redis (LWW — auto-save worker flushes to Postgres every 60s)
       await boardService.updateObjectInRedis(boardId, objectId, sanitizedUpdates);
-
-      // Check if another user is editing this object — warn them about the conflict
-      const activeEditor = await editTrackingService.getActiveEditor(boardId, objectId, userId);
-      if (activeEditor) {
-        // Find the other editor's socket and send them a conflict warning
-        const socketsInRoom = await io.in(boardId).fetchSockets();
-        const editorSocket = socketsInRoom.find((s) => s.data.userId === activeEditor.userId);
-        if (editorSocket) {
-          trackedEmit(editorSocket, WebSocketEvent.CONFLICT_WARNING, {
-            boardId,
-            objectId,
-            conflictingUserId: userId,
-            conflictingUserName: socket.data.userName,
-            message: `${socket.data.userName} also modified this object`,
-            timestamp: Date.now(),
-          });
-        }
-      }
 
       // Broadcast to everyone EXCEPT sender (sender has optimistic local state)
       const updatedPayload: ObjectUpdatedPayload = {

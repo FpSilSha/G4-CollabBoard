@@ -11,7 +11,6 @@ import { registerConnectionHandlers } from './handlers/connectionHandler';
 import { registerCursorHandlers } from './handlers/cursorHandler';
 import { registerPresenceHandlers } from './handlers/presenceHandler';
 import { registerObjectHandlers } from './handlers/objectHandler';
-import { registerEditHandlers } from './handlers/editHandler';
 import { checkSocketRateLimit } from './socketRateLimit';
 import { wsMetricsMiddleware, trackedEmit } from './wsMetrics';
 import { metricsService } from '../services/metricsService';
@@ -200,7 +199,6 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     registerCursorHandlers(io, authSocket);
     registerPresenceHandlers(io, authSocket);
     registerObjectHandlers(io, authSocket);
-    registerEditHandlers(io, authSocket);
   });
 
   logger.info('WebSocket server initialized');

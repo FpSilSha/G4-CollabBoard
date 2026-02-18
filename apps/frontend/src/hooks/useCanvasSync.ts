@@ -11,7 +11,6 @@ import {
   type CursorMovedPayload,
   type UserJoinedPayload,
   type UserLeftPayload,
-  type ConflictWarningPayload,
   type BoardObject,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
@@ -146,69 +145,6 @@ export function useCanvasSync(
     };
 
     canvas.on('object:modified', handleObjectModified);
-
-    // --- Selection events → edit:start / edit:end ---
-    const emitEditStart = (objectId: string) => {
-      const boardId = useBoardStore.getState().boardId;
-      if (!boardId || !socket.connected) return;
-      socket.emit(WebSocketEvent.EDIT_START, {
-        boardId,
-        objectId,
-        timestamp: Date.now(),
-      });
-      useBoardStore.getState().startLocalEdit(objectId);
-    };
-
-    const emitEditEnd = (objectId: string) => {
-      const boardId = useBoardStore.getState().boardId;
-      if (!boardId || !socket.connected) return;
-      socket.emit(WebSocketEvent.EDIT_END, {
-        boardId,
-        objectId,
-        timestamp: Date.now(),
-      });
-      useBoardStore.getState().endLocalEdit(objectId);
-    };
-
-    const handleSelectionCreated = (opt: fabric.IEvent) => {
-      const selected = (opt as fabric.IEvent & { selected?: fabric.Object[] }).selected;
-      if (!selected) return;
-      for (const obj of selected) {
-        if (obj.data?.id) emitEditStart(obj.data.id);
-      }
-    };
-
-    const handleSelectionUpdated = (opt: fabric.IEvent) => {
-      const deselected = (opt as fabric.IEvent & { deselected?: fabric.Object[] }).deselected;
-      const selected = (opt as fabric.IEvent & { selected?: fabric.Object[] }).selected;
-
-      // End edits for deselected objects
-      if (deselected) {
-        for (const obj of deselected) {
-          if (obj.data?.id) emitEditEnd(obj.data.id);
-        }
-      }
-
-      // Start edits for newly selected objects
-      if (selected) {
-        for (const obj of selected) {
-          if (obj.data?.id) emitEditStart(obj.data.id);
-        }
-      }
-    };
-
-    const handleSelectionCleared = () => {
-      // End all active local edits
-      const activeEdits = useBoardStore.getState().activeEdits;
-      for (const objectId of activeEdits) {
-        emitEditEnd(objectId);
-      }
-      useBoardStore.getState().clearLocalEdits();
-    };
-
-    canvas.on('selection:created', handleSelectionCreated);
-    canvas.on('selection:updated', handleSelectionUpdated);
-    canvas.on('selection:cleared', handleSelectionCleared);
 
     // =========================================================
     // INBOUND: socket.on -> update canvas
@@ -425,22 +361,6 @@ export function useCanvasSync(
 
     socket.on(WebSocketEvent.USER_LEFT, handleUserLeft);
 
-    // --- conflict:warning ---
-    // Another user modified an object we're currently editing
-    const handleConflictWarning = (payload: ConflictWarningPayload) => {
-      const activeEdits = useBoardStore.getState().activeEdits;
-      if (activeEdits.has(payload.objectId)) {
-        useBoardStore.getState().setConflictWarning(payload);
-      }
-    };
-
-    socket.on(WebSocketEvent.CONFLICT_WARNING, handleConflictWarning);
-
-    // --- board:sync_response ---
-    // Full state rebuild requested by ConflictModal's "Accept their changes"
-    // Re-uses the same handler as board:state
-    socket.on(WebSocketEvent.BOARD_SYNC_RESPONSE, handleBoardState);
-
     // =========================================================
     // Stale cursor cleanup (per .clauderules: fade out after 5s)
     // =========================================================
@@ -461,9 +381,6 @@ export function useCanvasSync(
       canvas.off('mouse:move', handleMouseMove);
       canvas.off('object:moving', handleObjectMoving);
       canvas.off('object:modified', handleObjectModified);
-      canvas.off('selection:created', handleSelectionCreated);
-      canvas.off('selection:updated', handleSelectionUpdated);
-      canvas.off('selection:cleared', handleSelectionCleared);
 
       socket.off(WebSocketEvent.BOARD_STATE, handleBoardState);
       socket.off(WebSocketEvent.OBJECT_CREATED, handleObjectCreated);
@@ -472,8 +389,6 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.CURSOR_MOVED, handleCursorMoved);
       socket.off(WebSocketEvent.USER_JOINED, handleUserJoined);
       socket.off(WebSocketEvent.USER_LEFT, handleUserLeft);
-      socket.off(WebSocketEvent.CONFLICT_WARNING, handleConflictWarning);
-      socket.off(WebSocketEvent.BOARD_SYNC_RESPONSE, handleBoardState);
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();
