@@ -1,0 +1,243 @@
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useBoardStore } from '../../stores/boardStore';
+import { getEditSession } from '../../stores/editSessionRef';
+import { getStickyChildren, darkenColor } from '../../utils/fabricHelpers';
+import { OBJECT_DEFAULTS } from 'shared';
+import styles from './StickyEditModal.module.css';
+
+/**
+ * Centered modal for editing sticky-note text.
+ *
+ * Driven by `editingObjectId` in boardStore:
+ *   - non-null → modal visible
+ *   - null     → modal hidden
+ *
+ * Three visual layers (ascending z-index):
+ *   1. Dark backdrop overlay (9996)
+ *   2. DOM ghost of the sticky note at its canvas position (9997)
+ *   3. Modal dialog with textarea + buttons (9998)
+ *
+ * Keyboard shortcuts:
+ *   Enter       → Confirm (save text, close)
+ *   Ctrl+Enter  → Insert newline
+ *   Escape      → Cancel  (revert to original, close)
+ */
+export function StickyEditModal() {
+  const editingObjectId = useBoardStore((s) => s.editingObjectId);
+  const originalText = useBoardStore((s) => s.editingOriginalText);
+  const finishEditingFn = useBoardStore((s) => s.finishEditingFn);
+
+  const [text, setText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Compute the sticky note's screen position + color for the DOM ghost
+  const ghostInfo = useMemo(() => {
+    if (!editingObjectId) return null;
+    const session = getEditSession();
+    if (!session) return null;
+
+    const { target, canvas } = session;
+    const zoom = canvas.getZoom();
+    const vpt = canvas.viewportTransform!;
+    const w = OBJECT_DEFAULTS.STICKY_WIDTH;
+    const h = OBJECT_DEFAULTS.STICKY_HEIGHT;
+    const foldSize = 24;
+    const padding = OBJECT_DEFAULTS.STICKY_PADDING;
+
+    // Screen position of the sticky group
+    const screenLeft = (target.left ?? 0) * zoom + vpt[4];
+    const screenTop = (target.top ?? 0) * zoom + vpt[5];
+    const screenWidth = w * zoom;
+    const screenHeight = h * zoom;
+
+    // Get the base color from the sticky
+    const { base } = getStickyChildren(target);
+    const color = (base.fill as string) ?? '#FDFD96';
+    const foldColor = darkenColor(color, 15);
+
+    return {
+      left: screenLeft,
+      top: screenTop,
+      width: screenWidth,
+      height: screenHeight,
+      color,
+      foldColor,
+      foldSize: foldSize * zoom,
+      padding: padding * zoom,
+      fontSize: OBJECT_DEFAULTS.STICKY_FONT_SIZE * zoom,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingObjectId]);
+
+  // Initialise local text state when the modal opens
+  useEffect(() => {
+    if (editingObjectId && originalText !== null) {
+      setText(originalText);
+      // Focus after React has rendered the textarea
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        // Place cursor at end of text
+        const len = originalText.length;
+        textareaRef.current?.setSelectionRange(len, len);
+      });
+    }
+  }, [editingObjectId, originalText]);
+
+  // ── Confirm: save current text ──
+  const handleConfirm = useCallback(() => {
+    finishEditingFn?.(false);
+  }, [finishEditingFn]);
+
+  // ── Cancel: revert to original text ──
+  const handleCancel = useCallback(() => {
+    const session = getEditSession();
+    if (session && originalText !== null) {
+      // Revert the Fabric object so the final-state emit sends original text
+      session.target.data!.text = originalText;
+      session.textChild.set('text', originalText);
+      session.canvas.requestRenderAll();
+    }
+    finishEditingFn?.(true);
+  }, [finishEditingFn, originalText]);
+
+  // ── Live text updates (local canvas + WS broadcast) ──
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newText = e.target.value;
+      setText(newText);
+
+      const session = getEditSession();
+      if (session) {
+        session.target.data!.text = newText;
+        session.textChild.set('text', newText);
+        session.textChild.set('opacity', 0.3); // dim ghost preview
+        session.canvas.requestRenderAll();
+        session.throttledEmit(newText);
+      }
+    },
+    [],
+  );
+
+  // ── Keyboard shortcuts ──
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancel();
+        return;
+      }
+
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        // Plain Enter = Confirm
+        e.preventDefault();
+        handleConfirm();
+        return;
+      }
+
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        // Ctrl+Enter = insert newline
+        e.preventDefault();
+        const textarea = e.currentTarget;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const before = text.substring(0, start);
+        const after = text.substring(end);
+        const newText = before + '\n' + after;
+        setText(newText);
+
+        // Update Fabric canvas + broadcast
+        const session = getEditSession();
+        if (session) {
+          session.target.data!.text = newText;
+          session.textChild.set('text', newText);
+          session.textChild.set('opacity', 0.3);
+          session.canvas.requestRenderAll();
+          session.throttledEmit(newText);
+        }
+
+        // Restore cursor position after the inserted newline
+        requestAnimationFrame(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + 1;
+        });
+      }
+    },
+    [handleConfirm, handleCancel, text],
+  );
+
+  // Don't render when not editing
+  if (!editingObjectId) return null;
+
+  return (
+    <>
+      {/* Layer 1: dark backdrop — clicking it cancels */}
+      <div className={styles.backdrop} onMouseDown={handleCancel} />
+
+      {/* Layer 2: DOM ghost of the sticky note at its canvas position */}
+      {ghostInfo && (
+        <div
+          className={styles.stickyGhost}
+          style={{
+            left: ghostInfo.left,
+            top: ghostInfo.top,
+            width: ghostInfo.width,
+            height: ghostInfo.height,
+            background: ghostInfo.color,
+            borderRadius: 2,
+            border: '1px solid #000',
+          }}
+        >
+          {/* Text inside the ghost — updates live */}
+          <div
+            className={styles.stickyGhostText}
+            style={{
+              left: ghostInfo.padding,
+              top: ghostInfo.padding,
+              width: ghostInfo.width - ghostInfo.padding * 2,
+              height: ghostInfo.height - ghostInfo.padding * 2,
+              fontSize: ghostInfo.fontSize,
+            }}
+          >
+            {text}
+          </div>
+          {/* Fold triangle in bottom-right corner (CSS triangle via border) */}
+          <div
+            style={{
+              position: 'absolute',
+              right: 0,
+              bottom: 0,
+              width: 0,
+              height: 0,
+              borderStyle: 'solid',
+              borderWidth: `0 0 ${ghostInfo.foldSize}px ${ghostInfo.foldSize}px`,
+              borderColor: `transparent transparent ${ghostInfo.foldColor} transparent`,
+            }}
+          />
+        </div>
+      )}
+
+      {/* Layer 3: modal dialog — above the ghost */}
+      <div className={styles.modalLayer}>
+        <div className={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
+          <h3 className={styles.title}>Editing Text</h3>
+          <textarea
+            ref={textareaRef}
+            className={styles.textarea}
+            value={text}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            rows={6}
+            spellCheck
+          />
+          <div className={styles.buttonRow}>
+            <button className={styles.cancelButton} onClick={handleCancel}>
+              Cancel
+            </button>
+            <button className={styles.confirmButton} onClick={handleConfirm}>
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

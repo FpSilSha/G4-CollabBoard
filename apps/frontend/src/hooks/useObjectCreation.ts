@@ -12,8 +12,8 @@ import {
   fabricToBoardObject,
   getStickyChildren,
 } from '../utils/fabricHelpers';
-import { OBJECT_DEFAULTS } from 'shared';
 import { throttle } from '../utils/throttle';
+import { setEditSession } from '../stores/editSessionRef';
 
 /**
  * Hook for creating objects on the canvas via click or drag-drop.
@@ -78,9 +78,9 @@ export function useObjectCreation(
 
   // ========================================
   // Double-click to edit sticky note text
-  // Uses a DOM textarea overlay for proper editing support.
-  // The text is stored in group.data.text and displayed via
-  // the group's child Text object (index 2).
+  // Opens a centered modal (StickyEditModal) instead of a floating
+  // DOM textarea.  The modal is driven by editingObjectId in boardStore.
+  // Live canvas updates + WS broadcasts are bridged via editSessionRef.
   // ========================================
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -91,53 +91,17 @@ export function useObjectCreation(
       if (!target || target.data?.type !== 'sticky') return;
       if (!(target instanceof fabric.Group)) return;
 
-      const zoom = canvas.getZoom();
-      const vpt = canvas.viewportTransform!;
-      const padding = OBJECT_DEFAULTS.STICKY_PADDING;
-      const w = OBJECT_DEFAULTS.STICKY_WIDTH;
-      const h = OBJECT_DEFAULTS.STICKY_HEIGHT;
-
-      // Calculate screen position of the sticky group
-      const groupLeft = (target.left ?? 0) * zoom + vpt[4];
-      const groupTop = (target.top ?? 0) * zoom + vpt[5];
-      const groupWidth = w * zoom;
-      const groupHeight = h * zoom;
-
-      // Create DOM textarea overlay
-      const textarea = document.createElement('textarea');
-      textarea.value = target.data!.text ?? '';
-      textarea.style.cssText = `
-        position: fixed;
-        left: ${groupLeft + padding * zoom}px;
-        top: ${groupTop + padding * zoom}px;
-        width: ${groupWidth - padding * 2 * zoom}px;
-        height: ${groupHeight - padding * 2 * zoom}px;
-        font-size: ${OBJECT_DEFAULTS.STICKY_FONT_SIZE * zoom}px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        border: none;
-        outline: none;
-        resize: none;
-        background: transparent;
-        color: #000000;
-        overflow-y: auto;
-        padding: 0;
-        margin: 0;
-        line-height: 1.4;
-        z-index: 1000;
-        box-sizing: border-box;
-      `;
-
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-
-      // Hide the group's text child while editing (dimmed ghost shows live text)
+      // Dim the group's text child (visible through backdrop as ghost preview)
       const { text: textChild } = getStickyChildren(target);
-      textChild.set('opacity', 0);
+      textChild.set('opacity', 0.3);
       canvas.requestRenderAll();
+
+      // Snapshot original text for Cancel revert
+      const originalText = target.data!.text ?? '';
 
       // Track which object is being edited (for self-echo prevention)
       useBoardStore.getState().setEditingObjectId(target.data!.id);
+      useBoardStore.getState().setEditingOriginalText(originalText);
 
       // Notify server: acquire edit lock (advisory — for disconnect grace period)
       const editBoardId = useBoardStore.getState().boardId;
@@ -163,39 +127,41 @@ export function useObjectCreation(
       };
       const throttledTextEmit = throttle(emitTextUpdate, THROTTLE_CONFIG.TEXT_INPUT_MS);
 
-      // Broadcast text on every keystroke (throttled)
-      textarea.addEventListener('input', () => {
-        target.data!.text = textarea.value;
-        textChild.set('text', textarea.value);
-        textChild.set('opacity', 0.3); // dim ghost text behind textarea
-        canvas.requestRenderAll();
-        throttledTextEmit(textarea.value);
+      // Bridge Fabric objects + emitters to the modal via editSessionRef
+      setEditSession({
+        target,
+        textChild: textChild as unknown as fabric.Text,
+        canvas,
+        throttledEmit: throttledTextEmit,
+        emitDirect: emitTextUpdate,
       });
 
-      const finishEditing = () => {
-        const newText = textarea.value;
-        target.data!.text = newText;
+      // Define finishEditing — callable from the modal via boardStore
+      const finishEditing = (cancelled: boolean) => {
+        const store = useBoardStore.getState();
+        const finalText = cancelled
+          ? (store.editingOriginalText ?? '')
+          : (target.data!.text ?? '');
 
-        // Update the group's text child
-        textChild.set('text', newText);
+        // Apply final text to Fabric object
+        target.data!.text = finalText;
+        textChild.set('text', finalText);
         textChild.set('opacity', 1);
-
-        document.body.removeChild(textarea);
         canvas.requestRenderAll();
 
         // Cancel throttle, emit final state unthrottled (Final State Rule)
         throttledTextEmit.cancel();
-        emitTextUpdate(newText);
+        emitTextUpdate(finalText);
 
         // Update boardStore
         if (target.data?.id) {
-          useBoardStore.getState().updateObject(target.data.id, {
-            text: newText,
+          store.updateObject(target.data.id, {
+            text: finalText,
           } as Partial<import('shared').BoardObject>);
         }
 
         // Notify server: release edit lock
-        const endBoardId = useBoardStore.getState().boardId;
+        const endBoardId = store.boardId;
         if (endBoardId && socketRef.current?.connected && target.data?.id) {
           socketRef.current.emit(WebSocketEvent.EDIT_END, {
             boardId: endBoardId,
@@ -204,18 +170,15 @@ export function useObjectCreation(
           });
         }
 
-        // Clear editing state
-        useBoardStore.getState().setEditingObjectId(null);
+        // Clear all editing state
+        store.setEditingObjectId(null);
+        store.setEditingOriginalText(null);
+        store.setFinishEditingFn(null);
+        setEditSession(null);
       };
 
-      textarea.addEventListener('blur', finishEditing, { once: true });
-
-      // Also handle Escape to finish editing
-      textarea.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          textarea.blur();
-        }
-      });
+      // Store finishEditing so the modal component can call it
+      useBoardStore.getState().setFinishEditingFn(finishEditing);
     };
 
     canvas.on('mouse:dblclick', handleDblClick);
