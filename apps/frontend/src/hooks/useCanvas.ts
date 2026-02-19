@@ -56,11 +56,15 @@ export function useCanvas(
     // --- Zoom handler (mouse wheel) ---
     setupZoomHandler(canvas, setZoom);
 
+    // --- Z-ordering: bring clicked object to front ---
+    setupZOrderHandler(canvas);
+
     // --- Resize observer ---
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         canvas.setDimensions({ width, height });
+        canvas.calcOffset(); // Refresh cached bounding rect for accurate pointer events
         canvas.requestRenderAll();
       }
     });
@@ -210,7 +214,9 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
     vpt[5] += evt.clientY - lastPosY;
     lastPosX = evt.clientX;
     lastPosY = evt.clientY;
-    canvas.requestRenderAll();
+    // setViewportTransform updates the transform AND refreshes the cached
+    // canvas offset (via calcOffset), keeping pointer hit-testing accurate.
+    canvas.setViewportTransform(vpt);
   });
 
   canvas.on('mouse:up', () => {
@@ -220,6 +226,7 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
       const upperCanvas = canvas.getElement().parentElement?.querySelector('.upper-canvas') as HTMLCanvasElement | null;
       if (upperCanvas) upperCanvas.style.cursor = 'default';
       canvas.selection = true;
+      canvas.calcOffset(); // Ensure offset cache is fresh after pan ends
       canvas.requestRenderAll();
     }
   });
@@ -227,6 +234,31 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
   return () => {
     // No document listeners to clean up
   };
+}
+
+// ============================================================
+// Z-Order Handler (Bring clicked object to front)
+// ============================================================
+
+/**
+ * When a user clicks on (selects) an object, bring it to the front
+ * of the canvas so it renders above all other objects.
+ *
+ * This is a visual-only change — z-order is not persisted or synced.
+ * Objects are re-added in server order on board reload, but during
+ * a session the last-touched object always appears on top.
+ */
+function setupZOrderHandler(canvas: fabric.Canvas): void {
+  canvas.on('mouse:down', (opt: fabric.IEvent<MouseEvent>) => {
+    if (!opt.target) return;
+
+    // Only reorder when using the select tool
+    const activeTool = useUIStore.getState().activeTool;
+    if (activeTool !== 'select') return;
+
+    canvas.bringToFront(opt.target);
+    canvas.requestRenderAll();
+  });
 }
 
 // ============================================================
