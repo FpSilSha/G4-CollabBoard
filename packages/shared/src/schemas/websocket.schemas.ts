@@ -85,3 +85,14 @@ export const ObjectDeletePayloadSchema = z.object({
   objectId: z.string().min(1),
   timestamp: z.number().int().positive(),
 });
+
+// objects:batch_update — lightweight position-only batch for multi-select drag
+export const ObjectsBatchMovePayloadSchema = z.object({
+  boardId: z.string().uuid(),
+  moves: z.array(z.object({
+    objectId: z.string().min(1),
+    x: coordinate,
+    y: coordinate,
+  })).min(1).max(50), // Reasonable cap
+  timestamp: z.number().int().positive(),
+});

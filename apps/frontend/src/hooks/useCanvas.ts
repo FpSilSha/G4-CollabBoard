@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
-import { CANVAS_CONFIG, UI_COLORS } from 'shared';
+import { CANVAS_CONFIG, UI_COLORS, WebSocketEvent } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { useUIStore } from '../stores/uiStore';
+import type { Socket } from 'socket.io-client';
 
 /**
  * Core hook: initializes Fabric.js canvas, pan/zoom, dot grid, selection styling.
@@ -15,7 +16,8 @@ import { useUIStore } from '../stores/uiStore';
  *   const fabricRef = useCanvas(containerRef);
  */
 export function useCanvas(
-  containerRef: React.RefObject<HTMLDivElement | null>
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  socketRef?: React.MutableRefObject<Socket | null>
 ): React.MutableRefObject<fabric.Canvas | null> {
   const fabricRef = useRef<fabric.Canvas | null>(null);
   const setCanvas = useBoardStore((s) => s.setCanvas);
@@ -59,6 +61,9 @@ export function useCanvas(
     // --- Z-ordering: bring clicked object to front ---
     setupZOrderHandler(canvas);
 
+    // --- Trash zone: drag objects to sidebar trash to delete ---
+    const cleanupTrash = setupTrashZone(canvas, socketRef ?? null);
+
     // --- Resize observer ---
     // Debounced so sidebar collapse/expand CSS transitions (250ms) don't
     // cause rapid re-renders that flash objects. Only the final size matters.
@@ -82,6 +87,7 @@ export function useCanvas(
     // --- Cleanup ---
     return () => {
       cleanupPan();
+      cleanupTrash();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       canvas.dispose();
@@ -205,6 +211,9 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
     const activeTool = useUIStore.getState().activeTool;
     if (activeTool !== 'select') return;
 
+    // Shift+click on empty canvas → rubber band selection, don't pan
+    if (opt.e.shiftKey) return;
+
     isDragging = true;
     canvas.defaultCursor = 'grabbing';
     // Also set the upper canvas cursor directly for immediate feedback
@@ -303,5 +312,135 @@ function setupZoomHandler(
 
     setZoom(zoom);
   });
+}
+
+// ============================================================
+// Trash Zone (Drag-to-Delete via Sidebar Trash Icon)
+// ============================================================
+
+/**
+ * Detects when Fabric.js objects are dragged over the sidebar trash zone
+ * and deletes them on drop.
+ *
+ * Since Fabric.js objects use canvas events (not HTML5 drag-and-drop),
+ * we detect the trash zone by comparing the mouse pointer's screen position
+ * against the trash zone DOM element's bounding rect during object:moving.
+ *
+ * On object:modified (mouse up), if pointer is over the trash zone, delete
+ * the object(s) and emit OBJECT_DELETE to the server.
+ *
+ * Works for both single objects and ActiveSelection groups.
+ */
+function setupTrashZone(
+  canvas: fabric.Canvas,
+  socketRef: React.MutableRefObject<Socket | null> | null
+): () => void {
+  let isOverTrash = false;
+
+  function getTrashElement(): HTMLElement | null {
+    return document.querySelector('[data-trash-zone="true"]');
+  }
+
+  function isPointerOverTrash(clientX: number, clientY: number): boolean {
+    const trashEl = getTrashElement();
+    if (!trashEl) return false;
+    const rect = trashEl.getBoundingClientRect();
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    );
+  }
+
+  function setTrashHighlight(highlight: boolean): void {
+    const trashEl = getTrashElement();
+    if (!trashEl) return;
+    if (highlight) {
+      trashEl.classList.add('drag-over');
+    } else {
+      trashEl.classList.remove('drag-over');
+    }
+  }
+
+  /**
+   * Delete a single fabric object: remove from canvas, store, and emit to server.
+   */
+  function deleteObject(obj: fabric.Object): void {
+    // Skip pinned objects
+    if (obj.data?.pinned) return;
+
+    const objectId = obj.data?.id;
+    canvas.remove(obj);
+
+    if (objectId) {
+      useBoardStore.getState().removeObject(objectId);
+
+      const boardId = useBoardStore.getState().boardId;
+      const socket = socketRef?.current;
+      if (boardId && socket?.connected) {
+        socket.emit(WebSocketEvent.OBJECT_DELETE, {
+          boardId,
+          objectId,
+          timestamp: Date.now(),
+        });
+      }
+    }
+  }
+
+  // Track pointer position during object movement
+  const onObjectMoving = (opt: fabric.IEvent<Event>) => {
+    const evt = opt.e as MouseEvent;
+    const over = isPointerOverTrash(evt.clientX, evt.clientY);
+
+    if (over !== isOverTrash) {
+      isOverTrash = over;
+      setTrashHighlight(over);
+    }
+  };
+
+  // On mouse up after object move: if over trash, delete the object(s)
+  const onObjectModified = (opt: fabric.IEvent<Event>) => {
+    if (!isOverTrash) return;
+
+    // Reset trash state
+    isOverTrash = false;
+    setTrashHighlight(false);
+
+    const target = opt.target;
+    if (!target) return;
+
+    if (target.type === 'activeSelection') {
+      // Multi-select: delete all objects in the group
+      const objects = (target as fabric.ActiveSelection).getObjects().slice();
+      canvas.discardActiveObject();
+      for (const obj of objects) {
+        deleteObject(obj);
+      }
+    } else {
+      // Single object deletion
+      deleteObject(target);
+    }
+
+    canvas.requestRenderAll();
+  };
+
+  // Also reset highlight if drag leaves the trash zone area
+  const onMouseUp = () => {
+    if (isOverTrash) {
+      isOverTrash = false;
+      setTrashHighlight(false);
+    }
+  };
+
+  canvas.on('object:moving', onObjectMoving);
+  canvas.on('object:modified', onObjectModified);
+  canvas.on('mouse:up', onMouseUp);
+
+  return () => {
+    canvas.off('object:moving', onObjectMoving);
+    canvas.off('object:modified', onObjectModified);
+    canvas.off('mouse:up', onMouseUp);
+  };
 }
 

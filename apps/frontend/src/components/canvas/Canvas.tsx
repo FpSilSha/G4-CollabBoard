@@ -19,7 +19,7 @@ interface CanvasProps {
  */
 export function Canvas({ socketRef }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fabricRef = useCanvas(containerRef);
+  const fabricRef = useCanvas(containerRef, socketRef);
   const { handleDrop, handleDragOver } = useObjectCreation(fabricRef, socketRef);
 
   // Bridge Fabric.js events <-> WebSocket events

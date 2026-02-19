@@ -129,3 +129,35 @@
 .draggableItem:active {
   cursor: grabbing;
 }
+
+/* ============================
+   Trash Zone (drag-to-delete)
+   Pushed to bottom of sidebar via margin-top: auto.
+   Highlights red when an object is dragged over it.
+   ============================ */
+
+.trashZone {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  align-self: center;
+  margin-bottom: 12px;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: var(--border-radius);
+  color: rgba(255, 255, 255, 0.4);
+  transition:
+    border-color 200ms ease,
+    background 200ms ease,
+    color 200ms ease,
+    transform 200ms ease;
+}
+
+.trashZone:global(.drag-over) {
+  border-color: #F44336;
+  background: rgba(244, 67, 54, 0.15);
+  color: #F44336;
+  transform: scale(1.15);
+}

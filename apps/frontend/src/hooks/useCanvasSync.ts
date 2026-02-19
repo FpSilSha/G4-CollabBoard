@@ -12,6 +12,7 @@ import {
   type UserJoinedPayload,
   type UserLeftPayload,
   type EditWarningPayload,
+  type ObjectsBatchMovedPayload,
   type BoardObject,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
@@ -104,45 +105,122 @@ export function useCanvasSync(
     const throttledObjectMove = throttle(emitObjectMove, THROTTLE_CONFIG.OBJECT_MOVING_MS);
     throttledObjectMoveRef.current = throttledObjectMove;
 
+    // --- Batch move for multi-select drag (one message for all objects) ---
+    const emitBatchMove = (moves: Array<{ objectId: string; x: number; y: number }>) => {
+      const boardId = useBoardStore.getState().boardId;
+      if (!boardId || !socket.connected) return;
+      socket.emit(WebSocketEvent.OBJECTS_BATCH_UPDATE, {
+        boardId,
+        moves,
+        timestamp: Date.now(),
+      });
+    };
+
+    const throttledBatchMove = throttle(emitBatchMove, THROTTLE_CONFIG.OBJECT_MOVING_MS);
+
+    /**
+     * Get the absolute top-left position of a child inside an ActiveSelection.
+     *
+     * ActiveSelection uses originX/Y: 'center', so group.left/top is the
+     * center of the bounding box and child.left/top are offsets from that
+     * center. Using calcTransformMatrix() gives us the absolute CENTER of
+     * the child at [4]/[5], then we subtract half dimensions to get top-left
+     * (which is what left/top mean for ungrouped objects with originX: 'left').
+     */
+    function getChildAbsolutePosition(child: fabric.Object): { x: number; y: number } {
+      const m = child.calcTransformMatrix();
+      return {
+        x: m[4] - (child.width! * (child.scaleX ?? 1)) / 2,
+        y: m[5] - (child.height! * (child.scaleY ?? 1)) / 2,
+      };
+    }
+
     const handleObjectMoving = (opt: fabric.IEvent) => {
       const target = opt.target;
-      if (!target?.data?.id) return;
-      throttledObjectMove(target.data.id, target.left ?? 0, target.top ?? 0);
+      if (!target) return;
+
+      if (target.type === 'activeSelection') {
+        // Multi-select: collect all child positions into a single batch emit.
+        const moves: Array<{ objectId: string; x: number; y: number }> = [];
+
+        for (const child of (target as fabric.ActiveSelection).getObjects()) {
+          if (!child.data?.id) continue;
+          const pos = getChildAbsolutePosition(child);
+          moves.push({ objectId: child.data.id, x: pos.x, y: pos.y });
+        }
+
+        if (moves.length > 0) {
+          throttledBatchMove(moves);
+        }
+      } else {
+        if (!target.data?.id) return;
+        throttledObjectMove(target.data.id, target.left ?? 0, target.top ?? 0);
+      }
     };
 
     canvas.on('object:moving', handleObjectMoving);
 
     // --- Object modified (mouse:up / end of interaction) ---
     // Per .clauderules: UNTHROTTLED — cancel throttle, emit immediately (Final State Rule)
-    const handleObjectModified = (opt: fabric.IEvent) => {
-      const target = opt.target;
-      if (!target?.data?.id) return;
-
-      // Cancel any pending throttled move emission
-      throttledObjectMove.cancel();
-
+    //
+    // For ActiveSelection (multi-select), we iterate each child and emit
+    // individual object:update events. After a group move, Fabric.js updates
+    // each child's absolute position when the selection is discarded, but
+    // during the event the children still have group-relative coords. We
+    // compute absolute positions using the group transform.
+    const emitFinalState = (fabricObj: fabric.Object) => {
       const boardId = useBoardStore.getState().boardId;
       if (!boardId || !socket.connected) return;
+      if (!fabricObj.data?.id) return;
 
       const localUserId = usePresenceStore.getState().localUserId;
-
-      // Build full updates from the fabric object's current state
-      const boardObj = fabricToBoardObject(target, localUserId ?? undefined);
+      const boardObj = fabricToBoardObject(fabricObj, localUserId ?? undefined);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, createdBy, createdAt, type, ...updates } = boardObj as unknown as Record<string, unknown>;
 
       socket.emit(WebSocketEvent.OBJECT_UPDATE, {
         boardId,
-        objectId: target.data.id,
+        objectId: fabricObj.data.id,
         updates,
         timestamp: Date.now(),
       });
 
-      // Also update boardStore
       useBoardStore.getState().updateObject(
-        target.data.id,
+        fabricObj.data.id,
         updates as Partial<BoardObject>
       );
+    };
+
+    const handleObjectModified = (opt: fabric.IEvent) => {
+      const target = opt.target;
+      if (!target) return;
+
+      // Cancel any pending throttled move emissions (single + batch)
+      throttledObjectMove.cancel();
+      throttledBatchMove.cancel();
+
+      if (target.type === 'activeSelection') {
+        // Multi-select: emit final state for each child object.
+        // Use calcTransformMatrix() to get absolute positions, then
+        // temporarily set left/top so fabricToBoardObject serializes
+        // the correct absolute coords.
+        for (const child of (target as fabric.ActiveSelection).getObjects()) {
+          if (!child.data?.id) continue;
+          const pos = getChildAbsolutePosition(child);
+          const origLeft = child.left ?? 0;
+          const origTop = child.top ?? 0;
+          child.set('left', pos.x);
+          child.set('top', pos.y);
+
+          emitFinalState(child);
+
+          // Restore group-relative coords so Fabric.js selection isn't broken
+          child.set('left', origLeft);
+          child.set('top', origTop);
+        }
+      } else {
+        emitFinalState(target);
+      }
     };
 
     canvas.on('object:modified', handleObjectModified);
@@ -336,6 +414,31 @@ export function useCanvasSync(
 
     socket.on(WebSocketEvent.OBJECT_UPDATED, handleObjectUpdated);
 
+    // --- objects:batch_update (multi-select drag from another user) ---
+    const handleBatchMoved = (payload: ObjectsBatchMovedPayload) => {
+      const currentLocalUserId = usePresenceStore.getState().localUserId;
+      if (payload.userId === currentLocalUserId) return;
+
+      for (const move of payload.moves) {
+        const fabricObj = findFabricObjectById(canvas, move.objectId);
+        if (!fabricObj) continue;
+
+        // Smooth animate for drag-in-progress position updates
+        fabricObj.animate('left', move.x, {
+          duration: 100,
+          onChange: () => canvas.requestRenderAll(),
+          easing: fabric.util.ease.easeOutQuad,
+        });
+        fabricObj.animate('top', move.y, {
+          duration: 100,
+          onChange: () => canvas.requestRenderAll(),
+          easing: fabric.util.ease.easeOutQuad,
+        });
+      }
+    };
+
+    socket.on(WebSocketEvent.OBJECTS_BATCH_UPDATE, handleBatchMoved);
+
     // --- object:deleted ---
     const handleObjectDeleted = (payload: ObjectDeletedPayload) => {
       const { objectId, userId } = payload;
@@ -475,6 +578,7 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.BOARD_STATE, handleBoardState);
       socket.off(WebSocketEvent.OBJECT_CREATED, handleObjectCreated);
       socket.off(WebSocketEvent.OBJECT_UPDATED, handleObjectUpdated);
+      socket.off(WebSocketEvent.OBJECTS_BATCH_UPDATE, handleBatchMoved);
       socket.off(WebSocketEvent.OBJECT_DELETED, handleObjectDeleted);
       socket.off(WebSocketEvent.CURSOR_MOVED, handleCursorMoved);
       socket.off(WebSocketEvent.USER_JOINED, handleUserJoined);
@@ -486,6 +590,7 @@ export function useCanvasSync(
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();
+      throttledBatchMove.cancel();
       clearInterval(staleCursorInterval);
     };
   }, [socketRef, fabricRef, connectionStatus]);

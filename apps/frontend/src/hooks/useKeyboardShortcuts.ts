@@ -104,38 +104,72 @@ export function useKeyboardShortcuts(
 }
 
 /**
- * Delete the currently selected object from both the Fabric.js canvas
- * and the Zustand boardStore. In Phase 4, also emits object:delete
- * to the server.
+ * Delete the currently selected object(s) from both the Fabric.js canvas
+ * and the Zustand boardStore. Also emits object:delete to the server.
  *
- * Sticky notes are now self-contained Groups — deleting the group
+ * Exported so that other features (e.g. drag-to-trash) can reuse the
+ * same deletion logic.
+ *
+ * Supports:
+ * - Single object deletion
+ * - Multi-select (ActiveSelection) — iterates all grouped objects
+ * - Pinned object guard — objects with data.pinned === true are skipped
+ *
+ * Sticky notes are self-contained Groups — deleting the group
  * automatically removes all its children (base, fold, text).
  */
-function handleDeleteSelected(socket: Socket | null): void {
+export function handleDeleteSelected(socket: Socket | null): void {
   const canvas = useBoardStore.getState().canvas;
   if (!canvas) return;
 
   const activeObj = canvas.getActiveObject();
   if (!activeObj) return;
 
-  const objectId = activeObj.data?.id;
+  const boardId = useBoardStore.getState().boardId;
 
-  // Remove the object from canvas
-  canvas.remove(activeObj);
-  canvas.requestRenderAll();
+  if (activeObj.type === 'activeSelection') {
+    // Multi-select: collect objects first, then discard the selection group
+    const objects = (activeObj as fabric.ActiveSelection).getObjects().slice();
+    canvas.discardActiveObject();
 
-  // Remove from Zustand store
-  if (objectId) {
-    useBoardStore.getState().removeObject(objectId);
+    for (const obj of objects) {
+      // Skip pinned objects (forward-looking for pin feature)
+      if (obj.data?.pinned) continue;
 
-    // Emit to server
-    const boardId = useBoardStore.getState().boardId;
-    if (boardId && socket?.connected) {
-      socket.emit(WebSocketEvent.OBJECT_DELETE, {
-        boardId,
-        objectId,
-        timestamp: Date.now(),
-      });
+      const objectId = obj.data?.id;
+      canvas.remove(obj);
+
+      if (objectId) {
+        useBoardStore.getState().removeObject(objectId);
+
+        if (boardId && socket?.connected) {
+          socket.emit(WebSocketEvent.OBJECT_DELETE, {
+            boardId,
+            objectId,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+  } else {
+    // Single object deletion
+    if (activeObj.data?.pinned) return; // Skip pinned objects
+
+    const objectId = activeObj.data?.id;
+    canvas.remove(activeObj);
+
+    if (objectId) {
+      useBoardStore.getState().removeObject(objectId);
+
+      if (boardId && socket?.connected) {
+        socket.emit(WebSocketEvent.OBJECT_DELETE, {
+          boardId,
+          objectId,
+          timestamp: Date.now(),
+        });
+      }
     }
   }
+
+  canvas.requestRenderAll();
 }

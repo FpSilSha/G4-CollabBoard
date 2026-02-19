@@ -165,6 +165,28 @@ export interface ConflictWarningPayload {
   timestamp: number;
 }
 
+/**
+ * Batch position-only update for multi-select drag.
+ * Sent as a single message containing all moved objects' positions,
+ * avoiding N individual object:update emissions per throttle tick.
+ */
+export interface ObjectsBatchMovePayload {
+  boardId: string;
+  moves: Array<{ objectId: string; x: number; y: number }>;
+  timestamp: number;
+}
+
+/**
+ * Server → clients broadcast for batch move (mirrors the inbound shape
+ * but includes the userId of who moved them).
+ */
+export interface ObjectsBatchMovedPayload {
+  boardId: string;
+  moves: Array<{ objectId: string; x: number; y: number }>;
+  userId: string;
+  timestamp: number;
+}
+
 export interface AuthSuccessPayload {
   userId: string;
   name: string;
