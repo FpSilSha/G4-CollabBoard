@@ -3,108 +3,84 @@ import { EDIT_LOCK_CONFIG } from 'shared';
 import { logger } from '../utils/logger';
 
 /**
- * Lightweight Redis-backed edit lock for sticky note text editing.
+ * Multi-user Redis-backed edit lock for sticky note text editing.
  *
- * Key format: `editlock:{boardId}:{objectId}`
- * Value: userId of the lock holder
+ * Key format: `editlock:{boardId}:{objectId}:{userId}`
+ * Value: userName (for display in warning banners)
  * TTL: EDIT_LOCK_CONFIG.LOCK_TTL_SECONDS (20s)
  *
+ * Multiple users CAN hold locks on the same object simultaneously.
+ * The lock is purely advisory — LWW determines whose text wins.
+ * The lock serves two purposes:
+ *   1. Disconnect grace period (each user gets their own TTL)
+ *   2. Concurrent edit warnings (show who else is editing)
+ *
  * Lifecycle:
- *   - Lock acquired when user opens textarea (edit:start)
- *   - Lock released when user closes textarea (edit:end / blur)
+ *   - Lock acquired when user opens edit modal (edit:start)
+ *   - Lock released when user closes modal (edit:end / confirm / cancel)
  *   - On disconnect while editing, lock persists for TTL (grace period)
  *   - On reconnect within grace period, user reclaims the lock
- *   - After TTL expires, lock auto-releases so others can edit
- *
- * This is NOT a strict mutex — other users' updates are still accepted
- * (LWW). The lock is advisory: it tells other users' clients "someone
- * is editing this sticky" so they can show a visual indicator.
+ *   - After TTL expires, lock auto-releases
  */
 
 const { LOCK_TTL_SECONDS } = EDIT_LOCK_CONFIG;
 
-function lockKey(boardId: string, objectId: string): string {
-  return `editlock:${boardId}:${objectId}`;
+function userLockKey(boardId: string, objectId: string, userId: string): string {
+  return `editlock:${boardId}:${objectId}:${userId}`;
+}
+
+function objectLockPattern(boardId: string, objectId: string): string {
+  return `editlock:${boardId}:${objectId}:*`;
+}
+
+function boardLockPattern(boardId: string): string {
+  return `editlock:${boardId}:*`;
 }
 
 export const editLockService = {
   /**
-   * Acquire an edit lock on an object.
-   * Only succeeds if no lock exists or the same user already holds it.
+   * Acquire an edit lock on an object for a specific user.
+   * Always succeeds — multiple users can hold locks simultaneously.
+   * Returns the list of OTHER users currently editing this object.
    */
   async acquireLock(
     boardId: string,
     objectId: string,
-    userId: string
-  ): Promise<{ acquired: boolean; heldBy?: string }> {
-    const key = lockKey(boardId, objectId);
-    const existing = await redis.get(key);
+    userId: string,
+    userName: string
+  ): Promise<{ otherEditors: Array<{ userId: string; userName: string }> }> {
+    const key = userLockKey(boardId, objectId, userId);
 
-    if (existing && existing !== userId) {
-      return { acquired: false, heldBy: existing };
-    }
+    // Set this user's lock with TTL
+    await redis.setex(key, LOCK_TTL_SECONDS, userName);
 
-    // Set lock with TTL — if user disconnects, lock auto-expires
-    await redis.setex(key, LOCK_TTL_SECONDS, userId);
-    return { acquired: true };
+    // Find other users editing this object
+    const otherEditors = await this.getObjectEditors(boardId, objectId, userId);
+
+    return { otherEditors };
   },
 
   /**
-   * Release an edit lock. Only the lock holder can release it.
+   * Release an edit lock for a specific user.
    */
   async releaseLock(
     boardId: string,
     objectId: string,
     userId: string
   ): Promise<void> {
-    const key = lockKey(boardId, objectId);
-    const existing = await redis.get(key);
-
-    if (existing === userId) {
-      await redis.del(key);
-    }
+    const key = userLockKey(boardId, objectId, userId);
+    await redis.del(key);
   },
 
   /**
-   * Check who holds the edit lock on an object (if anyone).
+   * Get all users currently editing a specific object (excluding one user).
    */
-  async getLockHolder(
-    boardId: string,
-    objectId: string
-  ): Promise<string | null> {
-    const key = lockKey(boardId, objectId);
-    return redis.get(key);
-  },
-
-  /**
-   * Refresh the TTL on a lock (called on reconnect to reclaim).
-   * Only refreshes if the same user holds the lock.
-   */
-  async refreshLock(
+  async getObjectEditors(
     boardId: string,
     objectId: string,
-    userId: string
-  ): Promise<boolean> {
-    const key = lockKey(boardId, objectId);
-    const existing = await redis.get(key);
-
-    if (existing === userId) {
-      await redis.setex(key, LOCK_TTL_SECONDS, userId);
-      return true;
-    }
-
-    return false;
-  },
-
-  /**
-   * Get all objects locked by a specific user on a board.
-   * Used during disconnect to know which objects have active edit locks.
-   */
-  async getUserLocks(
-    boardId: string,
-    userId: string
-  ): Promise<string[]> {
-    const pattern = `editlock:${boardId}:*`;
+    excludeUserId?: string
+  ): Promise<Array<{ userId: string; userName: string }>> {
+    const pattern = objectLockPattern(boardId, objectId);
     const keys = await redis.keys(pattern);
 
     if (keys.length === 0) return [];
@@ -115,16 +91,100 @@ export const editLockService = {
 
     if (!results) return [];
 
-    const lockedObjectIds: string[] = [];
+    const editors: Array<{ userId: string; userName: string }> = [];
+    const prefix = `editlock:${boardId}:${objectId}:`;
+
     for (let i = 0; i < keys.length; i++) {
-      const [err, value] = results[i];
-      if (!err && value === userId) {
-        // Extract objectId from key: editlock:{boardId}:{objectId}
-        const objectId = keys[i].substring(`editlock:${boardId}:`.length);
+      const [err, userName] = results[i];
+      if (err || !userName) continue;
+
+      const editorUserId = keys[i].substring(prefix.length);
+      if (excludeUserId && editorUserId === excludeUserId) continue;
+
+      editors.push({ userId: editorUserId, userName: userName as string });
+    }
+
+    return editors;
+  },
+
+  /**
+   * Refresh the TTL on a user's lock (called on reconnect to reclaim).
+   */
+  async refreshLock(
+    boardId: string,
+    objectId: string,
+    userId: string
+  ): Promise<boolean> {
+    const key = userLockKey(boardId, objectId, userId);
+    const existing = await redis.get(key);
+
+    if (existing !== null) {
+      await redis.setex(key, LOCK_TTL_SECONDS, existing);
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Get all objects locked by a specific user on a board.
+   * Used during disconnect/reconnect to know which objects have active edit locks.
+   */
+  async getUserLocks(
+    boardId: string,
+    userId: string
+  ): Promise<string[]> {
+    const pattern = boardLockPattern(boardId);
+    const keys = await redis.keys(pattern);
+
+    if (keys.length === 0) return [];
+
+    // Filter keys that end with this user's ID
+    // Key format: editlock:{boardId}:{objectId}:{userId}
+    const suffix = `:${userId}`;
+    const lockedObjectIds: string[] = [];
+
+    for (const key of keys) {
+      if (key.endsWith(suffix)) {
+        // Extract objectId: remove prefix and suffix
+        const withoutPrefix = key.substring(`editlock:${boardId}:`.length);
+        const objectId = withoutPrefix.substring(0, withoutPrefix.length - suffix.length);
         lockedObjectIds.push(objectId);
       }
     }
 
     return lockedObjectIds;
+  },
+
+  /**
+   * Get all active edit locks for the metrics endpoint.
+   * Returns a flat list of { objectId, userId, userName } entries.
+   */
+  async getAllLocks(): Promise<Array<{ objectId: string; userId: string; userName: string }>> {
+    const keys = await redis.keys('editlock:*');
+    if (keys.length === 0) return [];
+
+    const pipeline = redis.pipeline();
+    keys.forEach((key) => pipeline.get(key));
+    const results = await pipeline.exec();
+
+    if (!results) return [];
+
+    const locks: Array<{ objectId: string; userId: string; userName: string }> = [];
+    for (let i = 0; i < keys.length; i++) {
+      const [err, userName] = results[i];
+      if (err || !userName) continue;
+
+      // Key format: editlock:{boardId}:{objectId}:{userId}
+      const parts = keys[i].split(':');
+      // parts[0] = "editlock", parts[1] = boardId, last = userId, middle = objectId
+      if (parts.length < 4) continue;
+      const editorUserId = parts[parts.length - 1];
+      const objectId = parts.slice(2, parts.length - 1).join(':');
+
+      locks.push({ objectId, userId: editorUserId, userName: userName as string });
+    }
+
+    return locks;
   },
 };

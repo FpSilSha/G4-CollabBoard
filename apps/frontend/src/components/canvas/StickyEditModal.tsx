@@ -26,6 +26,7 @@ export function StickyEditModal() {
   const editingObjectId = useBoardStore((s) => s.editingObjectId);
   const originalText = useBoardStore((s) => s.editingOriginalText);
   const finishEditingFn = useBoardStore((s) => s.finishEditingFn);
+  const concurrentEditors = useBoardStore((s) => s.concurrentEditors);
 
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -219,6 +220,18 @@ export function StickyEditModal() {
       <div className={styles.modalLayer}>
         <div className={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
           <h3 className={styles.title}>Editing Text</h3>
+          {concurrentEditors.length > 0 && (
+            <div className={styles.warningBanner}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>
+                Also editing: {concurrentEditors.map((e) => e.userName).join(', ')}
+              </span>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             className={styles.textarea}

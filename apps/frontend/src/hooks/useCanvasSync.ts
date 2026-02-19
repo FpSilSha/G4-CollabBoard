@@ -11,6 +11,7 @@ import {
   type CursorMovedPayload,
   type UserJoinedPayload,
   type UserLeftPayload,
+  type EditWarningPayload,
   type BoardObject,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
@@ -403,6 +404,53 @@ export function useCanvasSync(
 
     socket.on('edit:reclaim', handleEditReclaim);
 
+    // --- edit:warning (server response with list of other editors) ---
+    // Received when *we* start editing and others are already editing the same object.
+    const handleEditWarning = (payload: EditWarningPayload) => {
+      const editingId = useBoardStore.getState().editingObjectId;
+      if (editingId && editingId === payload.objectId) {
+        useBoardStore.getState().setConcurrentEditors(payload.editors);
+      }
+    };
+
+    socket.on(WebSocketEvent.EDIT_WARNING, handleEditWarning);
+
+    // --- edit:start (broadcast — another user started editing) ---
+    // If we're currently editing the same object, add them to the warning list.
+    const handleEditStartBroadcast = (payload: {
+      boardId: string;
+      objectId: string;
+      userId: string;
+      userName: string;
+      timestamp: number;
+    }) => {
+      const editingId = useBoardStore.getState().editingObjectId;
+      if (editingId && editingId === payload.objectId) {
+        useBoardStore.getState().addConcurrentEditor({
+          userId: payload.userId,
+          userName: payload.userName,
+        });
+      }
+    };
+
+    socket.on(WebSocketEvent.EDIT_START, handleEditStartBroadcast);
+
+    // --- edit:end (broadcast — another user stopped editing) ---
+    // If we're currently editing the same object, remove them from the warning list.
+    const handleEditEndBroadcast = (payload: {
+      boardId: string;
+      objectId: string;
+      userId: string;
+      timestamp: number;
+    }) => {
+      const editingId = useBoardStore.getState().editingObjectId;
+      if (editingId && editingId === payload.objectId) {
+        useBoardStore.getState().removeConcurrentEditor(payload.userId);
+      }
+    };
+
+    socket.on(WebSocketEvent.EDIT_END, handleEditEndBroadcast);
+
     // =========================================================
     // Stale cursor cleanup (per .clauderules: fade out after 5s)
     // =========================================================
@@ -432,6 +480,9 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.USER_JOINED, handleUserJoined);
       socket.off(WebSocketEvent.USER_LEFT, handleUserLeft);
       socket.off('edit:reclaim', handleEditReclaim);
+      socket.off(WebSocketEvent.EDIT_WARNING, handleEditWarning);
+      socket.off(WebSocketEvent.EDIT_START, handleEditStartBroadcast);
+      socket.off(WebSocketEvent.EDIT_END, handleEditEndBroadcast);
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();

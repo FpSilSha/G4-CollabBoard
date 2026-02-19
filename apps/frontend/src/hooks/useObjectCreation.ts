@@ -174,6 +174,7 @@ export function useObjectCreation(
         store.setEditingObjectId(null);
         store.setEditingOriginalText(null);
         store.setFinishEditingFn(null);
+        store.setConcurrentEditors([]);
         setEditSession(null);
       };
 

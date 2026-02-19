@@ -44,6 +44,12 @@ interface BoardState {
   finishEditingFn: ((cancelled: boolean) => void) | null;
   setFinishEditingFn: (fn: ((cancelled: boolean) => void) | null) => void;
 
+  // Other users concurrently editing the same object (advisory warnings).
+  concurrentEditors: Array<{ userId: string; userName: string }>;
+  setConcurrentEditors: (editors: Array<{ userId: string; userName: string }>) => void;
+  addConcurrentEditor: (editor: { userId: string; userName: string }) => void;
+  removeConcurrentEditor: (userId: string) => void;
+
   // --- Zoom ---
   zoom: number;
   setZoom: (zoom: number) => void;
@@ -95,6 +101,21 @@ export const useBoardStore = create<BoardState>((set) => ({
 
   finishEditingFn: null,
   setFinishEditingFn: (fn) => set({ finishEditingFn: fn }),
+
+  concurrentEditors: [],
+  setConcurrentEditors: (editors) => set({ concurrentEditors: editors }),
+  addConcurrentEditor: (editor) =>
+    set((state) => {
+      // Avoid duplicates
+      if (state.concurrentEditors.some((e) => e.userId === editor.userId)) {
+        return state;
+      }
+      return { concurrentEditors: [...state.concurrentEditors, editor] };
+    }),
+  removeConcurrentEditor: (userId) =>
+    set((state) => ({
+      concurrentEditors: state.concurrentEditors.filter((e) => e.userId !== userId),
+    })),
 
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),

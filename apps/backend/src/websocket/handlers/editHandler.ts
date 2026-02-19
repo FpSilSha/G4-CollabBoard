@@ -12,16 +12,19 @@ import type { AuthenticatedSocket } from '../server';
 /**
  * Handles edit:start and edit:end events for advisory edit locks.
  *
- * - edit:start: Acquires a Redis lock for the object. Broadcasts
- *   edit:start to other users so their clients know who is editing.
- * - edit:end: Releases the lock. Broadcasts edit:end to other users.
+ * Multi-user edit locks:
+ *   - All users CAN edit the same object simultaneously (LWW decides winner).
+ *   - edit:start acquires a per-user lock and returns a list of other editors.
+ *   - edit:warning is sent to the requester with other editors' info.
+ *   - edit:start is broadcast to the room so existing editors see the warning.
+ *   - edit:end releases the user's lock and broadcasts edit:end to the room.
  *
- * On disconnect, connectionHandler checks for active locks and lets
- * them persist (TTL-based grace period) so the user can reclaim on reconnect.
+ * On disconnect, connectionHandler preserves locks (TTL-based grace period)
+ * so the user can reclaim on reconnect.
  */
 export function registerEditHandlers(io: Server, socket: AuthenticatedSocket): void {
   // ========================================
-  // edit:start — user opens textarea on a sticky
+  // edit:start — user opens edit modal on a sticky
   // ========================================
   socket.on(WebSocketEvent.EDIT_START, async (payload: unknown) => {
     const parsed = EditStartPayloadSchema.safeParse(payload);
@@ -36,6 +39,7 @@ export function registerEditHandlers(io: Server, socket: AuthenticatedSocket): v
 
     const { boardId, objectId } = parsed.data;
     const userId = socket.data.userId;
+    const userName = socket.data.userName;
 
     if (socket.data.currentBoardId !== boardId) {
       socket.emit(WebSocketEvent.BOARD_ERROR, {
@@ -47,28 +51,32 @@ export function registerEditHandlers(io: Server, socket: AuthenticatedSocket): v
     }
 
     try {
-      const result = await editLockService.acquireLock(boardId, objectId, userId);
+      // Acquire per-user lock — always succeeds; returns other editors
+      const { otherEditors } = await editLockService.acquireLock(
+        boardId, objectId, userId, userName
+      );
 
-      if (!result.acquired) {
-        // Another user holds the lock — inform the requester
-        socket.emit(WebSocketEvent.BOARD_ERROR, {
-          code: 'EDIT_LOCKED',
-          message: `Object is being edited by another user`,
+      // If other users are editing this object, send a warning to the requester
+      if (otherEditors.length > 0) {
+        trackedEmit(socket, WebSocketEvent.EDIT_WARNING, {
+          boardId,
+          objectId,
+          editors: otherEditors,
           timestamp: Date.now(),
         });
-        return;
       }
 
-      // Broadcast edit:start to other users in the room
+      // Broadcast edit:start to other users in the room so they can show
+      // a mid-edit warning if they're also editing this object
       trackedEmit(socket.to(boardId), WebSocketEvent.EDIT_START, {
         boardId,
         objectId,
         userId,
-        userName: socket.data.userName,
+        userName,
         timestamp: Date.now(),
       });
 
-      logger.info(`Edit lock acquired: ${objectId} by ${userId} on board ${boardId}`);
+      logger.info(`Edit lock acquired: ${objectId} by ${userId} (${userName}) on board ${boardId}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to acquire edit lock';
       logger.error(`edit:start error for ${userId}: ${message}`);
@@ -76,7 +84,7 @@ export function registerEditHandlers(io: Server, socket: AuthenticatedSocket): v
   });
 
   // ========================================
-  // edit:end — user closes textarea (blur)
+  // edit:end — user closes edit modal (confirm / cancel)
   // ========================================
   socket.on(WebSocketEvent.EDIT_END, async (payload: unknown) => {
     const parsed = EditEndPayloadSchema.safeParse(payload);

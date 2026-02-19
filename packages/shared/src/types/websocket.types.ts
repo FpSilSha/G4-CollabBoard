@@ -31,6 +31,7 @@ export enum WebSocketEvent {
   // Editing / Conflict
   EDIT_START = 'edit:start',
   EDIT_END = 'edit:end',
+  EDIT_WARNING = 'edit:warning',
   CONFLICT_WARNING = 'conflict:warning',
   SYNC_CONFLICT = 'sync:conflict',
 
@@ -144,6 +145,14 @@ export interface EditStartPayload {
 export interface EditEndPayload {
   boardId: string;
   objectId: string;
+  timestamp: number;
+}
+
+/** Sent to users when others are concurrently editing the same object. */
+export interface EditWarningPayload {
+  boardId: string;
+  objectId: string;
+  editors: Array<{ userId: string; userName: string }>;
   timestamp: number;
 }
 

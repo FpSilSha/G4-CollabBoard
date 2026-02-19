@@ -65,6 +65,25 @@
   margin: 0;
 }
 
+/* --- Concurrent edit warning banner --- */
+.warningBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  color: #856404;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.warningBanner svg {
+  flex-shrink: 0;
+  color: #e6a700;
+}
+
 .textarea {
   width: 100%;
   min-height: 120px;
