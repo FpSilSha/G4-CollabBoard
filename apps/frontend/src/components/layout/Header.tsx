@@ -182,10 +182,10 @@ function PresenceAvatars({
 function UserMenu() {
   const { user, logout } = useAuth0();
   const localUserName = usePresenceStore((s) => s.localUserName);
+  const localUserColor = usePresenceStore((s) => s.localUserColor);
 
   const displayName = localUserName || user?.name || user?.email || 'User';
   const initial = displayName.charAt(0).toUpperCase();
-  const picture = user?.picture;
 
   const handleLogout = () => {
     logout({ logoutParams: { returnTo: window.location.origin } });
@@ -193,12 +193,12 @@ function UserMenu() {
 
   return (
     <div className={styles.userMenu}>
-      <div className={styles.userAvatar} title={displayName}>
-        {picture ? (
-          <img src={picture} alt={displayName} className={styles.userAvatarImg} />
-        ) : (
-          <span className={styles.userAvatarInitial}>{initial}</span>
-        )}
+      <div
+        className={styles.userAvatar}
+        style={localUserColor ? { backgroundColor: localUserColor } : undefined}
+        title={displayName}
+      >
+        <span className={styles.userAvatarInitial}>{initial}</span>
       </div>
       <button
         className={styles.logoutButton}
