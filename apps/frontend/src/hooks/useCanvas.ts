@@ -60,12 +60,21 @@ export function useCanvas(
     setupZOrderHandler(canvas);
 
     // --- Resize observer ---
+    // Debounced so sidebar collapse/expand CSS transitions (250ms) don't
+    // cause rapid re-renders that flash objects. Only the final size matters.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        canvas.setDimensions({ width, height });
-        canvas.calcOffset(); // Refresh cached bounding rect for accurate pointer events
-        canvas.requestRenderAll();
+        // Skip degenerate sizes during transition
+        if (width < 1 || height < 1) continue;
+
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          canvas.setDimensions({ width, height });
+          canvas.calcOffset();
+          canvas.requestRenderAll();
+        }, 50);
       }
     });
     resizeObserver.observe(container);
@@ -73,6 +82,7 @@ export function useCanvas(
     // --- Cleanup ---
     return () => {
       cleanupPan();
+      if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       canvas.dispose();
       if (container.contains(canvasEl)) {

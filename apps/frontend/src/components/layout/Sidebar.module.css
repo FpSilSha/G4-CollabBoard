@@ -9,7 +9,67 @@
   padding: 12px 0;
   overflow-y: auto;
   overflow-x: hidden;
+  position: relative;
+  transition:
+    width 250ms ease,
+    min-width 250ms ease,
+    padding 250ms ease;
 }
+
+/* Collapsed state: shrink to 0 width, content hidden via React conditional.
+   overflow: visible so the edge toggle lip can protrude. */
+.sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-right-color: transparent;
+  overflow: visible;
+}
+
+/* ============================
+   Edge Toggle (collapse/expand)
+   Uses fixed positioning so it's always vertically centered in the
+   viewport regardless of sidebar scroll height. Sits just outside
+   the sidebar's right edge. When collapsed, snaps to left: 0.
+   ============================ */
+
+.edgeToggle {
+  position: fixed;
+  top: 50%;
+  /* Sidebar width = 200px, so place at the sidebar's right edge */
+  left: var(--sidebar-width);
+  transform: translateY(-50%);
+  width: 28px;
+  height: 48px;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition:
+    left 250ms ease,
+    color var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+}
+
+.edgeToggle:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* When collapsed, slide the toggle to the left edge of the viewport */
+.sidebar.collapsed .edgeToggle {
+  left: 0;
+}
+
+/* ============================
+   Tool Groups
+   ============================ */
 
 .toolGroup {
   display: flex;
@@ -23,6 +83,10 @@
 .toolGroup:last-child {
   border-bottom: none;
 }
+
+/* ============================
+   Tool Buttons
+   ============================ */
 
 .toolButton,
 .draggableItem {

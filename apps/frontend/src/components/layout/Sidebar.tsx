@@ -4,17 +4,23 @@ import styles from './Sidebar.module.css';
 
 /**
  * Left sidebar containing:
- * 1. Tool selection buttons (Select, Dropper)
- * 2. Draggable object creation icons (Sticky, Rectangle, Circle)
- * 3. Color picker
+ * 1. Collapse/expand toggle
+ * 2. Tool selection buttons (Select, Dropper)
+ * 3. Draggable object creation icons (Sticky, Rectangle, Circle)
+ * 4. Color picker
  *
  * Objects can be created by:
  * - Clicking a tool icon then clicking on the canvas
  * - Dragging an icon from the sidebar onto the canvas
+ *
+ * The sidebar can be collapsed to free up canvas space. When collapsed,
+ * a small "lip" tab sticks out from the left edge for re-opening.
  */
 export function Sidebar() {
   const activeTool = useUIStore((s) => s.activeTool);
   const setActiveTool = useUIStore((s) => s.setActiveTool);
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
 
   const handleDragStart = (e: React.DragEvent, objectType: string) => {
     e.dataTransfer.setData('application/collabboard-type', objectType);
@@ -26,57 +32,72 @@ export function Sidebar() {
   };
 
   return (
-    <aside className={styles.sidebar}>
-      {/* --- Selection Tools --- */}
-      <div className={styles.toolGroup}>
-        <ToolButton
-          icon={<PointerIcon />}
-          label="Select (V)"
-          tool="select"
-          activeTool={activeTool}
-          onClick={setActiveTool}
-        />
-        <ToolButton
-          icon={<DropperIcon />}
-          label="Color Picker (I)"
-          tool="dropper"
-          activeTool={activeTool}
-          onClick={setActiveTool}
-        />
-      </div>
+    <aside className={`${styles.sidebar} ${sidebarOpen ? '' : styles.collapsed}`}>
+      {/* --- Collapse/Expand toggle (right edge, vertically centered) --- */}
+      <button
+        className={styles.edgeToggle}
+        onClick={toggleSidebar}
+        title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+      >
+        {sidebarOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+      </button>
 
-      {/* --- Object Creation --- */}
-      <div className={styles.toolGroup}>
-        <DraggableToolButton
-          icon={<StickyIcon />}
-          label="Sticky Note (S)"
-          tool="sticky"
-          activeTool={activeTool}
-          onClick={setActiveTool}
-          onDragStart={(e) => handleDragStart(e, 'sticky')}
-        />
-        <DraggableToolButton
-          icon={<RectangleIcon />}
-          label="Rectangle (R)"
-          tool="rectangle"
-          activeTool={activeTool}
-          onClick={setActiveTool}
-          onDragStart={(e) => handleDragStart(e, 'rectangle')}
-        />
-        <DraggableToolButton
-          icon={<CircleIcon />}
-          label="Circle (C)"
-          tool="circle"
-          activeTool={activeTool}
-          onClick={setActiveTool}
-          onDragStart={(e) => handleDragStart(e, 'circle')}
-        />
-      </div>
+      {/* --- Tool content (hidden when collapsed) --- */}
+      {sidebarOpen && (
+        <>
+          {/* --- Selection Tools --- */}
+          <div className={styles.toolGroup}>
+            <ToolButton
+              icon={<PointerIcon />}
+              label="Select (V)"
+              tool="select"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+            />
+            <ToolButton
+              icon={<DropperIcon />}
+              label="Color Picker (I)"
+              tool="dropper"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+            />
+          </div>
 
-      {/* --- Color Picker --- */}
-      <div className={styles.toolGroup}>
-        <ColorPicker />
-      </div>
+          {/* --- Object Creation --- */}
+          <div className={styles.toolGroup}>
+            <DraggableToolButton
+              icon={<StickyIcon />}
+              label="Sticky Note (S)"
+              tool="sticky"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+              onDragStart={(e) => handleDragStart(e, 'sticky')}
+            />
+            <DraggableToolButton
+              icon={<RectangleIcon />}
+              label="Rectangle (R)"
+              tool="rectangle"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+              onDragStart={(e) => handleDragStart(e, 'rectangle')}
+            />
+            <DraggableToolButton
+              icon={<CircleIcon />}
+              label="Circle (C)"
+              tool="circle"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+              onDragStart={(e) => handleDragStart(e, 'circle')}
+            />
+          </div>
+
+          {/* --- Color Picker --- */}
+          <div className={styles.toolGroup}>
+            <ColorPicker />
+          </div>
+        </>
+      )}
     </aside>
   );
 }
@@ -208,6 +229,36 @@ function CircleIcon() {
       strokeWidth="2"
     >
       <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+function ChevronLeftIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+    >
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+    >
+      <path d="M9 18l6-6-6-6" />
     </svg>
   );
 }
