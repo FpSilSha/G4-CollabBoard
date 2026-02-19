@@ -34,12 +34,17 @@ export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectingRef = useRef(false); // guard against double-connect
-  const { getAccessTokenSilently, isAuthenticated } = useAuth0();
+  const { getAccessTokenSilently, isAuthenticated, user } = useAuth0();
 
   // Store getAccessTokenSilently in a ref so the socket's auth callback
   // always has access to the latest version without re-creating the socket.
   const getTokenRef = useRef(getAccessTokenSilently);
   getTokenRef.current = getAccessTokenSilently;
+
+  // Store user profile in a ref so the auth callback can access the latest
+  // profile data (name, email) without re-creating the socket.
+  const userRef = useRef(user);
+  userRef.current = user;
 
   const setConnectionStatus = usePresenceStore((s) => s.setConnectionStatus);
   const setLocalUser = usePresenceStore((s) => s.setLocalUser);
@@ -68,13 +73,23 @@ export function useSocket() {
         const socket = io(WS_URL, {
           // Auth callback — called on EVERY connection attempt (including reconnects).
           // This ensures the token is always fresh, even if the previous one expired.
+          // Also passes the Auth0 user profile (name, email) since access tokens
+          // don't include these claims by default.
           auth: async (cb) => {
             try {
               const freshToken = await getTokenRef.current(AUTH_PARAMS);
-              cb({ token: freshToken });
+              cb({
+                token: freshToken,
+                name: userRef.current?.name,
+                email: userRef.current?.email,
+              });
             } catch {
               // Fall back to the initial token if refresh fails
-              cb({ token });
+              cb({
+                token,
+                name: userRef.current?.name,
+                email: userRef.current?.email,
+              });
             }
           },
           transports: ['websocket', 'polling'],

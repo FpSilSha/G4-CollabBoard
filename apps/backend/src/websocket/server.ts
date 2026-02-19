@@ -107,19 +107,29 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
 
       const userId = decoded.sub;
 
+      // Auth0 access tokens don't include name/email by default.
+      // The frontend passes them from the ID token via socket.handshake.auth.
+      // Fall back to any claims in the JWT itself (in case an Auth0 Action adds them).
+      const profileName =
+        (typeof socket.handshake.auth.name === 'string' ? socket.handshake.auth.name : null)
+        || decoded.name as string | undefined;
+      const profileEmail =
+        (typeof socket.handshake.auth.email === 'string' ? socket.handshake.auth.email : null)
+        || decoded.email as string | undefined;
+
       // Ensure user exists in our database (find or create)
       const user = await userService.findOrCreateUser(
         userId,
-        decoded.email,
-        decoded.name
+        profileEmail,
+        profileName
       );
 
       // Attach user data to socket.
-      // Use email prefix as userName for cursor labels — cleaner than
-      // full email, and avoids the numeric Auth0 sub fallback.
-      const emailPrefix = user.email.split('@')[0] || user.name;
+      // Use the DB name (which may have been updated from profile data above)
+      // rather than email prefix — gives a proper display name like "John Doe".
+      const displayName = user.name;
       socket.data.userId = user.id;
-      socket.data.userName = emailPrefix;
+      socket.data.userName = displayName;
       socket.data.avatar = user.avatar;
       socket.data.color = user.color;
 

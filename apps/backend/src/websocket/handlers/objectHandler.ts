@@ -10,6 +10,7 @@ import {
   type ObjectDeletedPayload,
 } from 'shared';
 import { boardService } from '../../services/boardService';
+import { editLockService } from '../../services/editLockService';
 import { auditService, AuditAction } from '../../services/auditService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
@@ -145,6 +146,12 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
       // Persist to Redis (LWW — auto-save worker flushes to Postgres every 60s)
       await boardService.updateObjectInRedis(boardId, objectId, sanitizedUpdates);
+
+      // If this update includes text, refresh the edit lock TTL so it
+      // doesn't expire during a long editing session (TTL is only 20s).
+      if (fieldsParsed.data.text !== undefined) {
+        await editLockService.refreshLock(boardId, objectId, userId);
+      }
 
       // Broadcast to everyone EXCEPT sender (sender has optimistic local state)
       const updatedPayload: ObjectUpdatedPayload = {

@@ -3,6 +3,7 @@ import {
   WebSocketEvent,
   BoardJoinPayloadSchema,
   BoardLeavePayloadSchema,
+  USER_COLORS,
   type BoardStatePayload,
   type UserJoinedPayload,
   type UserLeftPayload,
@@ -55,12 +56,20 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       // Load board state into Redis cache (or re-use existing cache)
       const cachedState = await boardService.getOrLoadBoardState(boardId);
 
-      // Add to presence tracking in Redis
+      // Assign a slot-based presence color for this board.
+      // First user gets color 0, second gets color 1, etc.
+      // When a user leaves, their color slot opens up for the next joiner.
+      const existingUsers = await presenceService.getBoardUsers(boardId);
+      const takenColors = new Set(existingUsers.map((u) => u.color));
+      const slotColor = USER_COLORS.find((c) => !takenColors.has(c))
+        ?? USER_COLORS[existingUsers.length % USER_COLORS.length];
+
+      // Add to presence tracking in Redis with slot-based color
       const userInfo = {
         userId,
         name: socket.data.userName,
         avatar: socket.data.avatar,
-        color: socket.data.color,
+        color: slotColor,
       };
       await presenceService.addUser(boardId, userInfo);
 
@@ -103,6 +112,17 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
           objectIds: activeLocks,
           timestamp: Date.now(),
         });
+        // Broadcast edit:start to the room so other users see
+        // this user is still editing (for concurrent edit warnings)
+        for (const objectId of activeLocks) {
+          trackedEmit(socket.to(boardId), WebSocketEvent.EDIT_START, {
+            boardId,
+            objectId,
+            userId,
+            userName: socket.data.userName,
+            timestamp: Date.now(),
+          });
+        }
         logger.info(`User ${userId} reclaimed edit locks on board ${boardId}: ${activeLocks.join(', ')}`);
       }
 
