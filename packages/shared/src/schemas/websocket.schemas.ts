@@ -34,6 +34,20 @@ export const HeartbeatPayloadSchema = z.object({
   timestamp: z.number().int().positive(),
 });
 
+// edit:start — user begins editing an object
+export const EditStartPayloadSchema = z.object({
+  boardId: z.string().uuid(),
+  objectId: z.string().min(1),
+  timestamp: z.number().int().positive(),
+});
+
+// edit:end — user stops editing an object
+export const EditEndPayloadSchema = z.object({
+  boardId: z.string().uuid(),
+  objectId: z.string().min(1),
+  timestamp: z.number().int().positive(),
+});
+
 // object:create — client sends object with client-generated UUID
 export const ObjectCreatePayloadSchema = z.object({
   boardId: z.string().uuid(),

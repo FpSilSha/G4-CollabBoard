@@ -12,6 +12,7 @@ import { boardController } from './controllers/boardController';
 import { versionController } from './controllers/versionController';
 import { httpMetrics } from './middleware/httpMetrics';
 import { metricsService } from './services/metricsService';
+import { editLockService } from './services/editLockService';
 import prisma from './models/index';
 
 const app = express();
@@ -48,10 +49,35 @@ app.get('/health', async (_req, res) => {
 });
 
 // --- Metrics Endpoint (no auth — standard for metrics scraping) ---
-app.get('/metrics', async (_req, res) => {
+// Returns JSON for programmatic consumers, HTML dashboard for browsers.
+app.get('/metrics', async (req, res) => {
   try {
     const snapshot = await metricsService.getAll();
-    res.json(snapshot);
+
+    // Append active edit locks to the snapshot (multi-user per-user keys)
+    const editLocks = await editLockService.getAllLocks();
+    const enrichedSnapshot = { ...snapshot, editLocks: { active: editLocks.length, locks: editLocks } };
+
+    // If browser requests HTML, serve an auto-refreshing dashboard
+    const acceptsHtml = req.headers.accept?.includes('text/html');
+    if (acceptsHtml) {
+      const json = JSON.stringify(enrichedSnapshot, null, 2);
+      res.type('html').send(`<!DOCTYPE html>
+<html><head>
+  <title>CollabBoard Metrics</title>
+  <meta http-equiv="refresh" content="10">
+  <style>body{font-family:monospace;background:#1a1a2e;color:#e0e0e0;padding:20px}
+  h1{color:#4f46e5}pre{background:#16213e;padding:16px;border-radius:8px;overflow:auto}
+  .ts{color:#888;font-size:12px}</style>
+</head><body>
+  <h1>CollabBoard Metrics</h1>
+  <p class="ts">Auto-refreshes every 10s &mdash; Last updated: ${new Date().toISOString()}</p>
+  <pre>${json}</pre>
+</body></html>`);
+      return;
+    }
+
+    res.json(enrichedSnapshot);
   } catch {
     res.status(500).json({ error: 'Failed to retrieve metrics' });
   }

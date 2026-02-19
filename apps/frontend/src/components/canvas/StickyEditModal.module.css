@@ -1,0 +1,143 @@
+/* ============================
+   Sticky Note Edit Modal
+   Centered modal with dark backdrop for text editing.
+   The sticky note being edited is elevated above the
+   backdrop as a DOM ghost, so the user can see which
+   note they are editing.
+   ============================ */
+
+/* --- Layer 1: dark overlay behind everything --- */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9996;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+/* --- Layer 2: DOM ghost of the sticky note, above backdrop --- */
+.stickyGhost {
+  position: fixed;
+  z-index: 9997;
+  pointer-events: none; /* click-through — user interacts with modal only */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.stickyGhostText {
+  position: absolute;
+  color: #000000;
+  font-family: var(--font-family);
+  line-height: 1.4;
+  overflow: hidden;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* --- Layer 3: the modal dialog, above the ghost --- */
+.modalLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* let clicks through to backdrop handler below */
+}
+
+.modal {
+  pointer-events: auto; /* re-enable clicks on the modal card */
+  background: #ffffff;
+  border-radius: var(--border-radius);
+  padding: 20px;
+  width: 360px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: #333333;
+  margin: 0;
+}
+
+/* --- Concurrent edit warning banner --- */
+.warningBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  color: #856404;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.warningBanner svg {
+  flex-shrink: 0;
+  color: #e6a700;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: 1.4;
+  border: 1px solid #cccccc;
+  border-radius: 4px;
+  resize: vertical;
+  outline: none;
+  color: #000000;
+  box-sizing: border-box;
+}
+
+.textarea:focus {
+  border-color: var(--focus-blue);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+}
+
+.buttonRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cancelButton {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  background: #f0f0f0;
+  color: #333333;
+  border: 1px solid #cccccc;
+  cursor: pointer;
+  transition: background var(--transition-speed) var(--transition-ease);
+}
+
+.cancelButton:hover {
+  background: #e0e0e0;
+}
+
+.confirmButton {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  background: var(--focus-blue);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-speed) var(--transition-ease);
+}
+
+.confirmButton:hover {
+  background: #0066dd;
+}

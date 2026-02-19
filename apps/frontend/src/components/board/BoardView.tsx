@@ -5,6 +5,7 @@ import type { Socket } from 'socket.io-client';
 import { Sidebar } from '../layout/Sidebar';
 import { Header } from '../layout/Header';
 import { Canvas } from '../canvas/Canvas';
+import { StickyEditModal } from '../canvas/StickyEditModal';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { usePresenceStore } from '../../stores/presenceStore';
 import { useBoardStore } from '../../stores/boardStore';
@@ -142,6 +143,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
         <Header />
         <Canvas socketRef={socketRef} />
       </div>
+
+      {/* Sticky note text editing modal — driven by editingObjectId in boardStore */}
+      <StickyEditModal />
 
       {/* Offline overlay — blocks interaction when socket loses connection.
           Only show AFTER we've connected at least once (not on initial load). */}

@@ -29,6 +29,27 @@ interface BoardState {
   clearObjects: () => void;
   setObjects: (objects: BoardObject[]) => void;
 
+  // --- Text Editing ---
+  // Tracks which object the local user is currently text-editing (modal open).
+  // Used to prevent incoming WS text updates from overwriting the modal textarea.
+  editingObjectId: string | null;
+  setEditingObjectId: (id: string | null) => void;
+
+  // Snapshot of the text when editing started — used by Cancel to revert.
+  editingOriginalText: string | null;
+  setEditingOriginalText: (text: string | null) => void;
+
+  // Bridge: the hook's finishEditing function, callable from the modal.
+  // Accepts `cancelled: boolean` — true = revert to original text.
+  finishEditingFn: ((cancelled: boolean) => void) | null;
+  setFinishEditingFn: (fn: ((cancelled: boolean) => void) | null) => void;
+
+  // Other users concurrently editing the same object (advisory warnings).
+  concurrentEditors: Array<{ userId: string; userName: string }>;
+  setConcurrentEditors: (editors: Array<{ userId: string; userName: string }>) => void;
+  addConcurrentEditor: (editor: { userId: string; userName: string }) => void;
+  removeConcurrentEditor: (userId: string) => void;
+
   // --- Zoom ---
   zoom: number;
   setZoom: (zoom: number) => void;
@@ -71,6 +92,30 @@ export const useBoardStore = create<BoardState>((set) => ({
       objects.forEach((obj) => map.set(obj.id, obj));
       return { objects: map };
     }),
+
+  editingObjectId: null,
+  setEditingObjectId: (id) => set({ editingObjectId: id }),
+
+  editingOriginalText: null,
+  setEditingOriginalText: (text) => set({ editingOriginalText: text }),
+
+  finishEditingFn: null,
+  setFinishEditingFn: (fn) => set({ finishEditingFn: fn }),
+
+  concurrentEditors: [],
+  setConcurrentEditors: (editors) => set({ concurrentEditors: editors }),
+  addConcurrentEditor: (editor) =>
+    set((state) => {
+      // Avoid duplicates
+      if (state.concurrentEditors.some((e) => e.userId === editor.userId)) {
+        return state;
+      }
+      return { concurrentEditors: [...state.concurrentEditors, editor] };
+    }),
+  removeConcurrentEditor: (userId) =>
+    set((state) => ({
+      concurrentEditors: state.concurrentEditors.filter((e) => e.userId !== userId),
+    })),
 
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),

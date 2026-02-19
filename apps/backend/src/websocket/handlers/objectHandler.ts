@@ -24,7 +24,7 @@ import type { AuthenticatedSocket } from '../server';
  * All handlers:
  * 1. Zod-validate the payload
  * 2. Verify the user is in the target board room
- * 3. Persist to Postgres via boardService
+ * 3. Persist to Redis via boardService (auto-save worker flushes to Postgres)
  * 4. Broadcast to room (created→all, updated/deleted→others)
  */
 export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket): void {
@@ -66,8 +66,8 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
         updatedAt: now.toISOString(),
       };
 
-      // Persist to Postgres
-      await boardService.addObject(boardId, boardObject);
+      // Persist to Redis (auto-save worker flushes to Postgres every 60s)
+      await boardService.addObjectInRedis(boardId, boardObject);
 
       // Broadcast to ALL users in the room (including sender for confirmation)
       const createdPayload: ObjectCreatedPayload = {
@@ -143,8 +143,8 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
         updatedAt: new Date().toISOString(),
       };
 
-      // Persist to Postgres (LWW — last write wins)
-      await boardService.updateObject(boardId, objectId, sanitizedUpdates);
+      // Persist to Redis (LWW — auto-save worker flushes to Postgres every 60s)
+      await boardService.updateObjectInRedis(boardId, objectId, sanitizedUpdates);
 
       // Broadcast to everyone EXCEPT sender (sender has optimistic local state)
       const updatedPayload: ObjectUpdatedPayload = {
@@ -202,8 +202,8 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
     }
 
     try {
-      // Remove from Postgres
-      await boardService.removeObject(boardId, objectId);
+      // Remove from Redis (auto-save worker flushes to Postgres every 60s)
+      await boardService.removeObjectFromRedis(boardId, objectId);
 
       // Broadcast to everyone EXCEPT sender
       const deletedPayload: ObjectDeletedPayload = {
