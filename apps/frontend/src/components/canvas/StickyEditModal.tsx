@@ -29,9 +29,12 @@ export function StickyEditModal() {
   const concurrentEditors = useBoardStore((s) => s.concurrentEditors);
 
   const [text, setText] = useState('');
+  const [ghostColor, setGhostColor] = useState('#FDFD96');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Compute the sticky note's screen position + color for the DOM ghost
+  // Compute the sticky note's screen position for the DOM ghost.
+  // Position is computed once (sticky can't be moved while editing).
+  // Color is tracked separately via ghostColor state so it updates live.
   const ghostInfo = useMemo(() => {
     if (!editingObjectId) return null;
     const session = getEditSession();
@@ -51,23 +54,37 @@ export function StickyEditModal() {
     const screenWidth = w * zoom;
     const screenHeight = h * zoom;
 
-    // Get the base color from the sticky
+    // Initial color
     const { base } = getStickyChildren(target);
-    const color = (base.fill as string) ?? '#FDFD96';
-    const foldColor = darkenColor(color, 15);
+    const initialColor = (base.fill as string) ?? '#FDFD96';
+    setGhostColor(initialColor);
 
     return {
       left: screenLeft,
       top: screenTop,
       width: screenWidth,
       height: screenHeight,
-      color,
-      foldColor,
       foldSize: foldSize * zoom,
       padding: padding * zoom,
       fontSize: OBJECT_DEFAULTS.STICKY_FONT_SIZE * zoom,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingObjectId]);
+
+  // Poll the Fabric object's color so the ghost updates if another user
+  // changes the sticky's color while we're editing.
+  useEffect(() => {
+    if (!editingObjectId) return;
+
+    const interval = setInterval(() => {
+      const session = getEditSession();
+      if (!session) return;
+      const { base } = getStickyChildren(session.target);
+      const currentColor = (base.fill as string) ?? '#FDFD96';
+      setGhostColor((prev) => prev !== currentColor ? currentColor : prev);
+    }, 500); // check every 500ms — lightweight
+
+    return () => clearInterval(interval);
   }, [editingObjectId]);
 
   // Initialise local text state when the modal opens
@@ -182,7 +199,7 @@ export function StickyEditModal() {
             top: ghostInfo.top,
             width: ghostInfo.width,
             height: ghostInfo.height,
-            background: ghostInfo.color,
+            background: ghostColor,
             borderRadius: 2,
             border: '1px solid #000',
           }}
@@ -210,7 +227,7 @@ export function StickyEditModal() {
               height: 0,
               borderStyle: 'solid',
               borderWidth: `0 0 ${ghostInfo.foldSize}px ${ghostInfo.foldSize}px`,
-              borderColor: `transparent transparent ${ghostInfo.foldColor} transparent`,
+              borderColor: `transparent transparent ${darkenColor(ghostColor, 15)} transparent`,
             }}
           />
         </div>

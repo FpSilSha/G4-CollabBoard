@@ -95,6 +95,12 @@ export function createStickyNote(options: {
       offsetY: 4,
     }),
     subTargetCheck: false,
+    // Disable scaling — sticky notes are fixed 200x200.
+    // Prevents stretch desync between users (child polygons don't resize
+    // with the group). Resizable stickies will be revisited as a design task.
+    lockScalingX: true,
+    lockScalingY: true,
+    hasControls: false,
     // Data applied to the entire group — syncs as one unit
     data: {
       id,
