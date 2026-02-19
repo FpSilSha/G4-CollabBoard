@@ -153,7 +153,7 @@ function PresenceAvatars({
           style={{ backgroundColor: user.color }}
           title={user.name}
         >
-          {user.avatar ? (
+          {user.avatar && user.avatar.startsWith('http') ? (
             <img
               src={user.avatar}
               alt={user.name}
@@ -161,7 +161,7 @@ function PresenceAvatars({
             />
           ) : (
             <span className={styles.avatarInitial}>
-              {user.name.charAt(0).toUpperCase()}
+              {user.avatar || user.name.charAt(0).toUpperCase()}
             </span>
           )}
         </div>
