@@ -68,7 +68,7 @@ export function registerEditHandlers(io: Server, socket: AuthenticatedSocket): v
         timestamp: Date.now(),
       });
 
-      logger.debug(`Edit lock acquired: ${objectId} by ${userId} on board ${boardId}`);
+      logger.info(`Edit lock acquired: ${objectId} by ${userId} on board ${boardId}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to acquire edit lock';
       logger.error(`edit:start error for ${userId}: ${message}`);
@@ -103,7 +103,7 @@ export function registerEditHandlers(io: Server, socket: AuthenticatedSocket): v
         timestamp: Date.now(),
       });
 
-      logger.debug(`Edit lock released: ${objectId} by ${userId} on board ${boardId}`);
+      logger.info(`Edit lock released: ${objectId} by ${userId} on board ${boardId}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to release edit lock';
       logger.error(`edit:end error for ${userId}: ${message}`);

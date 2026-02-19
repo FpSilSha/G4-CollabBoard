@@ -12,6 +12,7 @@ import { boardController } from './controllers/boardController';
 import { versionController } from './controllers/versionController';
 import { httpMetrics } from './middleware/httpMetrics';
 import { metricsService } from './services/metricsService';
+import { instrumentedRedis as redisClient } from './utils/instrumentedRedis';
 import prisma from './models/index';
 
 const app = express();
@@ -53,10 +54,28 @@ app.get('/metrics', async (req, res) => {
   try {
     const snapshot = await metricsService.getAll();
 
+    // Append active edit locks to the snapshot
+    const editLockKeys = await redisClient.keys('editlock:*');
+    const editLocks: { objectId: string; heldBy: string }[] = [];
+    if (editLockKeys.length > 0) {
+      const pipeline = redisClient.pipeline();
+      editLockKeys.forEach((key) => pipeline.get(key));
+      const lockResults = await pipeline.exec();
+      editLockKeys.forEach((key, i) => {
+        const [err, val] = lockResults?.[i] ?? [null, null];
+        if (!err && val) {
+          // key format: editlock:{boardId}:{objectId}
+          const parts = key.split(':');
+          editLocks.push({ objectId: parts.slice(2).join(':'), heldBy: val as string });
+        }
+      });
+    }
+    const enrichedSnapshot = { ...snapshot, editLocks: { active: editLocks.length, locks: editLocks } };
+
     // If browser requests HTML, serve an auto-refreshing dashboard
     const acceptsHtml = req.headers.accept?.includes('text/html');
     if (acceptsHtml) {
-      const json = JSON.stringify(snapshot, null, 2);
+      const json = JSON.stringify(enrichedSnapshot, null, 2);
       res.type('html').send(`<!DOCTYPE html>
 <html><head>
   <title>CollabBoard Metrics</title>
@@ -72,7 +91,7 @@ app.get('/metrics', async (req, res) => {
       return;
     }
 
-    res.json(snapshot);
+    res.json(enrichedSnapshot);
   } catch {
     res.status(500).json({ error: 'Failed to retrieve metrics' });
   }
