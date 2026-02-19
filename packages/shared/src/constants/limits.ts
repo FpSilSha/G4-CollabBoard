@@ -40,3 +40,8 @@ export const PERSISTENCE_CONFIG = {
   MAX_VERSIONS_PER_BOARD: 50,
   SOFT_DELETE_RETENTION_DAYS: 30,
 } as const;
+
+export const EDIT_LOCK_CONFIG = {
+  /** How long an edit lock persists after user disconnects (seconds). */
+  LOCK_TTL_SECONDS: 20,
+} as const;

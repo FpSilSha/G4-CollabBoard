@@ -153,20 +153,41 @@ export function useCanvasSync(
     const localUserId = usePresenceStore.getState().localUserId;
 
     // --- board:state (initial load + reconnect) ---
-    // Per .clauderules: reconnect = full re-render, do NOT merge with local state
+    // Per .clauderules: reconnect = full re-render, do NOT merge with local state.
+    // Exception: if the local user is editing a sticky (textarea open),
+    // preserve that Fabric object so the textarea and in-progress text survive.
     const handleBoardState = (payload: BoardStatePayload) => {
       const { boardId, objects, users } = payload;
 
       // Update board metadata
       useBoardStore.getState().setBoardId(boardId);
 
-      // Clear canvas and rebuild from server state
+      // Check if we're actively editing an object (textarea open)
+      const editingId = useBoardStore.getState().editingObjectId;
+      let preservedFabricObj: fabric.Object | undefined;
+
+      if (editingId) {
+        // Find the Fabric object currently being edited on the canvas
+        preservedFabricObj = findFabricObjectById(canvas, editingId);
+      }
+
+      // Clear canvas — but re-add the preserved object after clear
       canvas.clear();
       useBoardStore.getState().clearObjects();
+
+      if (preservedFabricObj) {
+        canvas.add(preservedFabricObj);
+      }
 
       // Render each object from server
       const boardObjects: BoardObject[] = [];
       objects.forEach((obj: BoardObject) => {
+        if (editingId && obj.id === editingId) {
+          // Skip rebuilding the object we're editing — it's already preserved.
+          // Still include it in the store so the data stays consistent.
+          boardObjects.push(obj);
+          return;
+        }
         const fabricObj = boardObjectToFabric(obj);
         if (fabricObj) {
           canvas.add(fabricObj);
@@ -369,6 +390,19 @@ export function useCanvasSync(
 
     socket.on(WebSocketEvent.USER_LEFT, handleUserLeft);
 
+    // --- edit:reclaim (reconnect with active edit lock) ---
+    // Server confirms the user's edit lock was preserved across the disconnect.
+    // The textarea was already preserved in handleBoardState above.
+    // Log for debugging; no additional action needed.
+    const handleEditReclaim = (payload: { boardId: string; objectIds: string[] }) => {
+      const editingId = useBoardStore.getState().editingObjectId;
+      if (editingId && payload.objectIds.includes(editingId)) {
+        console.debug(`Edit lock reclaimed for object ${editingId} after reconnect`);
+      }
+    };
+
+    socket.on('edit:reclaim', handleEditReclaim);
+
     // =========================================================
     // Stale cursor cleanup (per .clauderules: fade out after 5s)
     // =========================================================
@@ -397,6 +431,7 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.CURSOR_MOVED, handleCursorMoved);
       socket.off(WebSocketEvent.USER_JOINED, handleUserJoined);
       socket.off(WebSocketEvent.USER_LEFT, handleUserLeft);
+      socket.off('edit:reclaim', handleEditReclaim);
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();

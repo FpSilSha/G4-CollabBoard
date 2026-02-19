@@ -9,6 +9,7 @@ import {
 } from 'shared';
 import { presenceService } from '../../services/presenceService';
 import { boardService } from '../../services/boardService';
+import { editLockService } from '../../services/editLockService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
 import { auditService, AuditAction } from '../../services/auditService';
@@ -85,6 +86,26 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       };
       trackedEmit(socket.to(boardId), WebSocketEvent.USER_JOINED, joinedPayload);
 
+      // --- Reconnect edit-lock reclaim ---
+      // If the user disconnected while editing a sticky, they may still hold
+      // a Redis edit lock (TTL-based grace period). Refresh those locks and
+      // tell the client which objects it was editing so the frontend can
+      // restore the textarea and skip those objects in the board:state rebuild.
+      const activeLocks = await editLockService.getUserLocks(boardId, userId);
+      if (activeLocks.length > 0) {
+        // Refresh lock TTLs (user is back, reset the countdown)
+        for (const objectId of activeLocks) {
+          await editLockService.refreshLock(boardId, objectId, userId);
+        }
+        // Tell the client which objects it was editing
+        trackedEmit(socket, 'edit:reclaim', {
+          boardId,
+          objectIds: activeLocks,
+          timestamp: Date.now(),
+        });
+        logger.info(`User ${userId} reclaimed edit locks on board ${boardId}: ${activeLocks.join(', ')}`);
+      }
+
       auditService.log({
         userId,
         action: AuditAction.BOARD_JOIN,
@@ -138,7 +159,8 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
 
     try {
       if (boardId) {
-        await handleLeaveBoard(io, socket, boardId);
+        // Pass isDisconnect=true to preserve edit locks (TTL grace period)
+        await handleLeaveBoard(io, socket, boardId, true);
       }
 
       // Clean up: remove from all boards and session
@@ -204,9 +226,32 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
 
 /**
  * Shared logic for leaving a board room.
+ * @param isDisconnect When true, edit locks are preserved (TTL grace period).
+ *   When false (voluntary leave / navigation), locks are released immediately.
  */
-async function handleLeaveBoard(io: Server, socket: AuthenticatedSocket, boardId: string): Promise<void> {
+async function handleLeaveBoard(
+  io: Server,
+  socket: AuthenticatedSocket,
+  boardId: string,
+  isDisconnect = false
+): Promise<void> {
   const userId = socket.data.userId;
+
+  // Release edit locks on voluntary leave (not disconnect — keep TTL grace period)
+  if (!isDisconnect) {
+    try {
+      const locks = await editLockService.getUserLocks(boardId, userId);
+      for (const objectId of locks) {
+        await editLockService.releaseLock(boardId, objectId, userId);
+      }
+      if (locks.length > 0) {
+        logger.debug(`Released ${locks.length} edit lock(s) for ${userId} on board ${boardId}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      logger.error(`Failed to release edit locks for ${userId}: ${msg}`);
+    }
+  }
 
   // Remove from presence
   await presenceService.removeUser(boardId, userId);

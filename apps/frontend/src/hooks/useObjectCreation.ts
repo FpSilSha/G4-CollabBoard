@@ -139,6 +139,16 @@ export function useObjectCreation(
       // Track which object is being edited (for self-echo prevention)
       useBoardStore.getState().setEditingObjectId(target.data!.id);
 
+      // Notify server: acquire edit lock (advisory — for disconnect grace period)
+      const editBoardId = useBoardStore.getState().boardId;
+      if (editBoardId && socketRef.current?.connected && target.data?.id) {
+        socketRef.current.emit(WebSocketEvent.EDIT_START, {
+          boardId: editBoardId,
+          objectId: target.data.id,
+          timestamp: Date.now(),
+        });
+      }
+
       // --- Live text broadcast (throttled) ---
       const emitTextUpdate = (text: string) => {
         const boardId = useBoardStore.getState().boardId;
@@ -182,6 +192,16 @@ export function useObjectCreation(
           useBoardStore.getState().updateObject(target.data.id, {
             text: newText,
           } as Partial<import('shared').BoardObject>);
+        }
+
+        // Notify server: release edit lock
+        const endBoardId = useBoardStore.getState().boardId;
+        if (endBoardId && socketRef.current?.connected && target.data?.id) {
+          socketRef.current.emit(WebSocketEvent.EDIT_END, {
+            boardId: endBoardId,
+            objectId: target.data.id,
+            timestamp: Date.now(),
+          });
         }
 
         // Clear editing state
