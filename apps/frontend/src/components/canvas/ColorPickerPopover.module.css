@@ -1,0 +1,227 @@
+/* ============================
+   Custom Color Popover
+   Anchored inside the sidebar color picker section.
+   ============================ */
+
+.popover {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ============================
+   Constraint Tabs (PST / NEO / ERT / None)
+   ============================ */
+
+.constraintTabs {
+  display: flex;
+  gap: 4px;
+}
+
+.constraintTab {
+  flex: 1;
+  padding: 3px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-align: center;
+  border: none;
+  border-radius: 4px;
+  background: var(--btn-bg);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    background var(--transition-speed) var(--transition-ease),
+    color var(--transition-speed) var(--transition-ease);
+}
+
+.constraintTab:hover {
+  background: var(--btn-hover);
+  color: var(--text-secondary);
+}
+
+.activeConstraintTab {
+  background: var(--focus-blue);
+  color: #ffffff;
+}
+
+.activeConstraintTab:hover {
+  background: var(--focus-blue);
+  color: #ffffff;
+}
+
+/* ============================
+   Preview Row
+   ============================ */
+
+.previewRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.previewSwatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+}
+
+.previewHex {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+}
+
+/* ============================
+   Sliders
+   ============================ */
+
+.sliderGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sliderLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sliderName {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.slider {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Webkit slider thumb */
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Firefox slider thumb */
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.slider::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  border: none;
+}
+
+.sliderValue {
+  font-size: 11px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  color: var(--text-secondary);
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ============================
+   Hex Input Row
+   ============================ */
+
+.hexRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hexLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.hexInput {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--btn-bg);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.hexInput:focus {
+  border-color: var(--focus-blue);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
+}
+
+/* ============================
+   Add Color Button
+   ============================ */
+
+.addColorBtn {
+  padding: 6px 0;
+  border-radius: 6px;
+  background: var(--focus-blue);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  text-align: center;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+}
+
+.addColorBtn:hover {
+  background: #0066dd;
+  transform: translateY(-1px);
+}
+
+.addColorBtn:active {
+  transform: translateY(0);
+}

@@ -1,33 +1,75 @@
 .colorPicker {
   padding: 0 12px;
+  position: relative;
 }
+
+/* ============================
+   Label  ("Colors – Pastel")
+   ============================ */
 
 .label {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 
-.customLabel {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  margin-top: 12px;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+/* ============================
+   Tab Row  (PST / NEO / ERT / WCA)
+   ============================ */
+
+.tabRow {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
 }
+
+.tab {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-align: center;
+  border: none;
+  border-radius: 4px;
+  background: var(--btn-bg);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    background var(--transition-speed) var(--transition-ease),
+    color var(--transition-speed) var(--transition-ease);
+}
+
+.tab:hover {
+  background: var(--btn-hover);
+  color: var(--text-secondary);
+}
+
+.activeTab {
+  background: var(--focus-blue);
+  color: #ffffff;
+}
+
+.activeTab:hover {
+  background: var(--focus-blue);
+  color: #ffffff;
+}
+
+/* ============================
+   Swatch Grid
+   ============================ */
 
 .swatchGrid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
 .swatch {
-  width: 28px;
-  height: 28px;
+  width: 100%;
+  aspect-ratio: 1;
   border-radius: 6px;
   border: 2px solid transparent;
   cursor: pointer;
@@ -50,7 +92,59 @@
   box-shadow: 0 0 0 2px var(--focus-blue);
 }
 
-/* Custom color slots */
+/* ============================
+   Saved Colors Header
+   ============================ */
+
+.savedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+
+.savedLabel {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+}
+
+.addButton {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px dashed var(--text-placeholder);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background var(--transition-speed) var(--transition-ease),
+    color var(--transition-speed) var(--transition-ease),
+    border-color var(--transition-speed) var(--transition-ease);
+}
+
+.addButton:hover {
+  background: var(--btn-hover);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* ============================
+   Custom Color Slots (5×2 grid)
+   ============================ */
+
+/* Override grid to 5 columns for saved colors */
+.savedHeader + .swatchGrid {
+  grid-template-columns: repeat(5, 1fr);
+}
+
 .customSwatch {
   border: 2px dashed rgba(0, 0, 0, 0.15);
 }
@@ -59,7 +153,6 @@
   border-style: solid;
 }
 
-/* Empty custom color slots */
 .emptySwatch {
   background: rgba(0, 0, 0, 0.04);
   cursor: default;
@@ -70,23 +163,23 @@
   transform: none;
 }
 
-/* Bounce animation when dropper samples a color into a custom slot.
-   Swing right → bounce at peak → left → bounce at peak → gentle settle.
-   The amplitude decays toward the end for a smooth, natural deceleration
-   instead of an abrupt stop. Duration: 600ms for a playful feel. */
+/* ============================
+   Dropper Bounce Animation
+   ============================ */
+
 @keyframes dropperBounce {
   0%   { transform: rotate(0deg); }
   15%  { transform: rotate(35deg); }
-  20%  { transform: rotate(30deg); }  /* small bounce at peak right */
+  20%  { transform: rotate(30deg); }
   24%  { transform: rotate(35deg); }
   42%  { transform: rotate(0deg); }
   56%  { transform: rotate(-35deg); }
-  60%  { transform: rotate(-30deg); } /* small bounce at peak left */
+  60%  { transform: rotate(-30deg); }
   64%  { transform: rotate(-35deg); }
   76%  { transform: rotate(0deg); }
-  85%  { transform: rotate(8deg); }   /* gentle settle wobble right */
-  92%  { transform: rotate(-3deg); }  /* tiny counter-wobble */
-  100% { transform: rotate(0deg); }   /* smooth rest */
+  85%  { transform: rotate(8deg); }
+  92%  { transform: rotate(-3deg); }
+  100% { transform: rotate(0deg); }
 }
 
 .dropperBounce {
