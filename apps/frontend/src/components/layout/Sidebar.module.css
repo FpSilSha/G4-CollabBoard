@@ -9,7 +9,67 @@
   padding: 12px 0;
   overflow-y: auto;
   overflow-x: hidden;
+  position: relative;
+  transition:
+    width 250ms ease,
+    min-width 250ms ease,
+    padding 250ms ease;
 }
+
+/* Collapsed state: shrink to 0 width, content hidden via React conditional.
+   overflow: visible so the edge toggle lip can protrude. */
+.sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-right-color: transparent;
+  overflow: visible;
+}
+
+/* ============================
+   Edge Toggle (collapse/expand)
+   Uses fixed positioning so it's always vertically centered in the
+   viewport regardless of sidebar scroll height. Sits just outside
+   the sidebar's right edge. When collapsed, snaps to left: 0.
+   ============================ */
+
+.edgeToggle {
+  position: fixed;
+  top: 50%;
+  /* Sidebar width = 200px, so place at the sidebar's right edge */
+  left: var(--sidebar-width);
+  transform: translateY(-50%);
+  width: 28px;
+  height: 48px;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition:
+    left 250ms ease,
+    color var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+}
+
+.edgeToggle:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* When collapsed, slide the toggle to the left edge of the viewport */
+.sidebar.collapsed .edgeToggle {
+  left: 0;
+}
+
+/* ============================
+   Tool Groups
+   ============================ */
 
 .toolGroup {
   display: flex;
@@ -23,6 +83,10 @@
 .toolGroup:last-child {
   border-bottom: none;
 }
+
+/* ============================
+   Tool Buttons
+   ============================ */
 
 .toolButton,
 .draggableItem {
@@ -64,4 +128,84 @@
 
 .draggableItem:active {
   cursor: grabbing;
+}
+
+/* ============================
+   Z-Order Controls
+   ============================ */
+
+.zOrderLabel {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.zOrderGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.zOrderButton {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--border-radius);
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+}
+
+.zOrderButton:hover:not(:disabled) {
+  transform: scale(var(--hover-scale));
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.zOrderButton:active:not(:disabled) {
+  transform: scale(var(--active-scale));
+}
+
+.zOrderButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ============================
+   Trash Zone (drag-to-delete)
+   Pushed to bottom of sidebar via margin-top: auto.
+   Highlights red when an object is dragged over it.
+   ============================ */
+
+.trashZone {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  align-self: center;
+  margin-bottom: 12px;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: var(--border-radius);
+  color: rgba(255, 255, 255, 0.4);
+  transition:
+    border-color 200ms ease,
+    background 200ms ease,
+    color 200ms ease,
+    transform 200ms ease;
+}
+
+.trashZone:global(.drag-over) {
+  border-color: #F44336;
+  background: rgba(244, 67, 54, 0.15);
+  color: #F44336;
+  transform: scale(1.15);
 }

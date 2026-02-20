@@ -70,18 +70,46 @@ export const ObjectUpdatePayloadSchema = z.object({
 export const ObjectUpdateFieldsSchema = z.object({
   x: coordinate.optional(),
   y: coordinate.optional(),
+  x2: coordinate.optional(),
+  y2: coordinate.optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   text: z.string().max(10000).optional(),
   width: z.number().min(10).max(5000).optional(),
   height: z.number().min(10).max(5000).optional(),
   rotation: z.number().min(-360).max(360).optional(),
+  fontSize: z.number().min(8).max(200).optional(),
+  title: z.string().max(255).optional(),
   lastEditedBy: z.string().optional(),
   updatedAt: z.any().optional(),
+  frameId: z.string().uuid().nullable().optional(),
+  locked: z.boolean().optional(),
 }).passthrough();
 
 // object:delete
 export const ObjectDeletePayloadSchema = z.object({
   boardId: z.string().uuid(),
   objectId: z.string().min(1),
+  timestamp: z.number().int().positive(),
+});
+
+// objects:batch_update — lightweight position-only batch for multi-select drag
+export const ObjectsBatchMovePayloadSchema = z.object({
+  boardId: z.string().uuid(),
+  moves: z.array(z.object({
+    objectId: z.string().min(1),
+    x: coordinate,
+    y: coordinate,
+  })).min(1).max(50), // Reasonable cap
+  timestamp: z.number().int().positive(),
+});
+
+// objects:batch_create — batch create for paste operations
+// Sends all pasted objects in a single message to avoid rate-limit issues
+export const ObjectsBatchCreatePayloadSchema = z.object({
+  boardId: z.string().uuid(),
+  objects: z.array(z.object({
+    id: z.string().uuid(),
+    type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
+  }).passthrough()).min(1).max(50), // Cap at 50 objects per batch
   timestamp: z.number().int().positive(),
 });

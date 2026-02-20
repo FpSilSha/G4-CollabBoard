@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { CreateBoardSchema, UpdateProfileSchema, BoardIdParamSchema } from 'shared';
+import { CreateBoardSchema, UpdateBoardSchema, UpdateProfileSchema, BoardIdParamSchema } from 'shared';
 import { requireAuth } from './middleware/auth';
 import { validate } from './middleware/validate';
 import { errorHandler } from './middleware/errorHandler';
@@ -91,6 +91,7 @@ app.patch('/auth/me', requireAuth, validate(UpdateProfileSchema), userController
 app.get('/boards', requireAuth, apiRateLimit, boardController.listBoards);
 app.post('/boards', requireAuth, apiRateLimit, validate(CreateBoardSchema), boardController.createBoard);
 app.get('/boards/:id', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), boardController.getBoard);
+app.patch('/boards/:id', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), validate(UpdateBoardSchema), boardController.renameBoard);
 app.delete('/boards/:id', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), boardController.deleteBoard);
 
 // --- Version Routes ---

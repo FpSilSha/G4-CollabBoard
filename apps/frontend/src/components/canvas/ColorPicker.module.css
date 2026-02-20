@@ -28,7 +28,7 @@
 .swatch {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 6px;
   border: 2px solid transparent;
   cursor: pointer;
   transition:
@@ -68,4 +68,27 @@
 
 .emptySwatch:hover {
   transform: none;
+}
+
+/* Bounce animation when dropper samples a color into a custom slot.
+   Swing right → bounce at peak → left → bounce at peak → gentle settle.
+   The amplitude decays toward the end for a smooth, natural deceleration
+   instead of an abrupt stop. Duration: 600ms for a playful feel. */
+@keyframes dropperBounce {
+  0%   { transform: rotate(0deg); }
+  15%  { transform: rotate(35deg); }
+  20%  { transform: rotate(30deg); }  /* small bounce at peak right */
+  24%  { transform: rotate(35deg); }
+  42%  { transform: rotate(0deg); }
+  56%  { transform: rotate(-35deg); }
+  60%  { transform: rotate(-30deg); } /* small bounce at peak left */
+  64%  { transform: rotate(-35deg); }
+  76%  { transform: rotate(0deg); }
+  85%  { transform: rotate(8deg); }   /* gentle settle wobble right */
+  92%  { transform: rotate(-3deg); }  /* tiny counter-wobble */
+  100% { transform: rotate(0deg); }   /* smooth rest */
+}
+
+.dropperBounce {
+  animation: dropperBounce 600ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }

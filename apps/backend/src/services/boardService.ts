@@ -77,9 +77,11 @@ export const boardService = {
       throw new AppError(403, `Board limit reached. Your ${tier} plan allows ${maxSlots} boards.`, 'BOARD_LIMIT_REACHED');
     }
 
-    // Find next available slot
+    // Find next available slot.
+    // Include ALL boards (even soft-deleted) because the unique constraint
+    // on (ownerId, slot) applies to all rows regardless of isDeleted status.
     const existingSlots = await prisma.board.findMany({
-      where: { ownerId: userId, isDeleted: false },
+      where: { ownerId: userId },
       select: { slot: true },
       orderBy: { slot: 'asc' },
     });
@@ -111,6 +113,7 @@ export const boardService = {
   async getBoard(boardId: string, userId: string) {
     const board = await prisma.board.findUnique({
       where: { id: boardId },
+      include: { owner: { select: { subscriptionTier: true } } },
     });
 
     if (!board) {
@@ -131,6 +134,8 @@ export const boardService = {
       data: { lastAccessedAt: new Date() },
     });
 
+    const tier = board.owner.subscriptionTier.toLowerCase() as SubscriptionTier;
+
     return {
       id: board.id,
       title: board.title,
@@ -138,6 +143,31 @@ export const boardService = {
       objects: board.objects as unknown[],
       version: board.version,
       lastAccessedAt: board.lastAccessedAt,
+      maxObjectsPerBoard: TIER_LIMITS[tier].OBJECTS_PER_BOARD,
+    };
+  },
+
+  async renameBoard(boardId: string, userId: string, title: string) {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+    });
+
+    if (!board) {
+      throw new AppError(404, 'Board not found');
+    }
+
+    if (board.ownerId !== userId) {
+      throw new AppError(403, 'You do not have access to this board');
+    }
+
+    const updated = await prisma.board.update({
+      where: { id: boardId },
+      data: { title },
+    });
+
+    return {
+      id: updated.id,
+      title: updated.title,
     };
   },
 

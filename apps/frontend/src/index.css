@@ -3,9 +3,9 @@
    ============================ */
 :root {
   /* Canvas */
-  --canvas-bg: #E5E5E5;
+  --canvas-bg: #2A2A2E;
   --dot-grid-spacing: 20px;
-  --dot-grid-opacity: 0.2;
+  --dot-grid-opacity: 0.12;
 
   /* Chrome (sidebar, header) */
   --sidebar-bg: #70726F;

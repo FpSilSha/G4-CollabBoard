@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
 import { useUIStore } from '../../stores/uiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import { SHAPE_COLORS } from 'shared';
-import { updateStickyColor } from '../../utils/fabricHelpers';
+import { updateStickyColor, updateFrameColor } from '../../utils/fabricHelpers';
 import styles from './ColorPicker.module.css';
 
 /**
@@ -23,6 +23,23 @@ export function ColorPicker() {
   const activeColor = useUIStore((s) => s.activeColor);
   const setActiveColor = useUIStore((s) => s.setActiveColor);
   const customColors = useUIStore((s) => s.customColors);
+
+  // Track which custom slot should play the bounce animation.
+  // Set to the slot index when the dropper adds a new color, cleared after animation ends.
+  const [bouncingSlot, setBouncingSlot] = useState<number | null>(null);
+  const prevCustomColorsRef = useRef<string[]>(customColors);
+
+  // Detect when a new custom color is added (dropper pick) and trigger bounce
+  useEffect(() => {
+    const prev = prevCustomColorsRef.current;
+    const curr = customColors;
+
+    if (curr.length > 0 && curr[0] !== prev[0]) {
+      // The newest color is always at index 0
+      setBouncingSlot(0);
+    }
+    prevCustomColorsRef.current = curr;
+  }, [customColors]);
 
   // Single palette for all tools — SHAPE_COLORS only
   const palette: readonly string[] = SHAPE_COLORS;
@@ -52,6 +69,23 @@ export function ColorPicker() {
     if (objType === 'sticky' && activeObj instanceof fabric.Group) {
       // Sticky notes are Groups — update base + fold via helper
       updateStickyColor(activeObj, color);
+    } else if (objType === 'text' && activeObj instanceof fabric.IText) {
+      // Text elements: if currently in editing mode, exit first so
+      // Fabric.js re-renders with the new fill color immediately.
+      const wasEditing = activeObj.isEditing;
+      if (wasEditing) {
+        activeObj.exitEditing();
+      }
+      activeObj.set('fill', color);
+      if (wasEditing) {
+        activeObj.enterEditing();
+      }
+    } else if (objType === 'frame' && activeObj instanceof fabric.Group) {
+      // Frames: update the border rect's stroke and label color
+      updateFrameColor(activeObj, color);
+    } else if (objType === 'connector') {
+      // Connectors: update stroke color (not fill)
+      activeObj.set('stroke', color);
     } else {
       // Shapes (rect, circle) — update fill directly
       activeObj.set('fill', color);
@@ -92,9 +126,14 @@ export function ColorPicker() {
             key={`custom-${i}`}
             className={`${styles.swatch} ${styles.customSwatch} ${
               color && color === activeColor ? styles.activeSwatch : ''
-            } ${!color ? styles.emptySwatch : ''}`}
+            } ${!color ? styles.emptySwatch : ''} ${
+              bouncingSlot === i ? styles.dropperBounce : ''
+            }`}
             style={color ? { backgroundColor: color } : undefined}
             onClick={() => color && handleColorSelect(color)}
+            onAnimationEnd={() => {
+              if (bouncingSlot === i) setBouncingSlot(null);
+            }}
             disabled={!color}
             title={color ?? 'Empty — use dropper (I) to sample'}
             aria-label={color ? `Select custom color ${color}` : `Empty custom color slot ${i + 1}`}

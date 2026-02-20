@@ -64,6 +64,30 @@ export const boardController = {
   },
 
   /**
+   * PATCH /boards/:id
+   */
+  async renameBoard(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { sub } = (req as AuthenticatedRequest).user;
+      const { id } = req.params;
+      const { title } = req.body;
+      const result = await boardService.renameBoard(id, sub, title);
+
+      auditService.log({
+        userId: sub,
+        action: AuditAction.BOARD_UPDATE,
+        entityType: 'board',
+        entityId: id,
+        metadata: { title },
+      });
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
    * DELETE /boards/:id
    */
   async deleteBoard(req: Request, res: Response, next: NextFunction) {

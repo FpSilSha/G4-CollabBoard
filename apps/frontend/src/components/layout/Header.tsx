@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { fabric } from 'fabric';
 import { Link } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
@@ -6,11 +7,13 @@ import { useBoardStore } from '../../stores/boardStore';
 import { usePresenceStore, type ConnectionStatus } from '../../stores/presenceStore';
 import styles from './Header.module.css';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 /**
  * Header bar at the top of the main area (right of sidebar).
  *
  * Contains:
- * - Board title
+ * - Board title (editable via pencil icon)
  * - Zoom controls (-, percentage display, +, home button)
  * - Connection status badge
  * - Presence avatars for remote users in the board
@@ -19,9 +22,12 @@ export function Header() {
   const zoom = useBoardStore((s) => s.zoom);
   const canvas = useBoardStore((s) => s.canvas);
   const boardTitle = useBoardStore((s) => s.boardTitle);
+  const boardId = useBoardStore((s) => s.boardId);
+  const setBoardTitle = useBoardStore((s) => s.setBoardTitle);
   const setZoom = useBoardStore((s) => s.setZoom);
   const connectionStatus = usePresenceStore((s) => s.connectionStatus);
   const remoteUsers = usePresenceStore((s) => s.remoteUsers);
+  const { getAccessTokenSilently } = useAuth0();
 
   const handleZoom = (newZoom: number) => {
     if (!canvas) return;
@@ -57,6 +63,55 @@ export function Header() {
 
   const zoomPercent = Math.round(zoom * 100);
 
+  // --- Editable board title ---
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(boardTitle);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus the title field when entering edit mode
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  const saveBoardTitle = useCallback(async (newTitle: string) => {
+    const trimmed = newTitle.trim();
+    const finalTitle = trimmed || 'Untitled Board';
+    setIsEditingTitle(false);
+    setBoardTitle(finalTitle);
+
+    if (!boardId) return;
+
+    try {
+      const token = await getAccessTokenSilently({
+        authorizationParams: {
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
+        },
+      });
+      await fetch(`${API_URL}/boards/${boardId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: finalTitle }),
+      });
+    } catch (err) {
+      console.error('[Header] Failed to rename board:', err);
+    }
+  }, [boardId, getAccessTokenSilently, setBoardTitle]);
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      saveBoardTitle(titleDraft);
+    } else if (e.key === 'Escape') {
+      setIsEditingTitle(false);
+      setTitleDraft(boardTitle);
+    }
+  };
+
   return (
     <header className={styles.header}>
       <div className={styles.left}>
@@ -65,7 +120,35 @@ export function Header() {
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
         </Link>
-        <h1 className={styles.boardTitle}>{boardTitle}</h1>
+        {isEditingTitle ? (
+          <input
+            ref={titleInputRef}
+            className={styles.boardTitleInput}
+            value={titleDraft}
+            placeholder="title?"
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onKeyDown={handleTitleKeyDown}
+            onBlur={() => saveBoardTitle(titleDraft)}
+            maxLength={255}
+          />
+        ) : (
+          <div className={styles.boardTitleRow}>
+            <h1 className={styles.boardTitle}>{boardTitle}</h1>
+            <button
+              className={styles.editTitleButton}
+              onClick={() => {
+                setTitleDraft(boardTitle);
+                setIsEditingTitle(true);
+              }}
+              title="Rename board"
+              aria-label="Rename board"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className={styles.center}>

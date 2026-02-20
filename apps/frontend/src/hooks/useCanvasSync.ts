@@ -12,6 +12,8 @@ import {
   type UserJoinedPayload,
   type UserLeftPayload,
   type EditWarningPayload,
+  type ObjectsBatchMovedPayload,
+  type ObjectsBatchCreatedPayload,
   type BoardObject,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
@@ -21,7 +23,9 @@ import {
   fabricToBoardObject,
   boardObjectToFabric,
   updateStickyColor,
+  updateFrameColor,
   getStickyChildren,
+  syncConnectorCoordsAfterMove,
 } from '../utils/fabricHelpers';
 import { throttle } from '../utils/throttle';
 
@@ -104,45 +108,136 @@ export function useCanvasSync(
     const throttledObjectMove = throttle(emitObjectMove, THROTTLE_CONFIG.OBJECT_MOVING_MS);
     throttledObjectMoveRef.current = throttledObjectMove;
 
+    // --- Batch move for multi-select drag (one message for all objects) ---
+    const emitBatchMove = (moves: Array<{ objectId: string; x: number; y: number }>) => {
+      const boardId = useBoardStore.getState().boardId;
+      if (!boardId || !socket.connected) return;
+      socket.emit(WebSocketEvent.OBJECTS_BATCH_UPDATE, {
+        boardId,
+        moves,
+        timestamp: Date.now(),
+      });
+    };
+
+    const throttledBatchMove = throttle(emitBatchMove, THROTTLE_CONFIG.OBJECT_MOVING_MS);
+
+    /**
+     * Get the absolute top-left position of a child inside an ActiveSelection.
+     *
+     * ActiveSelection uses originX/Y: 'center', so group.left/top is the
+     * center of the bounding box and child.left/top are offsets from that
+     * center. Using calcTransformMatrix() gives us the absolute CENTER of
+     * the child at [4]/[5], then we subtract half dimensions to get top-left
+     * (which is what left/top mean for ungrouped objects with originX: 'left').
+     */
+    function getChildAbsolutePosition(child: fabric.Object): { x: number; y: number } {
+      const m = child.calcTransformMatrix();
+      return {
+        x: m[4] - (child.width! * (child.scaleX ?? 1)) / 2,
+        y: m[5] - (child.height! * (child.scaleY ?? 1)) / 2,
+      };
+    }
+
     const handleObjectMoving = (opt: fabric.IEvent) => {
       const target = opt.target;
-      if (!target?.data?.id) return;
-      throttledObjectMove(target.data.id, target.left ?? 0, target.top ?? 0);
+      if (!target) return;
+
+      if (target.type === 'activeSelection') {
+        // Multi-select: collect all child positions into a single batch emit.
+        const moves: Array<{ objectId: string; x: number; y: number }> = [];
+
+        for (const child of (target as fabric.ActiveSelection).getObjects()) {
+          if (!child.data?.id) continue;
+          const pos = getChildAbsolutePosition(child);
+          moves.push({ objectId: child.data.id, x: pos.x, y: pos.y });
+        }
+
+        if (moves.length > 0) {
+          throttledBatchMove(moves);
+        }
+      } else {
+        if (!target.data?.id) return;
+        throttledObjectMove(target.data.id, target.left ?? 0, target.top ?? 0);
+      }
     };
 
     canvas.on('object:moving', handleObjectMoving);
 
     // --- Object modified (mouse:up / end of interaction) ---
     // Per .clauderules: UNTHROTTLED — cancel throttle, emit immediately (Final State Rule)
-    const handleObjectModified = (opt: fabric.IEvent) => {
-      const target = opt.target;
-      if (!target?.data?.id) return;
-
-      // Cancel any pending throttled move emission
-      throttledObjectMove.cancel();
-
+    //
+    // For ActiveSelection (multi-select), we iterate each child and emit
+    // individual object:update events. After a group move, Fabric.js updates
+    // each child's absolute position when the selection is discarded, but
+    // during the event the children still have group-relative coords. We
+    // compute absolute positions using the group transform.
+    const emitFinalState = (fabricObj: fabric.Object) => {
       const boardId = useBoardStore.getState().boardId;
       if (!boardId || !socket.connected) return;
+      if (!fabricObj.data?.id) return;
 
       const localUserId = usePresenceStore.getState().localUserId;
-
-      // Build full updates from the fabric object's current state
-      const boardObj = fabricToBoardObject(target, localUserId ?? undefined);
+      const boardObj = fabricToBoardObject(fabricObj, localUserId ?? undefined);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, createdBy, createdAt, type, ...updates } = boardObj as unknown as Record<string, unknown>;
 
       socket.emit(WebSocketEvent.OBJECT_UPDATE, {
         boardId,
-        objectId: target.data.id,
+        objectId: fabricObj.data.id,
         updates,
         timestamp: Date.now(),
       });
 
-      // Also update boardStore
       useBoardStore.getState().updateObject(
-        target.data.id,
+        fabricObj.data.id,
         updates as Partial<BoardObject>
       );
+    };
+
+    const handleObjectModified = (opt: fabric.IEvent) => {
+      const target = opt.target;
+      if (!target) return;
+
+      // Cancel any pending throttled move emissions (single + batch)
+      throttledObjectMove.cancel();
+      throttledBatchMove.cancel();
+
+      // Sync connector coords BEFORE serialization. Fabric.js Line only
+      // updates left/top on move but leaves x1/y1/x2/y2 stale. This must
+      // happen before emitFinalState so the correct endpoint coordinates
+      // are sent to the server.
+      if (target.data?.type === 'connector' && target instanceof fabric.Line) {
+        syncConnectorCoordsAfterMove(target);
+      }
+
+      if (target.type === 'activeSelection') {
+        // Multi-select: emit final state for each child object.
+        // Use calcTransformMatrix() to get absolute positions, then
+        // temporarily set left/top so fabricToBoardObject serializes
+        // the correct absolute coords.
+        for (const child of (target as fabric.ActiveSelection).getObjects()) {
+          if (!child.data?.id) continue;
+
+          // Sync connector children too
+          if (child.data?.type === 'connector' && child instanceof fabric.Line) {
+            syncConnectorCoordsAfterMove(child);
+          }
+
+          const pos = getChildAbsolutePosition(child);
+          const origLeft = child.left ?? 0;
+          const origTop = child.top ?? 0;
+          child.set('left', pos.x);
+          child.set('top', pos.y);
+
+          emitFinalState(child);
+
+          // Restore group-relative coords so Fabric.js selection isn't broken
+          child.set('left', origLeft);
+          child.set('top', origTop);
+        }
+      } else {
+        emitFinalState(target);
+      }
     };
 
     canvas.on('object:modified', handleObjectModified);
@@ -182,6 +277,7 @@ export function useCanvasSync(
 
       // Render each object from server
       const boardObjects: BoardObject[] = [];
+      const frameObjects: fabric.Object[] = [];
       objects.forEach((obj: BoardObject) => {
         if (editingId && obj.id === editingId) {
           // Skip rebuilding the object we're editing — it's already preserved.
@@ -192,9 +288,29 @@ export function useCanvasSync(
         const fabricObj = boardObjectToFabric(obj);
         if (fabricObj) {
           canvas.add(fabricObj);
+          if (obj.type === 'frame') {
+            frameObjects.push(fabricObj);
+          }
           boardObjects.push(obj);
         }
       });
+
+      // Send all frames to back so they render behind non-frame objects
+      for (const frame of frameObjects) {
+        canvas.sendToBack(frame);
+      }
+
+      // Make children of locked frames unselectable
+      for (const obj of canvas.getObjects()) {
+        if (!obj.data?.frameId) continue;
+        // Check if the parent frame is locked
+        const parentFrame = canvas.getObjects().find(
+          (o) => o.data?.id === obj.data.frameId && o.data?.type === 'frame'
+        );
+        if (parentFrame?.data?.locked) {
+          obj.set({ selectable: false, evented: false });
+        }
+      }
 
       // Bulk-set objects in store
       useBoardStore.getState().setObjects(boardObjects);
@@ -232,12 +348,44 @@ export function useCanvasSync(
       const fabricObj = boardObjectToFabric(object);
       if (fabricObj) {
         canvas.add(fabricObj);
+        // Frames always go behind non-frame objects
+        if (object.type === 'frame') {
+          canvas.sendToBack(fabricObj);
+        }
+        // If anchored to a locked frame, make unselectable
+        if (object.frameId) {
+          const parentFrame = canvas.getObjects().find(
+            (o) => o.data?.id === object.frameId && o.data?.type === 'frame'
+          );
+          if (parentFrame?.data?.locked) {
+            fabricObj.set({ selectable: false, evented: false });
+          }
+        }
         canvas.requestRenderAll();
         useBoardStore.getState().addObject(object);
       }
     };
 
     socket.on(WebSocketEvent.OBJECT_CREATED, handleObjectCreated);
+
+    // --- objects:batch_created (paste from another user) ---
+    const handleBatchCreated = (payload: ObjectsBatchCreatedPayload) => {
+      const currentLocalUserId = usePresenceStore.getState().localUserId;
+
+      // Skip if this is our own batch (already on canvas optimistically)
+      if (payload.userId === currentLocalUserId) return;
+
+      for (const object of payload.objects) {
+        const fabricObj = boardObjectToFabric(object);
+        if (fabricObj) {
+          canvas.add(fabricObj);
+          useBoardStore.getState().addObject(object);
+        }
+      }
+      canvas.requestRenderAll();
+    };
+
+    socket.on(WebSocketEvent.OBJECTS_BATCH_CREATED, handleBatchCreated);
 
     // --- object:updated ---
     const handleObjectUpdated = (payload: ObjectUpdatedPayload) => {
@@ -293,7 +441,9 @@ export function useCanvasSync(
       if (u.rotation !== undefined) fabricObj.set('angle', u.rotation as number);
 
       // Apply type-specific updates
-      if (fabricObj.data?.type === 'sticky' && fabricObj instanceof fabric.Group) {
+      const objType = fabricObj.data?.type;
+
+      if (objType === 'sticky' && fabricObj instanceof fabric.Group) {
         if (u.color) {
           updateStickyColor(fabricObj, u.color as string);
         }
@@ -309,8 +459,39 @@ export function useCanvasSync(
           fabricObj.set('scaleX', 1);
           fabricObj.set('scaleY', 1);
         }
+      } else if (objType === 'text') {
+        // Standalone text element (IText)
+        if (u.text !== undefined) (fabricObj as fabric.IText).set('text', u.text as string);
+        if (u.color) fabricObj.set('fill', u.color as string);
+        if (u.fontSize !== undefined) (fabricObj as fabric.IText).set('fontSize', u.fontSize as number);
+      } else if (objType === 'frame' && fabricObj instanceof fabric.Group) {
+        // Frame: update border color + label color together
+        if (u.color) {
+          updateFrameColor(fabricObj, u.color as string);
+        }
+        if (u.title !== undefined) {
+          fabricObj.data.title = u.title as string;
+          const labelText = fabricObj.getObjects()[1] as fabric.Text;
+          labelText.set('text', u.title as string);
+        }
+        if (u.locked !== undefined) {
+          fabricObj.data.locked = u.locked as boolean;
+        }
+        if (u.width !== undefined || u.height !== undefined) {
+          if (u.width !== undefined) fabricObj.set('width', u.width as number);
+          if (u.height !== undefined) fabricObj.set('height', u.height as number);
+          fabricObj.set('scaleX', 1);
+          fabricObj.set('scaleY', 1);
+        }
+      } else if (objType === 'connector') {
+        // Connector line
+        if (u.color) fabricObj.set('stroke', u.color as string);
+        // Update endpoint coordinates
+        const connLine = fabricObj as fabric.Line;
+        if (u.x2 !== undefined) connLine.set('x2', u.x2 as number);
+        if (u.y2 !== undefined) connLine.set('y2', u.y2 as number);
       } else {
-        // Shape updates
+        // Shape updates (rectangle, circle)
         if (u.color) fabricObj.set('fill', u.color as string);
         // Apply size updates — reset scale to 1 since we set actual dimensions
         if (u.width !== undefined || u.height !== undefined) {
@@ -327,6 +508,34 @@ export function useCanvasSync(
         }
       }
 
+      // Apply frameId changes (applies to all object types)
+      if (u.frameId !== undefined) {
+        fabricObj.data = { ...fabricObj.data, frameId: u.frameId };
+        if (u.frameId) {
+          // Check if parent frame is locked — if so, make unselectable
+          const parentFrame = canvas.getObjects().find(
+            (o) => o.data?.id === u.frameId && o.data?.type === 'frame'
+          );
+          if (parentFrame?.data?.locked) {
+            fabricObj.set({ selectable: false, evented: false });
+          }
+        } else {
+          // Unanchored — restore selectability
+          fabricObj.set({ selectable: true, evented: true });
+        }
+      }
+
+      // When a frame's locked state changes, update children selectability
+      if (objType === 'frame' && u.locked !== undefined) {
+        const frameId = fabricObj.data?.id;
+        const isNowLocked = u.locked as boolean;
+        for (const child of canvas.getObjects()) {
+          if (child.data?.frameId === frameId) {
+            child.set({ selectable: !isNowLocked, evented: !isNowLocked });
+          }
+        }
+      }
+
       fabricObj.setCoords();
       canvas.requestRenderAll();
 
@@ -335,6 +544,31 @@ export function useCanvasSync(
     };
 
     socket.on(WebSocketEvent.OBJECT_UPDATED, handleObjectUpdated);
+
+    // --- objects:batch_update (multi-select drag from another user) ---
+    const handleBatchMoved = (payload: ObjectsBatchMovedPayload) => {
+      const currentLocalUserId = usePresenceStore.getState().localUserId;
+      if (payload.userId === currentLocalUserId) return;
+
+      for (const move of payload.moves) {
+        const fabricObj = findFabricObjectById(canvas, move.objectId);
+        if (!fabricObj) continue;
+
+        // Smooth animate for drag-in-progress position updates
+        fabricObj.animate('left', move.x, {
+          duration: 100,
+          onChange: () => canvas.requestRenderAll(),
+          easing: fabric.util.ease.easeOutQuad,
+        });
+        fabricObj.animate('top', move.y, {
+          duration: 100,
+          onChange: () => canvas.requestRenderAll(),
+          easing: fabric.util.ease.easeOutQuad,
+        });
+      }
+    };
+
+    socket.on(WebSocketEvent.OBJECTS_BATCH_UPDATE, handleBatchMoved);
 
     // --- object:deleted ---
     const handleObjectDeleted = (payload: ObjectDeletedPayload) => {
@@ -345,6 +579,17 @@ export function useCanvasSync(
 
       const fabricObj = findFabricObjectById(canvas, objectId);
       if (fabricObj) {
+        // If a frame is deleted, orphan all its anchored children + restore selectability
+        if (fabricObj.data?.type === 'frame') {
+          for (const obj of canvas.getObjects()) {
+            if (obj.data?.frameId === objectId) {
+              obj.data = { ...obj.data, frameId: null };
+              obj.set({ selectable: true, evented: true });
+              useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+            }
+          }
+        }
+
         canvas.remove(fabricObj);
         canvas.requestRenderAll();
       }
@@ -474,7 +719,9 @@ export function useCanvasSync(
 
       socket.off(WebSocketEvent.BOARD_STATE, handleBoardState);
       socket.off(WebSocketEvent.OBJECT_CREATED, handleObjectCreated);
+      socket.off(WebSocketEvent.OBJECTS_BATCH_CREATED, handleBatchCreated);
       socket.off(WebSocketEvent.OBJECT_UPDATED, handleObjectUpdated);
+      socket.off(WebSocketEvent.OBJECTS_BATCH_UPDATE, handleBatchMoved);
       socket.off(WebSocketEvent.OBJECT_DELETED, handleObjectDeleted);
       socket.off(WebSocketEvent.CURSOR_MOVED, handleCursorMoved);
       socket.off(WebSocketEvent.USER_JOINED, handleUserJoined);
@@ -486,6 +733,7 @@ export function useCanvasSync(
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();
+      throttledBatchMove.cancel();
       clearInterval(staleCursorInterval);
     };
   }, [socketRef, fabricRef, connectionStatus]);

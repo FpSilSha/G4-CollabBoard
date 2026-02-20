@@ -3,6 +3,11 @@ export const CANVAS_CONFIG = {
   MAX_ZOOM: 20,
   DEFAULT_ZOOM: 1,
   ZOOM_STEP: 0.1,
+
+  // Edge-of-canvas auto-scroll (when dragging objects near viewport edges)
+  EDGE_SCROLL_THRESHOLD: 60,    // px from viewport edge to start scrolling
+  EDGE_SCROLL_MIN_SPEED: 2,     // px/frame at outer threshold boundary
+  EDGE_SCROLL_MAX_SPEED: 15,    // px/frame at very edge (speed cap)
 } as const;
 
 export const THROTTLE_CONFIG = {

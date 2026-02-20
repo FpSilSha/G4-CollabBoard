@@ -6,6 +6,9 @@ import { Sidebar } from '../layout/Sidebar';
 import { Header } from '../layout/Header';
 import { Canvas } from '../canvas/Canvas';
 import { StickyEditModal } from '../canvas/StickyEditModal';
+import { Toast } from '../ui/Toast';
+import { DragEdgeOverlay } from '../ui/DragEdgeOverlay';
+import { FloatingTrash } from '../ui/FloatingTrash';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { usePresenceStore } from '../../stores/presenceStore';
 import { useBoardStore } from '../../stores/boardStore';
@@ -47,6 +50,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   const storeBoardId = useBoardStore((s) => s.boardId);
   const setBoardId = useBoardStore((s) => s.setBoardId);
   const setBoardTitle = useBoardStore((s) => s.setBoardTitle);
+  const setMaxObjectsPerBoard = useBoardStore((s) => s.setMaxObjectsPerBoard);
   const clearObjects = useBoardStore((s) => s.clearObjects);
 
   // Track if this is a real mount (not StrictMode's second mount)
@@ -89,6 +93,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
         if (!cancelled) {
           setBoardId(data.id);
           setBoardTitle(data.title || 'Untitled Board');
+          if (data.maxObjectsPerBoard != null) {
+            setMaxObjectsPerBoard(data.maxObjectsPerBoard);
+          }
         }
       } catch (err) {
         console.error('Failed to validate board:', err);
@@ -146,6 +153,15 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
       {/* Sticky note text editing modal — driven by editingObjectId in boardStore */}
       <StickyEditModal />
+
+      {/* Toast notification (e.g., object limit warnings) */}
+      <Toast />
+
+      {/* Translucent edge glow while dragging objects */}
+      <DragEdgeOverlay />
+
+      {/* Floating trash button at bottom-center during drag */}
+      <FloatingTrash />
 
       {/* Offline overlay — blocks interaction when socket loses connection.
           Only show AFTER we've connected at least once (not on initial load). */}

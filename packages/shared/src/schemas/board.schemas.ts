@@ -9,12 +9,17 @@ export const CreateBoardSchema = z.object({
   title: z.string().min(1).max(255).trim(),
 });
 
+export const UpdateBoardSchema = z.object({
+  title: z.string().min(1).max(255).trim(),
+});
+
 // --- Object Schemas ---
 
 const BaseObjectFields = {
   type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
   x: coordinate,
   y: coordinate,
+  frameId: z.string().uuid().nullable().default(null),
 };
 
 export const StickyNoteCreateSchema = z.object({
@@ -43,15 +48,18 @@ export const FrameCreateSchema = z.object({
   width: dimension,
   height: dimension,
   color: hexColor,
+  locked: z.boolean().default(false),
 });
 
 export const ConnectorCreateSchema = z.object({
   ...BaseObjectFields,
   type: z.literal('connector'),
-  fromObjectId: z.string().uuid(),
-  toObjectId: z.string().uuid(),
-  style: z.enum(['line', 'arrow']),
+  fromObjectId: z.string().default(''),
+  toObjectId: z.string().default(''),
+  style: z.enum(['line', 'arrow']).default('line'),
   color: hexColor,
+  x2: coordinate,
+  y2: coordinate,
 });
 
 export const TextElementCreateSchema = z.object({
@@ -74,6 +82,8 @@ export const BoardObjectCreateSchema = z.discriminatedUnion('type', [
 export const ObjectUpdateSchema = z.object({
   x: coordinate.optional(),
   y: coordinate.optional(),
+  x2: coordinate.optional(),
+  y2: coordinate.optional(),
   text: z.string().max(10000).optional(),
   color: hexColor.optional(),
   width: dimension.optional(),
@@ -83,6 +93,8 @@ export const ObjectUpdateSchema = z.object({
   title: z.string().max(255).optional(),
   shapeType: z.enum(['rectangle', 'circle', 'line']).optional(),
   style: z.enum(['line', 'arrow']).optional(),
-  fromObjectId: z.string().uuid().optional(),
-  toObjectId: z.string().uuid().optional(),
+  fromObjectId: z.string().optional(),
+  toObjectId: z.string().optional(),
+  frameId: z.string().uuid().nullable().optional(),
+  locked: z.boolean().optional(),
 });

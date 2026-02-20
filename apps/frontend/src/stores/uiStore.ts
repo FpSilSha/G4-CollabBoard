@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { STICKY_NOTE_COLORS } from 'shared';
+import type { BoardObject } from 'shared';
 
 /**
  * Tool modes available in the toolbar.
@@ -7,9 +8,12 @@ import { STICKY_NOTE_COLORS } from 'shared';
  * - 'sticky': click canvas to place a sticky note
  * - 'rectangle': click canvas to place a rectangle
  * - 'circle': click canvas to place a circle
+ * - 'text': click canvas to place a standalone text element
+ * - 'frame': click canvas to place a frame (visual grouping container)
+ * - 'connector': click canvas to place a connector line
  * - 'dropper': click an object to sample its fill color
  */
-export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'dropper';
+export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'connector' | 'dropper';
 
 /** Maximum number of custom color slots (2 rows of 5) */
 const MAX_CUSTOM_COLORS = 10;
@@ -35,7 +39,33 @@ interface UIState {
 
   // Sidebar visibility
   sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+
+  // Whether the user is currently dragging an object on the canvas.
+  // When true, sidebars auto-close and edge-glow overlay is shown.
+  isDraggingObject: boolean;
+  setIsDraggingObject: (dragging: boolean) => void;
+
+  // Remembers the sidebar state before a drag auto-closed it, so we
+  // can restore it when the drag ends.
+  sidebarOpenBeforeDrag: boolean;
+
+  // Toast notification (ephemeral, auto-dismisses)
+  toastMessage: string | null;
+  showToast: (message: string) => void;
+  clearToast: () => void;
+
+  // Copy/paste clipboard (client-side only, never synced to server)
+  clipboard: BoardObject[];
+  setClipboard: (entries: BoardObject[]) => void;
+
+  // Currently selected object IDs on the canvas (set by canvas selection events).
+  // Used by the sidebar to conditionally show z-order controls.
+  selectedObjectIds: string[];
+  selectedObjectTypes: string[];
+  setSelection: (ids: string[], types: string[]) => void;
+  clearSelection: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -62,5 +92,26 @@ export const useUIStore = create<UIState>((set) => ({
   setIsPanning: (panning) => set({ isPanning: panning }),
 
   sidebarOpen: true,
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+
+  isDraggingObject: false,
+  setIsDraggingObject: (dragging) => set({ isDraggingObject: dragging }),
+  sidebarOpenBeforeDrag: true,
+
+  toastMessage: null,
+  showToast: (message) => {
+    set({ toastMessage: message });
+    // Auto-dismiss after 3 seconds
+    setTimeout(() => set({ toastMessage: null }), 3000);
+  },
+  clearToast: () => set({ toastMessage: null }),
+
+  clipboard: [],
+  setClipboard: (entries) => set({ clipboard: entries }),
+
+  selectedObjectIds: [],
+  selectedObjectTypes: [],
+  setSelection: (ids, types) => set({ selectedObjectIds: ids, selectedObjectTypes: types }),
+  clearSelection: () => set({ selectedObjectIds: [], selectedObjectTypes: [] }),
 }));
