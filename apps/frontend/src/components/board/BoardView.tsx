@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import type { Socket } from 'socket.io-client';
 import { Sidebar } from '../layout/Sidebar';
+import { RightSidebar } from '../layout/RightSidebar';
 import { Header } from '../layout/Header';
 import { Canvas } from '../canvas/Canvas';
 import { StickyEditModal } from '../canvas/StickyEditModal';
@@ -10,6 +11,7 @@ import { Toast } from '../ui/Toast';
 import { DragEdgeOverlay } from '../ui/DragEdgeOverlay';
 import { FloatingTrash } from '../ui/FloatingTrash';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { useTeleportFlags } from '../../hooks/useTeleportFlags';
 import { usePresenceStore } from '../../stores/presenceStore';
 import { useBoardStore } from '../../stores/boardStore';
 import styles from '../../App.module.css';
@@ -58,6 +60,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
   // Register global keyboard shortcuts (V, S, R, C, I, Delete, Backspace)
   useKeyboardShortcuts(socketRef);
+
+  // Teleport flags: load from API, render on canvas, handle placement + drag
+  useTeleportFlags();
 
   // Validate board exists via REST API, set title, set boardId in store.
   // Uses cancelled flag for StrictMode safety (no ref guards that deadlock).
@@ -150,6 +155,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
         <Header />
         <Canvas socketRef={socketRef} />
       </div>
+      <RightSidebar />
 
       {/* Sticky note text editing modal — driven by editingObjectId in boardStore */}
       <StickyEditModal />

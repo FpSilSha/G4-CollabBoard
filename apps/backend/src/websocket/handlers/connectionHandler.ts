@@ -11,6 +11,7 @@ import {
 import { presenceService } from '../../services/presenceService';
 import { boardService } from '../../services/boardService';
 import { editLockService } from '../../services/editLockService';
+import { teleportFlagService } from '../../services/teleportFlagService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
 import { auditService, AuditAction } from '../../services/auditService';
@@ -76,14 +77,18 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
       // Update session with current board
       await presenceService.updateSessionBoard(socket.id, boardId);
 
-      // Get all currently present users
-      const users = await presenceService.getBoardUsers(boardId);
+      // Get all currently present users + teleport flags
+      const [users, flagResult] = await Promise.all([
+        presenceService.getBoardUsers(boardId),
+        teleportFlagService.listFlags(boardId),
+      ]);
 
       // Send board state to the joining user (from Redis cache for consistency)
       const boardState: BoardStatePayload = {
         boardId,
         objects: cachedState.objects as BoardStatePayload['objects'],
         users,
+        flags: flagResult.flags,
       };
       trackedEmit(socket, WebSocketEvent.BOARD_STATE, boardState);
 
@@ -222,12 +227,16 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
 
     try {
       const cachedState = await boardService.getOrLoadBoardState(boardId);
-      const users = await presenceService.getBoardUsers(boardId);
+      const [users, flagResult] = await Promise.all([
+        presenceService.getBoardUsers(boardId),
+        teleportFlagService.listFlags(boardId),
+      ]);
 
       const syncResponse: BoardStatePayload = {
         boardId,
         objects: cachedState.objects as BoardStatePayload['objects'],
         users,
+        flags: flagResult.flags,
       };
 
       trackedEmit(socket, WebSocketEvent.BOARD_SYNC_RESPONSE, syncResponse);

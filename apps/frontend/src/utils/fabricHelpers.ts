@@ -955,3 +955,105 @@ export function darkenColor(hex: string, percent: number): string {
   const b = Math.max(0, (num & 0xff) - Math.round(2.55 * percent));
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
+
+// ============================================================
+// Teleport Flags
+// ============================================================
+
+/** Default colors for flag pennants */
+export const FLAG_COLORS = [
+  '#E6194B', // Red
+  '#3CB44B', // Green
+  '#4363D8', // Blue
+  '#FFE119', // Yellow
+  '#F58231', // Orange
+  '#911EB4', // Purple
+  '#42D4F4', // Cyan
+  '#F032E6', // Magenta
+] as const;
+
+/**
+ * Teleport the viewport so that (x, y) is centered on screen.
+ * Works at any zoom level.
+ */
+export function teleportTo(canvas: fabric.Canvas, x: number, y: number): void {
+  const zoom = canvas.getZoom();
+  const vpt = canvas.viewportTransform;
+  if (!vpt) return;
+  vpt[4] = canvas.getWidth() / 2 - x * zoom;
+  vpt[5] = canvas.getHeight() / 2 - y * zoom;
+  canvas.setViewportTransform(vpt);
+  canvas.requestRenderAll();
+}
+
+/** Height of the flag pole (canvas units) */
+const FLAG_POLE_HEIGHT = 40;
+/** Size of the pennant triangle (canvas units) */
+const FLAG_PENNANT_SIZE = 14;
+
+/**
+ * Create a Fabric.js Group representing a teleport flag marker on the canvas.
+ * The flag looks like a golf-hole flag: grey vertical pole + colored triangle pennant.
+ *
+ * The group's `data` property carries `{ flagId, type: 'teleportFlag' }`.
+ * The group is selectable and moveable; on `object:modified` the caller
+ * should persist the new position.
+ */
+export function createFlagMarker(options: {
+  x: number;
+  y: number;
+  color: string;
+  flagId: string;
+  label: string;
+}): fabric.Group {
+  // Pole — grey vertical line
+  const pole = new fabric.Line(
+    [0, 0, 0, FLAG_POLE_HEIGHT],
+    {
+      stroke: '#888888',
+      strokeWidth: 2,
+      selectable: false,
+      evented: false,
+    },
+  );
+
+  // Pennant — colored triangle at top-right of pole
+  const pennant = new fabric.Triangle({
+    left: 2,
+    top: 0,
+    width: FLAG_PENNANT_SIZE,
+    height: FLAG_PENNANT_SIZE * 0.75,
+    fill: options.color,
+    angle: 90,
+    selectable: false,
+    evented: false,
+  });
+
+  // Small circle at the base for a ground marker
+  const base = new fabric.Circle({
+    left: -3,
+    top: FLAG_POLE_HEIGHT - 2,
+    radius: 4,
+    fill: '#888888',
+    selectable: false,
+    evented: false,
+  });
+
+  const group = new fabric.Group([pole, pennant, base], {
+    left: options.x,
+    top: options.y,
+    hasControls: false,
+    hasBorders: true,
+    borderColor: '#007AFF',
+    lockScalingX: true,
+    lockScalingY: true,
+    lockRotation: true,
+    data: {
+      flagId: options.flagId,
+      label: options.label,
+      type: 'teleportFlag',
+    },
+  });
+
+  return group;
+}

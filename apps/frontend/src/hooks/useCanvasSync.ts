@@ -18,10 +18,12 @@ import {
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { usePresenceStore } from '../stores/presenceStore';
+import { useFlagStore } from '../stores/flagStore';
 import {
   findFabricObjectById,
   fabricToBoardObject,
   boardObjectToFabric,
+  createFlagMarker,
   updateStickyColor,
   updateFrameColor,
   getStickyChildren,
@@ -253,7 +255,7 @@ export function useCanvasSync(
     // Exception: if the local user is editing a sticky (textarea open),
     // preserve that Fabric object so the textarea and in-progress text survive.
     const handleBoardState = (payload: BoardStatePayload) => {
-      const { boardId, objects, users } = payload;
+      const { boardId, objects, users, flags } = payload;
 
       // Update board metadata
       useBoardStore.getState().setBoardId(boardId);
@@ -314,6 +316,25 @@ export function useCanvasSync(
 
       // Bulk-set objects in store
       useBoardStore.getState().setObjects(boardObjects);
+
+      // Render teleport flag markers on canvas + update flag store
+      if (flags && flags.length > 0) {
+        for (const flag of flags) {
+          const marker = createFlagMarker({
+            x: flag.x,
+            y: flag.y,
+            color: flag.color,
+            flagId: flag.id,
+            label: flag.label,
+          });
+          canvas.add(marker);
+        }
+      }
+      useFlagStore.getState().clearFlags();
+      if (flags) {
+        useFlagStore.setState({ flags });
+      }
+
       canvas.requestRenderAll();
 
       // Update presence — filter out local user

@@ -2,7 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { CreateBoardSchema, UpdateBoardSchema, UpdateProfileSchema, BoardIdParamSchema } from 'shared';
+import {
+  CreateBoardSchema,
+  UpdateBoardSchema,
+  UpdateProfileSchema,
+  BoardIdParamSchema,
+  CreateTeleportFlagSchema,
+  UpdateTeleportFlagSchema,
+  FlagIdParamSchema,
+} from 'shared';
 import { requireAuth } from './middleware/auth';
 import { validate } from './middleware/validate';
 import { errorHandler } from './middleware/errorHandler';
@@ -10,6 +18,7 @@ import { apiRateLimit } from './middleware/rateLimit';
 import { userController } from './controllers/userController';
 import { boardController } from './controllers/boardController';
 import { versionController } from './controllers/versionController';
+import { teleportFlagController } from './controllers/teleportFlagController';
 import { httpMetrics } from './middleware/httpMetrics';
 import { metricsService } from './services/metricsService';
 import { editLockService } from './services/editLockService';
@@ -96,6 +105,12 @@ app.delete('/boards/:id', requireAuth, apiRateLimit, validate(BoardIdParamSchema
 
 // --- Version Routes ---
 app.get('/boards/:id/versions', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), versionController.listVersions);
+
+// --- Teleport Flag Routes ---
+app.get('/boards/:id/flags', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), teleportFlagController.listFlags);
+app.post('/boards/:id/flags', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), validate(CreateTeleportFlagSchema), teleportFlagController.createFlag);
+app.patch('/boards/:id/flags/:flagId', requireAuth, apiRateLimit, validate(FlagIdParamSchema, 'params'), validate(UpdateTeleportFlagSchema), teleportFlagController.updateFlag);
+app.delete('/boards/:id/flags/:flagId', requireAuth, apiRateLimit, validate(FlagIdParamSchema, 'params'), teleportFlagController.deleteFlag);
 
 // --- Error Handler (must be last) ---
 app.use(errorHandler);

@@ -232,6 +232,12 @@ function handleCopy(): void {
 
   useUIStore.getState().setClipboard(boardObjects);
 
+  // Auto-open the right sidebar if it's closed (so user sees clipboard indicator)
+  const uiState = useUIStore.getState();
+  if (!uiState.rightSidebarOpen) {
+    useUIStore.setState({ rightSidebarOpen: true, rightSidebarAutoOpened: true });
+  }
+
   // Lock transforms on copied objects during the animation
   lockObjects(validFabricObjects);
 

@@ -220,12 +220,12 @@
   justify-content: center;
   margin-left: -8px;
   overflow: hidden;
-  cursor: default;
+  cursor: pointer;
   transition: transform var(--transition-speed) var(--transition-ease);
 }
 
 .avatar:hover {
-  transform: scale(1.1);
+  transform: scale(1.15);
   z-index: 1;
 }
 

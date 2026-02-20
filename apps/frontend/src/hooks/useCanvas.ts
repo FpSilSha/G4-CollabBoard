@@ -1198,13 +1198,30 @@ function setupSelectionTracking(canvas: fabric.Canvas): () => void {
     useUIStore.getState().setSelection(ids, types);
   }
 
-  canvas.on('selection:created', updateSelection);
-  canvas.on('selection:updated', updateSelection);
+  function autoCloseRightSidebar(): void {
+    const ui = useUIStore.getState();
+    if (ui.rightSidebarAutoOpened) {
+      useUIStore.setState({ rightSidebarOpen: false, rightSidebarAutoOpened: false });
+    }
+  }
+
+  function onSelectionCreated(): void {
+    updateSelection();
+    autoCloseRightSidebar();
+  }
+
+  function onSelectionUpdated(): void {
+    updateSelection();
+    autoCloseRightSidebar();
+  }
+
+  canvas.on('selection:created', onSelectionCreated);
+  canvas.on('selection:updated', onSelectionUpdated);
   canvas.on('selection:cleared', updateSelection);
 
   return () => {
-    canvas.off('selection:created', updateSelection);
-    canvas.off('selection:updated', updateSelection);
+    canvas.off('selection:created', onSelectionCreated);
+    canvas.off('selection:updated', onSelectionUpdated);
     canvas.off('selection:cleared', updateSelection);
     useUIStore.getState().clearSelection();
   };

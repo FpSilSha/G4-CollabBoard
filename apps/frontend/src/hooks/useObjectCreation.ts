@@ -1,9 +1,11 @@
 import { useEffect, useCallback } from 'react';
 import { fabric } from 'fabric';
 import type { Socket } from 'socket.io-client';
+import { useAuth0 } from '@auth0/auth0-react';
 import { useUIStore, Tool } from '../stores/uiStore';
 import { useBoardStore } from '../stores/boardStore';
 import { usePresenceStore } from '../stores/presenceStore';
+import { useFlagStore } from '../stores/flagStore';
 import { WebSocketEvent, THROTTLE_CONFIG } from 'shared';
 import {
   createStickyNote,
@@ -12,11 +14,19 @@ import {
   createTextElement,
   createFrame,
   createConnector,
+  createFlagMarker,
   fabricToBoardObject,
   getStickyChildren,
+  FLAG_COLORS,
 } from '../utils/fabricHelpers';
 import { throttle } from '../utils/throttle';
 import { setEditSession } from '../stores/editSessionRef';
+
+const AUTH_PARAMS = {
+  authorizationParams: {
+    audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
+  },
+};
 
 /**
  * Hook for creating objects on the canvas via click or drag-drop.
@@ -29,6 +39,7 @@ export function useObjectCreation(
   fabricRef: React.MutableRefObject<fabric.Canvas | null>,
   socketRef: React.MutableRefObject<Socket | null>
 ) {
+  const { getAccessTokenSilently } = useAuth0();
   const addObject = useBoardStore((s) => s.addObject);
 
   // ========================================
@@ -43,7 +54,7 @@ export function useObjectCreation(
       const color = useUIStore.getState().activeColor;
 
       // Only create if a creation tool is active
-      if (tool === 'select' || tool === 'dropper' || tool === 'connector') return;
+      if (tool === 'select' || tool === 'dropper' || tool === 'connector' || tool === 'placeFlag') return;
       // Only create if clicking on empty canvas (not on existing object)
       if (opt.target) return;
 
@@ -474,7 +485,45 @@ export function useObjectCreation(
       };
       const pointer = canvas.getPointer(simEvent as unknown as Event);
 
-      // Center the object on the drop point
+      // --- Teleport flag drag-drop ---
+      if (objectType === 'placeFlag') {
+        const x = pointer.x;
+        const y = pointer.y;
+        const label = window.prompt('Flag label:');
+        if (!label?.trim()) return;
+
+        const currentBoardId = useBoardStore.getState().boardId;
+        if (!currentBoardId) return;
+
+        const flagColor = FLAG_COLORS[
+          useFlagStore.getState().flags.length % FLAG_COLORS.length
+        ];
+
+        (async () => {
+          try {
+            const token = await getAccessTokenSilently(AUTH_PARAMS);
+            const flag = await useFlagStore.getState().createFlag(
+              currentBoardId,
+              { label: label.trim(), x, y, color: flagColor },
+              token,
+            );
+            const marker = createFlagMarker({
+              x: flag.x,
+              y: flag.y,
+              color: flag.color,
+              flagId: flag.id,
+              label: flag.label,
+            });
+            canvas.add(marker);
+            canvas.requestRenderAll();
+          } catch (err) {
+            console.error('[useObjectCreation] flag drop error:', err);
+          }
+        })();
+        return;
+      }
+
+      // --- Normal object creation ---
       const fabricObj = createFabricObject(objectType, pointer.x, pointer.y, color);
 
       if (fabricObj) {
@@ -497,7 +546,7 @@ export function useObjectCreation(
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fabricRef, addObject]
+    [fabricRef, addObject, getAccessTokenSilently]
   );
 
   return { handleDragOver, handleDrop };
