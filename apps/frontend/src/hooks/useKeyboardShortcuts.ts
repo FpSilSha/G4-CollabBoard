@@ -230,7 +230,7 @@ function handleCopy(): void {
 
   if (boardObjects.length === 0) return;
 
-  useUIStore.getState().setClipboard(boardObjects);
+  useUIStore.getState().pushClipboard(boardObjects);
 
   // Auto-open the right sidebar if it's closed (so user sees clipboard indicator)
   const uiState = useUIStore.getState();
@@ -401,15 +401,12 @@ function renderMarchingAnts(): void {
     obj.setCoords();
 
     // Manually compute screen-space bounding rect from object coords.
-    // This is more reliable than getBoundingRect which can return stale
-    // or group-relative coords after ActiveSelection decomposition.
     const objLeft = obj.left ?? 0;
     const objTop = obj.top ?? 0;
     const objWidth = (obj.width ?? 0) * (obj.scaleX ?? 1);
     const objHeight = (obj.height ?? 0) * (obj.scaleY ?? 1);
+    const angle = obj.angle ?? 0;
 
-    // For groups (sticky notes), use the group's bounding dimensions
-    // directly as width/height already account for children
     const screenX = objLeft * zoom + panX;
     const screenY = objTop * zoom + panY;
     const screenW = objWidth * zoom;
@@ -418,7 +415,17 @@ function renderMarchingAnts(): void {
     // Padding around the object for the marching ants border
     const pad = 4;
 
+    ctx.save();
     ctx.lineWidth = 2;
+
+    // Rotate around the object's center if it has rotation
+    if (angle !== 0) {
+      const cx = screenX + screenW / 2;
+      const cy = screenY + screenH / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((angle * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
 
     // Pass 1: White dashes
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
@@ -437,6 +444,8 @@ function renderMarchingAnts(): void {
       screenX - pad, screenY - pad,
       screenW + pad * 2, screenH + pad * 2
     );
+
+    ctx.restore();
   }
 
   ctx.restore();
@@ -494,6 +503,11 @@ function handlePaste(socket: Socket | null): void {
       id: generateLocalId(),
       x: entry.x + PASTE_OFFSET,
       y: entry.y + PASTE_OFFSET,
+      // Connectors: offset both endpoints (x2/y2 are absolute coords)
+      ...(entry.type === 'connector' ? {
+        x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
+        y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
+      } : {}),
       frameId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -510,11 +524,17 @@ function handlePaste(socket: Socket | null): void {
     // Add to store (optimistic — local state updates immediately)
     useBoardStore.getState().addObject(newEntry);
 
-    // Update the clipboard entry's position so next paste cascades further
+    // Update the clipboard entry's position so next paste cascades further.
+    // For connectors, x2/y2 must also cascade — otherwise repeated pastes
+    // converge the second endpoint to the same spot.
     updatedClipboard.push({
       ...entry,
       x: entry.x + PASTE_OFFSET,
       y: entry.y + PASTE_OFFSET,
+      ...(entry.type === 'connector' ? {
+        x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
+        y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
+      } : {}),
     });
   }
 
@@ -531,7 +551,7 @@ function handlePaste(socket: Socket | null): void {
   }
 
   // Update clipboard positions for cascading paste
-  useUIStore.getState().setClipboard(updatedClipboard);
+  useUIStore.getState().updateActiveClipboard(updatedClipboard);
 
   // Select the pasted objects
   if (pastedFabricObjects.length === 1) {
@@ -591,6 +611,9 @@ export function handleDeleteSelected(socket: Socket | null): void {
     const objects = (activeObj as fabric.ActiveSelection).getObjects().slice();
     canvas.discardActiveObject();
 
+    // Collect all object IDs for a single batch delete message
+    const deletedIds: string[] = [];
+
     for (const obj of objects) {
       if (obj.data?.pinned) continue;
 
@@ -605,15 +628,17 @@ export function handleDeleteSelected(socket: Socket | null): void {
 
       if (objectId) {
         useBoardStore.getState().removeObject(objectId);
-
-        if (boardId && socket?.connected) {
-          socket.emit(WebSocketEvent.OBJECT_DELETE, {
-            boardId,
-            objectId,
-            timestamp: Date.now(),
-          });
-        }
+        deletedIds.push(objectId);
       }
+    }
+
+    // Send ALL deletes in a single batch message to avoid rate-limit issues
+    if (deletedIds.length > 0 && boardId && socket?.connected) {
+      socket.emit(WebSocketEvent.OBJECTS_BATCH_DELETE, {
+        boardId,
+        objectIds: deletedIds,
+        timestamp: Date.now(),
+      });
     }
   } else {
     if (activeObj.data?.pinned) return;

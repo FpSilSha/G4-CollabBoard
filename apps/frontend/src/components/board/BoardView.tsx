@@ -7,6 +7,7 @@ import { RightSidebar } from '../layout/RightSidebar';
 import { Header } from '../layout/Header';
 import { Canvas } from '../canvas/Canvas';
 import { StickyEditModal } from '../canvas/StickyEditModal';
+import { ColorPickerPanel } from '../canvas/ColorPickerPanel';
 import { Toast } from '../ui/Toast';
 import { DragEdgeOverlay } from '../ui/DragEdgeOverlay';
 import { FloatingTrash } from '../ui/FloatingTrash';
@@ -33,13 +34,13 @@ interface BoardViewProps {
  * so the socket connection survives route changes. This component
  * does NOT own the socket lifecycle — it only joins/leaves boards.
  *
- * +----------+-----------------------------+
- * |          |         Header              |
- * | Sidebar  +-----------------------------+
- * |          |                             |
- * |          |         Canvas              |
- * |          |                             |
- * +----------+-----------------------------+
+ * +------------------------------------------+
+ * |              Header (full width)         |
+ * +----------+--------------------+----------+
+ * |          |                    |          |
+ * | Sidebar  |      Canvas       | RightSB  |
+ * |          |                    |          |
+ * +----------+--------------------+----------+
  *
  * Offline overlay only shows when authenticated but socket is disconnected
  * (per .clauderules: offline = read-only canvas).
@@ -53,6 +54,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   const storeBoardId = useBoardStore((s) => s.boardId);
   const setBoardId = useBoardStore((s) => s.setBoardId);
   const setBoardTitle = useBoardStore((s) => s.setBoardTitle);
+  const setBoardOwnerId = useBoardStore((s) => s.setBoardOwnerId);
   const setMaxObjectsPerBoard = useBoardStore((s) => s.setMaxObjectsPerBoard);
   const clearObjects = useBoardStore((s) => s.clearObjects);
 
@@ -99,8 +101,12 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
         if (!cancelled) {
           setBoardId(data.id);
           setBoardTitle(data.title || 'Untitled Board');
+          setBoardOwnerId(data.ownerId ?? null);
           if (data.maxObjectsPerBoard != null) {
             setMaxObjectsPerBoard(data.maxObjectsPerBoard);
+          }
+          if (data.version != null) {
+            useBoardStore.getState().setBoardVersion(data.version);
           }
         }
       } catch (err) {
@@ -126,13 +132,120 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
     }
   }, [connectionStatus, storeBoardId, boardId, joinBoard]);
 
+  // Pre-fetch an auth token while the component is still mounted so the
+  // unmount cleanup (thumbnail upload) can use it without relying on the
+  // Auth0 React hook after the component tree has been torn down.
+  const cachedTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    getAccessTokenSilently({
+      authorizationParams: {
+        audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
+      },
+    }).then((token) => {
+      cachedTokenRef.current = token;
+    }).catch(() => { /* non-critical */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Cleanup: leave board when truly unmounting (navigating away to dashboard
   // or another board). Deferred with setTimeout(0) so StrictMode's simulated
   // unmount→remount cycle can cancel it — prevents spurious board:leave.
+  // Also captures a "fit all objects" thumbnail snapshot for the dashboard card.
   useEffect(() => {
     return () => {
       mountedRef.current = false;
       const currentBoardId = useBoardStore.getState().boardId;
+      const canvas = useBoardStore.getState().canvas;
+      const boardVersion = useBoardStore.getState().boardVersion;
+
+      // Capture thumbnail before leaving (fire-and-forget).
+      // Computes the bounding box of all objects in *logical* (world) coordinates,
+      // sets the viewport to frame them with padding, captures, then restores.
+      if (currentBoardId && canvas) {
+        try {
+          const objects = canvas.getObjects();
+          if (objects.length > 0) {
+            // Save current viewport state
+            const savedVpt = canvas.viewportTransform
+              ? [...canvas.viewportTransform]
+              : [1, 0, 0, 1, 0, 0];
+            const savedZoom = canvas.getZoom();
+
+            // Reset viewport to identity so getBoundingRect returns logical
+            // (world) coordinates rather than screen-pixel coordinates.
+            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+
+            // Calculate bounding box of all objects in world coordinates
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const obj of objects) {
+              const rect = obj.getBoundingRect(true, true);
+              minX = Math.min(minX, rect.left);
+              minY = Math.min(minY, rect.top);
+              maxX = Math.max(maxX, rect.left + rect.width);
+              maxY = Math.max(maxY, rect.top + rect.height);
+            }
+
+            const contentWidth = maxX - minX;
+            const contentHeight = maxY - minY;
+
+            if (contentWidth > 0 && contentHeight > 0) {
+              const canvasW = canvas.getWidth();
+              const canvasH = canvas.getHeight();
+
+              // Fit zoom with 5% padding
+              const padding = 0.05;
+              const fitZoom = Math.min(
+                canvasW / (contentWidth * (1 + padding * 2)),
+                canvasH / (contentHeight * (1 + padding * 2)),
+              );
+
+              // Center the content
+              const centerX = (minX + maxX) / 2;
+              const centerY = (minY + maxY) / 2;
+              const offsetX = canvasW / 2 - centerX * fitZoom;
+              const offsetY = canvasH / 2 - centerY * fitZoom;
+
+              // Apply fitted viewport and render
+              canvas.setViewportTransform([fitZoom, 0, 0, fitZoom, offsetX, offsetY]);
+              canvas.renderAll();
+
+              // Capture at ~300px wide
+              const multiplier = 300 / Math.max(canvasW, 1);
+              const thumbnail = canvas.toDataURL({
+                format: 'jpeg',
+                quality: 0.5,
+                multiplier,
+              });
+
+              // Restore original viewport immediately
+              canvas.setViewportTransform(savedVpt as unknown as number[]);
+              canvas.setZoom(savedZoom);
+              canvas.renderAll();
+
+              // Fire-and-forget upload using the pre-cached token
+              const token = cachedTokenRef.current;
+              if (token) {
+                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+                fetch(`${apiUrl}/boards/${currentBoardId}/thumbnail`, {
+                  method: 'PUT',
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ thumbnail, version: boardVersion }),
+                }).catch((err) => {
+                  console.warn('[BoardView] Thumbnail upload failed:', err);
+                });
+              } else {
+                console.warn('[BoardView] No cached token — skipping thumbnail upload');
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[BoardView] Thumbnail capture failed:', err);
+        }
+      }
+
       if (currentBoardId) {
         // Defer so StrictMode re-mount can cancel by setting mountedRef = true
         setTimeout(() => {
@@ -151,12 +264,15 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
   return (
     <div className={styles.appLayout}>
-      <Sidebar />
+      <Header />
       <div className={styles.mainArea}>
-        <Header />
+        <Sidebar />
         <Canvas socketRef={socketRef} />
+        <RightSidebar />
       </div>
-      <RightSidebar />
+
+      {/* Floating custom color picker — positioned next to the sidebar */}
+      <ColorPickerPanel />
 
       {/* Sticky note text editing modal — driven by editingObjectId in boardStore */}
       <StickyEditModal />

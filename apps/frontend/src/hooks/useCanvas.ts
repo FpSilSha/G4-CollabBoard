@@ -46,7 +46,7 @@ export function useCanvas(
       selection: true,
       preserveObjectStacking: true,
       stopContextMenu: true,
-      fireRightClick: false,
+      fireRightClick: true,
     });
 
     fabricRef.current = canvas;
@@ -64,14 +64,11 @@ export function useCanvas(
     // --- Zoom handler (mouse wheel) ---
     setupZoomHandler(canvas, setZoom);
 
-    // --- Z-ordering: bring clicked object to front ---
-    setupZOrderHandler(canvas);
-
     // --- Selection glow: colored aura around selected objects ---
     const cleanupGlow = setupSelectionGlow(canvas);
 
     // --- Drag state: auto-close sidebars + edge overlay while dragging ---
-    const cleanupDragState = setupDragState(canvas, socketRef ?? null);
+    const cleanupDragState = setupDragState(canvas, socketRef ?? null, container);
 
     // --- Edge scroll: auto-pan when dragging objects near viewport edges ---
     const cleanupEdgeScroll = setupEdgeScroll(canvas);
@@ -375,7 +372,7 @@ function setupDotGrid(canvas: fabric.Canvas): void {
     const firstRow = Math.floor(startY / spacing) * spacing;
 
     ctx.save();
-    ctx.fillStyle = `rgba(255, 255, 255, ${UI_COLORS.DOT_GRID_OPACITY})`;
+    ctx.fillStyle = UI_COLORS.DOT_GRID_COLOR;
 
     for (let x = firstCol; x <= endX; x += spacing) {
       for (let y = firstRow; y <= endY; y += spacing) {
@@ -411,15 +408,8 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
   let lastPosY = 0;
 
   canvas.on('mouse:down', (opt: fabric.IEvent<MouseEvent>) => {
-    // Only pan if clicking on empty canvas (no object target)
-    if (opt.target) return;
-
-    // Only pan when select tool is active (creation tools need empty-canvas clicks)
-    const activeTool = useUIStore.getState().activeTool;
-    if (activeTool !== 'select') return;
-
-    // Shift+click on empty canvas → rubber band selection, don't pan
-    if (opt.e.shiftKey) return;
+    // Pan on RIGHT-click only (button === 2). Left-click = rubber band / select.
+    if (opt.e.button !== 2) return;
 
     isDragging = true;
     canvas.defaultCursor = 'grabbing';
@@ -460,46 +450,6 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
   return () => {
     // No document listeners to clean up
   };
-}
-
-// ============================================================
-// Z-Order Handler (Bring clicked object to front)
-// ============================================================
-
-/**
- * When a user clicks on (selects) an object, bring it to the front
- * of the canvas so it renders above all other objects.
- *
- * This is a visual-only change — z-order is not persisted or synced.
- * Objects are re-added in server order on board reload, but during
- * a session the last-touched object always appears on top.
- */
-function setupZOrderHandler(canvas: fabric.Canvas): void {
-  canvas.on('mouse:down', (opt: fabric.IEvent<MouseEvent>) => {
-    if (!opt.target) return;
-
-    // Only reorder when using the select tool
-    const activeTool = useUIStore.getState().activeTool;
-    if (activeTool !== 'select') return;
-
-    // Frames stay behind non-frame objects — bring to front of other frames only
-    if (opt.target.data?.type === 'frame') {
-      // Find the highest non-frame object index and place frame just below it
-      const allObjects = canvas.getObjects();
-      let highestFrameIdx = -1;
-      for (let i = 0; i < allObjects.length; i++) {
-        if (allObjects[i].data?.type === 'frame') {
-          highestFrameIdx = i;
-        }
-      }
-      if (highestFrameIdx > -1) {
-        canvas.moveTo(opt.target, highestFrameIdx);
-      }
-    } else {
-      canvas.bringToFront(opt.target);
-    }
-    canvas.requestRenderAll();
-  });
 }
 
 // ============================================================
@@ -572,6 +522,19 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     originalStrokes.delete(obj);
   }
 
+  /** Refresh glow color on an already-glowing object (e.g. after color change). */
+  function updateGlow(obj: fabric.Object): void {
+    if (!originalShadows.has(obj)) return; // not glowing
+    const hex = getObjectFillColor(obj);
+    obj.set('shadow', new fabric.Shadow({
+      color: hex,
+      blur: 60,
+      offsetX: 0,
+      offsetY: 0,
+    }));
+    obj.set('stroke', hex);
+  }
+
   const onSelectionCreated = (opt: fabric.IEvent) => {
     if (opt.selected) {
       for (const obj of opt.selected) {
@@ -604,14 +567,29 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     canvas.requestRenderAll();
   };
 
+  // Refresh glow color whenever an object is modified (e.g. fill change from color picker)
+  const onObjectModified = (opt: fabric.IEvent) => {
+    const target = opt.target;
+    if (!target) return;
+    const targets = target.type === 'activeSelection'
+      ? (target as fabric.ActiveSelection).getObjects()
+      : [target];
+    for (const obj of targets) {
+      updateGlow(obj);
+    }
+    canvas.requestRenderAll();
+  };
+
   canvas.on('selection:created', onSelectionCreated);
   canvas.on('selection:updated', onSelectionUpdated);
   canvas.on('selection:cleared', onSelectionCleared);
+  canvas.on('object:modified', onObjectModified);
 
   return () => {
     canvas.off('selection:created', onSelectionCreated);
     canvas.off('selection:updated', onSelectionUpdated);
     canvas.off('selection:cleared', onSelectionCleared);
+    canvas.off('object:modified', onObjectModified);
   };
 }
 
@@ -668,10 +646,15 @@ function setupZoomHandler(
  * - If pointer was over floating trash, delete the object(s)
  * - Sidebars re-open to their pre-drag state
  * - Edge overlay + floating trash disappear
+ *
+ * Note: Sidebars use fixed-position overlay layout and do NOT affect
+ * canvas container size. Collapsing them is purely visual — no viewport
+ * shift or container-freezing is needed.
  */
 function setupDragState(
   canvas: fabric.Canvas,
-  socketRef: React.MutableRefObject<Socket | null> | null
+  socketRef: React.MutableRefObject<Socket | null> | null,
+  _canvasContainer: HTMLElement
 ): () => void {
   let dragActive = false;
   let isOverTrash = false;
@@ -736,10 +719,21 @@ function setupDragState(
   const onObjectMoving = (opt: fabric.IEvent<Event>) => {
     if (!dragActive) {
       dragActive = true;
-      const uiState = useUIStore.getState();
-      useUIStore.setState({ sidebarOpenBeforeDrag: uiState.sidebarOpen });
-      uiState.setSidebarOpen(false);
-      uiState.setIsDraggingObject(true);
+
+      const ui = useUIStore.getState();
+
+      // Remember sidebar state before collapsing
+      useUIStore.setState({
+        sidebarOpenBeforeDrag: ui.sidebarOpen,
+        rightSidebarOpenBeforeDrag: ui.rightSidebarOpen,
+      });
+
+      // Collapse sidebars — they are fixed-position overlays, so this
+      // only hides the overlay panels without affecting canvas size at all.
+      if (ui.sidebarOpen) ui.setSidebarOpen(false);
+      if (ui.rightSidebarOpen) ui.setRightSidebarOpen(false);
+
+      useUIStore.getState().setIsDraggingObject(true);
     }
 
     // Check floating trash hover
@@ -760,8 +754,42 @@ function setupDragState(
       if (target.type === 'activeSelection') {
         const objects = (target as fabric.ActiveSelection).getObjects().slice();
         canvas.discardActiveObject();
+
+        // Collect IDs for batch delete, then remove from canvas
+        const deletedIds: string[] = [];
         for (const obj of objects) {
-          deleteObject(obj);
+          if (obj.data?.pinned) continue;
+          const objectId = obj.data?.id;
+
+          // Orphan children when deleting a frame via drag-to-trash
+          if (obj.data?.type === 'frame' && objectId) {
+            for (const child of canvas.getObjects()) {
+              if (child.data?.frameId === objectId) {
+                child.data = { ...child.data, frameId: null };
+                child.set({ selectable: true, evented: true });
+                useBoardStore.getState().updateObject(child.data.id, { frameId: null });
+              }
+            }
+          }
+
+          canvas.remove(obj);
+          if (objectId) {
+            useBoardStore.getState().removeObject(objectId);
+            deletedIds.push(objectId);
+          }
+        }
+
+        // Send all deletes in a single batch message
+        if (deletedIds.length > 0) {
+          const boardId = useBoardStore.getState().boardId;
+          const socket = socketRef?.current;
+          if (boardId && socket?.connected) {
+            socket.emit(WebSocketEvent.OBJECTS_BATCH_DELETE, {
+              boardId,
+              objectIds: deletedIds,
+              timestamp: Date.now(),
+            });
+          }
         }
       } else {
         deleteObject(target);
@@ -769,14 +797,17 @@ function setupDragState(
       canvas.requestRenderAll();
     }
 
+    // Restore sidebars to their pre-drag state
+    const ui = useUIStore.getState();
+    if (ui.sidebarOpenBeforeDrag) ui.setSidebarOpen(true);
+    if (ui.rightSidebarOpenBeforeDrag) ui.setRightSidebarOpen(true);
+
     // Reset state
     isOverTrash = false;
     setTrashHighlight(false);
     dragActive = false;
 
-    const uiState = useUIStore.getState();
-    uiState.setSidebarOpen(uiState.sidebarOpenBeforeDrag);
-    uiState.setIsDraggingObject(false);
+    useUIStore.getState().setIsDraggingObject(false);
   };
 
   canvas.on('object:moving', onObjectMoving);
@@ -1006,9 +1037,16 @@ function setupFrameControlHandlers(
         const trimmed = newTitle.slice(0, 255);
         target.data.title = trimmed;
 
-        // Update the label text inside the group
-        const label = target.getObjects()[1] as fabric.Text;
+        // Update the label text inside the group (index 2: [border, labelBg, label])
+        const label = target.getObjects()[2] as fabric.Text;
         label.set('text', trimmed || 'Frame');
+
+        // Resize the label background to match new text width
+        const labelBg = target.getObjects()[1] as fabric.Rect;
+        const labelPadH = 6;
+        const labelPadV = 2;
+        labelBg.set('width', (label.width ?? 0) + labelPadH * 2);
+        labelBg.set('height', (label.height ?? 16) + labelPadV * 2);
 
         // Emit update
         emitObjectUpdate(target.data.id, { title: trimmed });
@@ -1205,14 +1243,27 @@ function setupSelectionTracking(canvas: fabric.Canvas): () => void {
     }
   }
 
+  /** When the user selects an object on the canvas while a creation tool is
+   *  active, automatically switch back to the select tool. This feels natural:
+   *  clicking an existing object implies you want to interact with it, not
+   *  create a new one. */
+  function autoSwitchToSelectTool(): void {
+    const { activeTool, setActiveTool } = useUIStore.getState();
+    if (activeTool !== 'select' && activeTool !== 'dropper') {
+      setActiveTool('select');
+    }
+  }
+
   function onSelectionCreated(): void {
     updateSelection();
     autoCloseRightSidebar();
+    autoSwitchToSelectTool();
   }
 
   function onSelectionUpdated(): void {
     updateSelection();
     autoCloseRightSidebar();
+    autoSwitchToSelectTool();
   }
 
   canvas.on('selection:created', onSelectionCreated);

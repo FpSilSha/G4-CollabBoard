@@ -253,6 +253,30 @@ export function useObjectCreation(
   }, [fabricRef]);
 
   // ========================================
+  // Tab key: insert tab-space in IText when editing
+  // ========================================
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const active = canvas.getActiveObject();
+      if (!active || !(active instanceof fabric.IText) || !active.isEditing) return;
+
+      e.preventDefault();
+      // Insert 4 spaces at the cursor position
+      active.insertChars('    ');
+      canvas.requestRenderAll();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fabricRef]);
+
+  // ========================================
   // Dropper tool: sample color from object
   // ========================================
   useEffect(() => {

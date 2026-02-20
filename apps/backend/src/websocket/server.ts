@@ -12,7 +12,6 @@ import { registerCursorHandlers } from './handlers/cursorHandler';
 import { registerPresenceHandlers } from './handlers/presenceHandler';
 import { registerObjectHandlers } from './handlers/objectHandler';
 import { registerEditHandlers } from './handlers/editHandler';
-import { checkSocketRateLimit } from './socketRateLimit';
 import { wsMetricsMiddleware, trackedEmit } from './wsMetrics';
 import { metricsService } from '../services/metricsService';
 import { auditService, AuditAction } from '../services/auditService';
@@ -74,6 +73,14 @@ function verifyAuth0Token(token: string): Promise<jwt.JwtPayload> {
 /**
  * Initialize Socket.io server and attach it to the HTTP server.
  */
+let ioInstance: Server | null = null;
+
+/** Get the global Socket.io server instance (available after initializeWebSocket). */
+export function getIO(): Server {
+  if (!ioInstance) throw new Error('Socket.io not initialized yet');
+  return ioInstance;
+}
+
 export function initializeWebSocket(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
@@ -175,27 +182,9 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
       metricsService.decrementWsConnection();
     });
 
-    // --- Per-socket metrics middleware (BEFORE rate limit) ---
-    // Counts all inbound events, including ones that get rate-limited.
+    // --- Per-socket metrics middleware ---
+    // Counts all inbound events for the /metrics dashboard.
     socket.use(wsMetricsMiddleware);
-
-    // --- Per-socket rate limiting middleware ---
-    // Intercept all incoming events and check against the rate limit
-    // before they reach the registered handlers.
-    socket.use((event, next) => {
-      if (checkSocketRateLimit(authSocket)) {
-        next();
-      } else {
-        // Event dropped — do not call next()
-        next(new Error('Rate limit exceeded'));
-      }
-    });
-
-    // Suppress rate-limit errors from bubbling up to the client
-    socket.on('error', (err: Error) => {
-      if (err.message === 'Rate limit exceeded') return;
-      logger.error(`Socket error for ${authSocket.data.userId}: ${err.message}`);
-    });
 
     // Send authenticated user info back to client
     trackedEmit(socket, WebSocketEvent.AUTH_SUCCESS, {
@@ -213,6 +202,7 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     registerEditHandlers(io, authSocket);
   });
 
+  ioInstance = io;
   logger.info('WebSocket server initialized');
   return io;
 }

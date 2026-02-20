@@ -2,7 +2,7 @@ import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { boardService } from '../services/boardService';
 import { versionService } from '../services/versionService';
 import prisma from '../models/index';
-import { PERSISTENCE_CONFIG, TIER_LIMITS, type SubscriptionTier } from 'shared';
+import { PERSISTENCE_CONFIG } from 'shared';
 import { logger } from '../utils/logger';
 
 /**
@@ -12,7 +12,7 @@ import { logger } from '../utils/logger';
  * all active boards from Redis to Postgres using optimistic locking.
  *
  * Every Nth save (VERSION_SNAPSHOT_EVERY_N_SAVES = 5, i.e. every 5 min),
- * creates a version snapshot for boards whose owner has a paid tier.
+ * creates a version snapshot for the board.
  */
 
 // Track how many times each board has been saved (for version snapshot cadence)
@@ -41,22 +41,16 @@ async function getActiveBoardIds(): Promise<string[]> {
 
 /**
  * Attempt to create a version snapshot for a board.
- * Only succeeds for boards whose owner has a paid tier with VERSION_HISTORY enabled.
+ * All users now have version history enabled.
  */
 async function createSnapshotIfEligible(boardId: string): Promise<void> {
   try {
     const board = await prisma.board.findUnique({
       where: { id: boardId },
-      select: {
-        ownerId: true,
-        owner: { select: { subscriptionTier: true } },
-      },
+      select: { ownerId: true },
     });
 
     if (!board) return;
-
-    const ownerTier = (board.owner.subscriptionTier?.toLowerCase() ?? 'free') as SubscriptionTier;
-    if (!TIER_LIMITS[ownerTier].VERSION_HISTORY) return;
 
     const cachedState = await boardService.getBoardStateFromRedis(boardId);
     if (!cachedState || cachedState.objects.length === 0) return;
@@ -94,7 +88,7 @@ async function saveBoard(boardId: string): Promise<boolean> {
     const consecutiveSaves = (boardSaveCount.get(boardId) ?? 0) + 1;
     boardSaveCount.set(boardId, consecutiveSaves);
 
-    // Every Nth save, create a version snapshot (tier-gated)
+    // Every Nth save, create a version snapshot
     if (consecutiveSaves % PERSISTENCE_CONFIG.VERSION_SNAPSHOT_EVERY_N_SAVES === 0) {
       await createSnapshotIfEligible(boardId);
     }

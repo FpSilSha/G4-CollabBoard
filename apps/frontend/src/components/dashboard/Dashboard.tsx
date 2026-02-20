@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from './Dashboard.module.css';
 
@@ -10,12 +10,19 @@ interface BoardSummary {
   lastAccessedAt: string;
   objectCount: number;
   isDeleted: boolean;
+  thumbnail: string | null;
+  isOwned: boolean;
+  ownerId: string;
+  version: number;
+  thumbnailVersion: number;
 }
 
 interface BoardListResponse {
-  boards: BoardSummary[];
-  slots: { used: number; total: number; tier: string };
+  ownedBoards: BoardSummary[];
+  linkedBoards: BoardSummary[];
 }
+
+type DashboardTab = 'owned' | 'linked';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const AUTH_PARAMS = {
@@ -24,21 +31,40 @@ const AUTH_PARAMS = {
   },
 };
 
+/** Strict UUID v4 pattern */
+const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * Extract a board GUID from arbitrary user input.
+ * Accepts:
+ *   - Full URL like https://example.com/board/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+ *   - Just the UUID itself
+ *   - Any string containing a UUID (extracts the first match)
+ * Returns null if no valid UUID is found.
+ */
+function extractBoardId(input: string): string | null {
+  // Strip whitespace, control characters, angle brackets, quotes
+  const sanitized = input.trim().replace(/[<>"'`\x00-\x1f]/g, '');
+  const match = sanitized.match(UUID_REGEX);
+  return match ? match[0].toLowerCase() : null;
+}
+
 /**
  * Dashboard page at "/".
  *
- * Shows the current user's boards as clickable cards.
- * Each card links to /board/:boardId for the canvas view.
- * "New Board" creates one via POST /boards and navigates to it.
+ * Two tabs:
+ * - "Your Boards" — boards the user owns (with new-board card at end)
+ * - "Linked Boards" — boards the user visited via another user's link
  *
- * No auto-creation — user explicitly clicks "New Board".
- * This eliminates the React StrictMode double-creation bug
- * that the old auto-create useEffect had.
+ * Board cards show thumbnail snapshots when available.
+ * No tier/enterprise limits — all users have full access.
  */
 export function Dashboard() {
   const { getAccessTokenSilently, logout, user } = useAuth0();
-  const [boards, setBoards] = useState<BoardSummary[]>([]);
-  const [slots, setSlots] = useState<{ used: number; total: number; tier: string } | null>(null);
+  const navigate = useNavigate();
+  const [ownedBoards, setOwnedBoards] = useState<BoardSummary[]>([]);
+  const [linkedBoards, setLinkedBoards] = useState<BoardSummary[]>([]);
+  const [tab, setTab] = useState<DashboardTab>('owned');
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,13 +74,16 @@ export function Dashboard() {
   const [renameDraft, setRenameDraft] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Board delete on dashboard ---
+  // --- Board delete / unlink on dashboard ---
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+  const [unlinkingBoardId, setUnlinkingBoardId] = useState<string | null>(null);
 
-  // Fetch boards on mount. The cancelled flag prevents stale updates
-  // if the component unmounts before the fetch resolves.
-  // In StrictMode: effect runs → cleanup (cancelled=true) → effect re-runs.
-  // The second run gets its own cancelled=false and completes normally.
+  // --- Link input (Linked Boards tab) ---
+  const [linkInput, setLinkInput] = useState('');
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
+
+  // Fetch boards on mount.
   useEffect(() => {
     let cancelled = false;
 
@@ -67,8 +96,8 @@ export function Dashboard() {
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         const data: BoardListResponse = await res.json();
         if (!cancelled) {
-          setBoards(data.boards.filter((b) => !b.isDeleted));
-          setSlots(data.slots);
+          setOwnedBoards(data.ownedBoards.filter((b) => !b.isDeleted));
+          setLinkedBoards(data.linkedBoards.filter((b) => !b.isDeleted));
         }
       } catch (err) {
         console.error('[Dashboard] fetchBoards error:', err);
@@ -109,17 +138,20 @@ export function Dashboard() {
       }
       const created = await res.json();
 
-      // Add the new board to the list and update slot count
       const newBoard: BoardSummary = {
         id: created.id,
         title: created.title ?? 'Untitled Board',
-        slot: created.slot ?? (slots ? slots.used + 1 : 1),
+        slot: created.slot ?? 0,
         lastAccessedAt: new Date().toISOString(),
         objectCount: 0,
         isDeleted: false,
+        thumbnail: null,
+        isOwned: true,
+        ownerId: user?.sub ?? '',
+        version: 0,
+        thumbnailVersion: -1,
       };
-      setBoards((prev) => [...prev, newBoard]);
-      setSlots((prev) => prev ? { ...prev, used: prev.used + 1 } : prev);
+      setOwnedBoards((prev) => [...prev, newBoard]);
 
       // Auto-focus the title field on the new card for immediate rename
       setRenameDraft('');
@@ -144,7 +176,7 @@ export function Dashboard() {
     setRenamingBoardId(null);
 
     // Optimistic update
-    setBoards((prev) =>
+    setOwnedBoards((prev) =>
       prev.map((b) => (b.id === boardId ? { ...b, title: finalTitle } : b))
     );
 
@@ -165,8 +197,7 @@ export function Dashboard() {
 
   const handleDeleteBoard = async (boardId: string) => {
     // Optimistic removal from list
-    setBoards((prev) => prev.filter((b) => b.id !== boardId));
-    setSlots((prev) => prev ? { ...prev, used: Math.max(0, prev.used - 1) } : prev);
+    setOwnedBoards((prev) => prev.filter((b) => b.id !== boardId));
     setDeletingBoardId(null);
 
     try {
@@ -180,6 +211,73 @@ export function Dashboard() {
       }
     } catch (err) {
       console.error('[Dashboard] Failed to delete board:', err);
+    }
+  };
+
+  const handleUnlinkBoard = async (boardId: string) => {
+    // Optimistic removal from linked list
+    setLinkedBoards((prev) => prev.filter((b) => b.id !== boardId));
+    setUnlinkingBoardId(null);
+
+    try {
+      const token = await getAccessTokenSilently(AUTH_PARAMS);
+      const res = await fetch(`${API_URL}/boards/${boardId}/link`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        console.error('[Dashboard] Failed to unlink board:', res.status);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Failed to unlink board:', err);
+    }
+  };
+
+  /**
+   * Handle the "Add board link" input.
+   * Extracts a board GUID from the pasted URL/text, validates it exists
+   * via the API, and navigates to it (which auto-creates the linked board).
+   */
+  const handleAddLink = async () => {
+    setLinkError(null);
+
+    const boardId = extractBoardId(linkInput);
+    if (!boardId) {
+      setLinkError('No valid board ID found. Paste a board URL or UUID.');
+      return;
+    }
+
+    // Check if already linked or owned
+    if (linkedBoards.some((b) => b.id === boardId) || ownedBoards.some((b) => b.id === boardId)) {
+      setLinkInput('');
+      navigate(`/board/${boardId}`);
+      return;
+    }
+
+    setLinkLoading(true);
+    try {
+      const token = await getAccessTokenSilently(AUTH_PARAMS);
+      const res = await fetch(`${API_URL}/boards/${boardId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          setLinkError('Board not found. Check the link and try again.');
+        } else {
+          setLinkError(`Failed to load board (${res.status}).`);
+        }
+        return;
+      }
+
+      // Board exists — navigate to it (auto-links via getBoard)
+      setLinkInput('');
+      navigate(`/board/${boardId}`);
+    } catch (err) {
+      console.error('[Dashboard] Failed to add linked board:', err);
+      setLinkError('Network error. Try again.');
+    } finally {
+      setLinkLoading(false);
     }
   };
 
@@ -198,6 +296,8 @@ export function Dashboard() {
     );
   }
 
+  const activeBoards = tab === 'owned' ? ownedBoards : linkedBoards;
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -211,67 +311,124 @@ export function Dashboard() {
       </header>
 
       <main className={styles.main}>
-        <div className={styles.toolbar}>
-          <h2 className={styles.sectionTitle}>Your Boards</h2>
-          {slots && (
-            <span className={styles.slotInfo}>
-              {slots.used} / {slots.total} boards ({slots.tier})
-            </span>
-          )}
+        {/* Tab row */}
+        <div className={styles.tabRow}>
           <button
-            className={styles.createButton}
-            onClick={handleCreateBoard}
-            disabled={creating || (slots !== null && slots.used >= slots.total)}
+            className={`${styles.tab} ${tab === 'owned' ? styles.tabActive : ''}`}
+            onClick={() => setTab('owned')}
           >
-            {creating ? 'Creating...' : '+ New Board'}
+            Your Boards
+          </button>
+          <button
+            className={`${styles.tab} ${tab === 'linked' ? styles.tabActive : ''}`}
+            onClick={() => setTab('linked')}
+          >
+            Linked Boards
+            {linkedBoards.length > 0 && (
+              <span className={styles.tabBadge}>{linkedBoards.length}</span>
+            )}
           </button>
         </div>
 
+        {/* Link input — shown on Linked Boards tab */}
+        {tab === 'linked' && (
+          <div className={styles.linkInputRow}>
+            <input
+              className={styles.linkInput}
+              type="text"
+              placeholder="Paste a board link or ID to add it..."
+              value={linkInput}
+              onChange={(e) => {
+                setLinkInput(e.target.value);
+                setLinkError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && linkInput.trim()) {
+                  e.preventDefault();
+                  handleAddLink();
+                }
+              }}
+              maxLength={500}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              className={styles.linkInputButton}
+              onClick={handleAddLink}
+              disabled={!linkInput.trim() || linkLoading}
+            >
+              {linkLoading ? 'Loading...' : 'Go'}
+            </button>
+          </div>
+        )}
+        {linkError && tab === 'linked' && (
+          <p className={styles.linkError}>{linkError}</p>
+        )}
+
         {error && <p className={styles.error}>{error}</p>}
 
-        {boards.length === 0 && !error ? (
+        {activeBoards.length === 0 && tab === 'linked' && !error ? (
           <div className={styles.emptyState}>
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.4">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M12 8v8M8 12h8" />
+              <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
             </svg>
-            <p>No boards yet. Create one to get started!</p>
+            <p>No linked boards yet. Paste a board link above to get started.</p>
           </div>
         ) : (
           <div className={styles.boardGrid}>
-            {boards.map((board) => (
+            {activeBoards.map((board) => (
               <div key={board.id} className={styles.boardCard}>
                 <Link
                   to={`/board/${board.id}`}
                   className={styles.boardCardLink}
                 >
-                  {renamingBoardId === board.id ? (
-                    <input
-                      ref={renameInputRef}
-                      className={styles.boardCardTitleInput}
-                      value={renameDraft}
-                      placeholder="title?"
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleRenameBoard(board.id, renameDraft);
-                        } else if (e.key === 'Escape') {
-                          setRenamingBoardId(null);
-                        }
-                      }}
-                      onBlur={() => handleRenameBoard(board.id, renameDraft)}
-                      onClick={(e) => e.preventDefault()}
-                      maxLength={255}
+                  {board.thumbnail ? (
+                    <img
+                      src={board.thumbnail}
+                      alt=""
+                      className={styles.thumbnail}
+                      draggable={false}
                     />
                   ) : (
-                    <h3 className={styles.boardCardTitle}>{board.title}</h3>
+                    <div className={styles.thumbnailPlaceholder}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.25">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="M12 8v8M8 12h8" />
+                      </svg>
+                    </div>
                   )}
-                  <p className={styles.boardCardMeta}>
-                    {board.objectCount} object{board.objectCount !== 1 ? 's' : ''}
-                  </p>
+                  <div className={styles.boardCardContent}>
+                    {renamingBoardId === board.id ? (
+                      <input
+                        ref={renameInputRef}
+                        className={styles.boardCardTitleInput}
+                        value={renameDraft}
+                        placeholder="title?"
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleRenameBoard(board.id, renameDraft);
+                          } else if (e.key === 'Escape') {
+                            setRenamingBoardId(null);
+                          }
+                        }}
+                        onBlur={() => handleRenameBoard(board.id, renameDraft)}
+                        onClick={(e) => e.preventDefault()}
+                        maxLength={255}
+                      />
+                    ) : (
+                      <h3 className={styles.boardCardTitle}>{board.title}</h3>
+                    )}
+                    <p className={styles.boardCardMeta}>
+                      {board.objectCount} object{board.objectCount !== 1 ? 's' : ''}
+                    </p>
+                  </div>
                 </Link>
-                {renamingBoardId !== board.id && (
+
+                {/* Owned board actions: rename + delete */}
+                {tab === 'owned' && renamingBoardId !== board.id && (
                   <div className={styles.boardCardActions}>
                     <button
                       className={styles.boardCardRenameButton}
@@ -302,7 +459,27 @@ export function Dashboard() {
                     </button>
                   </div>
                 )}
-                {/* Delete confirmation overlay */}
+
+                {/* Linked board actions: unlink only */}
+                {tab === 'linked' && (
+                  <div className={styles.boardCardActions}>
+                    <button
+                      className={styles.unlinkButton}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUnlinkingBoardId(board.id);
+                      }}
+                      title="Remove from linked boards"
+                      aria-label="Remove from linked boards"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+
+                {/* Delete confirmation overlay (owned boards) */}
                 {deletingBoardId === board.id && (
                   <div className={styles.deleteConfirm}>
                     <p className={styles.deleteConfirmText}>Delete this board?</p>
@@ -330,8 +507,54 @@ export function Dashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* Unlink confirmation overlay (linked boards) */}
+                {unlinkingBoardId === board.id && (
+                  <div className={styles.deleteConfirm}>
+                    <p className={styles.deleteConfirmText}>Remove this link?</p>
+                    <div className={styles.deleteConfirmActions}>
+                      <button
+                        className={styles.deleteConfirmYes}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleUnlinkBoard(board.id);
+                        }}
+                      >
+                        Remove
+                      </button>
+                      <button
+                        className={styles.deleteConfirmNo}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setUnlinkingBoardId(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
+
+            {/* New board card — only on "Your Boards" tab */}
+            {tab === 'owned' && (
+              <button
+                className={styles.newBoardCard}
+                onClick={handleCreateBoard}
+                disabled={creating}
+                title="Create a new board"
+              >
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span className={styles.newBoardLabel}>
+                  {creating ? 'Creating...' : 'New Board'}
+                </span>
+              </button>
+            )}
           </div>
         )}
       </main>

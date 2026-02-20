@@ -1,39 +1,60 @@
+/* ============================
+   Right Sidebar — Overlay Positioning
+   Fixed-position overlay that floats ON TOP of the canvas.
+   Mirrors the left sidebar overlay approach.
+   ============================ */
+
 .sidebar {
+  position: fixed;
+  /* 6px app padding from top (header row) + header height + 6px gap */
+  top: calc(6px + var(--header-height) + 6px);
+  right: 6px;
+  /* Fill available height: viewport - header - padding - gaps */
+  height: calc(100vh - var(--header-height) - 6px - 6px - 6px - 6px);
   width: var(--right-sidebar-width);
-  min-width: var(--right-sidebar-width);
+  z-index: 20;
+
   background: var(--sidebar-bg);
-  border-left: 1px solid var(--sidebar-border);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   gap: 0;
   padding: 12px 0;
   overflow-y: auto;
   overflow-x: hidden;
-  position: relative;
-  transition:
-    width 250ms ease,
-    min-width 250ms ease,
-    padding 250ms ease;
+
+  transition: right 250ms ease;
 }
 
+/* Collapsed state: slide off-screen to the right via right property
+   (NOT transform, which would break fixed-position children).
+   No opacity: 0 — it would hide the edge toggle child too (CSS opacity
+   applies to the whole subtree and can't be overridden on children). */
 .sidebar.collapsed {
-  width: 0;
-  min-width: 0;
-  padding: 0;
-  border-left-color: transparent;
+  right: calc(-1 * var(--right-sidebar-width) - 12px);
+  pointer-events: none;
   overflow: visible;
+}
+
+/* The edge toggle needs pointer events even when sidebar is collapsed */
+.sidebar.collapsed .edgeToggle {
+  pointer-events: auto;
 }
 
 /* ============================
    Edge Toggle (collapse/expand)
    Fixed positioning, vertically centered. Sits just outside
-   the sidebar's left edge. When collapsed, snaps to right: 0.
+   the sidebar's left edge. When collapsed, snaps to right: 6px.
    ============================ */
 
 .edgeToggle {
   position: fixed;
-  top: 50%;
-  right: var(--right-sidebar-width);
+  /* Center vertically in the main area (below header + app gaps) */
+  top: calc(var(--header-height) + 18px + (100vh - var(--header-height) - 18px) / 2);
+  /* 6px app padding + right sidebar width */
+  right: calc(6px + var(--right-sidebar-width));
   transform: translateY(-50%);
   width: 28px;
   height: 48px;
@@ -41,12 +62,12 @@
   border: 1px solid var(--sidebar-border);
   border-right: none;
   border-radius: 8px 0 0 8px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  z-index: 21;
   transition:
     right 250ms ease,
     color var(--transition-speed) var(--transition-ease),
@@ -54,12 +75,12 @@
 }
 
 .edgeToggle:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  background: var(--btn-hover);
 }
 
 .sidebar.collapsed .edgeToggle {
-  right: 0;
+  right: 6px;
 }
 
 /* ============================
@@ -71,7 +92,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--divider);
 }
 
 .section:last-child {
@@ -80,13 +101,13 @@
 
 .sectionLabel {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .placeholder {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-placeholder);
   font-style: italic;
 }

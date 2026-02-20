@@ -10,6 +10,7 @@ export enum WebSocketEvent {
   BOARD_ERROR = 'board:error',
   BOARD_REQUEST_SYNC = 'board:request_sync',
   BOARD_SYNC_RESPONSE = 'board:sync_response',
+  BOARD_RENAMED = 'board:renamed',
 
   // Presence
   USER_JOINED = 'user:joined',
@@ -29,6 +30,8 @@ export enum WebSocketEvent {
   OBJECTS_BATCH_UPDATE = 'objects:batch_update',
   OBJECTS_BATCH_CREATE = 'objects:batch_create',
   OBJECTS_BATCH_CREATED = 'objects:batch_created',
+  OBJECTS_BATCH_DELETE = 'objects:batch_delete',
+  OBJECTS_BATCH_DELETED = 'objects:batch_deleted',
 
   // Editing / Conflict
   EDIT_START = 'edit:start',
@@ -207,6 +210,27 @@ export interface ObjectsBatchCreatePayload {
 export interface ObjectsBatchCreatedPayload {
   boardId: string;
   objects: BoardObject[];
+  userId: string;
+  timestamp: number;
+}
+
+/**
+ * Batch delete payload for multi-select deletion.
+ * Sends all object IDs in a single WebSocket message to avoid rate-limit
+ * issues when deleting many objects at once.
+ */
+export interface ObjectsBatchDeletePayload {
+  boardId: string;
+  objectIds: string[];
+  timestamp: number;
+}
+
+/**
+ * Server → clients broadcast for batch delete.
+ */
+export interface ObjectsBatchDeletedPayload {
+  boardId: string;
+  objectIds: string[];
   userId: string;
   timestamp: number;
 }

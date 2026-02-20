@@ -2,33 +2,74 @@ import { useUIStore } from '../../stores/uiStore';
 import styles from './ClipboardIndicator.module.css';
 
 /**
- * Displays what's currently in the client-side clipboard.
+ * Displays clipboard history — up to 5 past copy operations (FIFO, newest first).
  *
- * - 0 items: "Nothing copied" muted text
- * - 1 item: colored icon matching the object type + type label
- * - 2+ items: "X objects copied" text
+ * - 0 entries: "Nothing copied" muted text
+ * - 1+ entries: Vertical list with preview icons. Active entry highlighted.
+ *   Clicking a non-active entry switches the active clipboard for the next paste.
  */
 export function ClipboardIndicator() {
-  const clipboard = useUIStore((s) => s.clipboard);
+  const clipboardHistory = useUIStore((s) => s.clipboardHistory);
+  const activeIndex = useUIStore((s) => s.activeClipboardIndex);
+  const setActiveIndex = useUIStore((s) => s.setActiveClipboardIndex);
 
-  if (clipboard.length === 0) {
+  if (clipboardHistory.length === 0) {
     return <div className={styles.empty}>Nothing copied</div>;
   }
 
-  if (clipboard.length === 1) {
-    const obj = clipboard[0];
+  return (
+    <div className={styles.historyList}>
+      {clipboardHistory.map((entry, i) => {
+        const isActive = i === activeIndex;
+        const entryClass = isActive
+          ? `${styles.historyEntry} ${styles.activeEntry}`
+          : styles.historyEntry;
+
+        return (
+          <button
+            key={i}
+            className={entryClass}
+            onClick={() => setActiveIndex(i)}
+            title={isActive ? 'Active clipboard entry' : 'Click to make active'}
+          >
+            <EntryPreview objects={entry} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Renders a single clipboard history entry:
+ * - 1 object: icon + type label
+ * - 2+ objects: "N objects copied"
+ */
+function EntryPreview({ objects }: { objects: import('shared').BoardObject[] }) {
+  if (objects.length === 0) {
+    return <span className={styles.typeLabel}>Empty</span>;
+  }
+
+  if (objects.length === 1) {
+    const obj = objects[0];
     return (
-      <div className={styles.singleObject}>
-        <ObjectPreviewIcon type={obj.type} color={obj.color} shapeType={'shapeType' in obj ? obj.shapeType : undefined} />
-        <span className={styles.typeLabel}>{getTypeLabel(obj.type, 'shapeType' in obj ? obj.shapeType : undefined)}</span>
-      </div>
+      <>
+        <ObjectPreviewIcon
+          type={obj.type}
+          color={obj.color}
+          shapeType={'shapeType' in obj ? obj.shapeType : undefined}
+        />
+        <span className={styles.typeLabel}>
+          {getTypeLabel(obj.type, 'shapeType' in obj ? obj.shapeType : undefined)}
+        </span>
+      </>
     );
   }
 
   return (
-    <div className={styles.multiObject}>
-      {clipboard.length} objects copied
-    </div>
+    <span className={styles.typeLabel}>
+      {objects.length} objects
+    </span>
   );
 }
 

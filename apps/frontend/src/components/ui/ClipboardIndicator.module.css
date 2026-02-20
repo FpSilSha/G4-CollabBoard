@@ -1,21 +1,60 @@
 .empty {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-placeholder);
   font-style: italic;
 }
 
-.singleObject {
+/* ============================
+   History List (vertical, newest first)
+   ============================ */
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.historyEntry {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  border-left: 3px solid transparent;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  transition: background 150ms ease;
 }
+
+.historyEntry:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.activeEntry {
+  border-left-color: var(--focus-blue);
+  background: rgba(0, 122, 255, 0.08);
+}
+
+.activeEntry:hover {
+  background: rgba(0, 122, 255, 0.12);
+}
+
+/* ============================
+   Entry Content
+   ============================ */
 
 .typeLabel {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.multiObject {
-  font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.75);
+.activeEntry .typeLabel {
+  color: var(--text-primary);
+  font-weight: 500;
 }

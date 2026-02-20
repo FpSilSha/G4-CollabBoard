@@ -7,11 +7,13 @@ import {
   ObjectUpdateFieldsSchema,
   ObjectsBatchMovePayloadSchema,
   ObjectsBatchCreatePayloadSchema,
+  ObjectsBatchDeletePayloadSchema,
   type ObjectCreatedPayload,
   type ObjectUpdatedPayload,
   type ObjectDeletedPayload,
   type ObjectsBatchMovedPayload,
   type ObjectsBatchCreatedPayload,
+  type ObjectsBatchDeletedPayload,
 } from 'shared';
 import { boardService } from '../../services/boardService';
 import { editLockService } from '../../services/editLockService';
@@ -396,6 +398,77 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
         timestamp: Date.now(),
       });
       logger.error(`objects:batch_create error for ${userId} on board ${boardId}: ${message}`);
+    }
+  });
+
+  // ========================================
+  // objects:batch_delete (multi-select delete)
+  // ========================================
+  // Deletes multiple objects in a single message to avoid rate-limit issues
+  // when the user selects many objects and presses Delete.
+  socket.on(WebSocketEvent.OBJECTS_BATCH_DELETE, async (payload: unknown) => {
+    const parsed = ObjectsBatchDeletePayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'INVALID_PAYLOAD',
+        message: 'Invalid objects:batch_delete payload',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const { boardId, objectIds } = parsed.data;
+    const userId = socket.data.userId;
+
+    if (socket.data.currentBoardId !== boardId) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'NOT_IN_BOARD',
+        message: 'You must join the board before deleting objects',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    try {
+      // Single Redis read, remove all objects, single Redis write
+      const cachedState = await boardService.getOrLoadBoardState(boardId);
+      const objectIdSet = new Set(objectIds);
+
+      cachedState.objects = cachedState.objects.filter(
+        (obj) => !objectIdSet.has(obj.id)
+      );
+
+      await boardService.saveBoardStateToRedis(boardId, cachedState);
+
+      // Single broadcast to everyone EXCEPT sender
+      const batchPayload: ObjectsBatchDeletedPayload = {
+        boardId,
+        objectIds,
+        userId,
+        timestamp: Date.now(),
+      };
+
+      trackedEmit(socket.to(boardId), WebSocketEvent.OBJECTS_BATCH_DELETED, batchPayload);
+
+      for (const objectId of objectIds) {
+        auditService.log({
+          userId,
+          action: AuditAction.OBJECT_DELETE,
+          entityType: 'object',
+          entityId: objectId,
+          metadata: { boardId, batch: true },
+        });
+      }
+
+      logger.info(`Batch deleted ${objectIds.length} objects from board ${boardId} by ${userId}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to batch delete objects';
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'BATCH_DELETE_FAILED',
+        message,
+        timestamp: Date.now(),
+      });
+      logger.error(`objects:batch_delete error for ${userId} on board ${boardId}: ${message}`);
     }
   });
 }

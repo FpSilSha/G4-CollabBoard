@@ -1,43 +1,61 @@
+/* ============================
+   Left Sidebar — Overlay Positioning
+   Fixed-position overlay that floats ON TOP of the canvas.
+   The canvas always fills the full mainArea width underneath.
+   This prevents viewport shift when sidebars collapse/expand.
+   ============================ */
+
 .sidebar {
+  position: fixed;
+  /* 6px app padding from top (header row) + header height + 6px gap */
+  top: calc(6px + var(--header-height) + 6px);
+  left: 6px;
+  /* Fill available height: viewport - header - padding - gaps */
+  height: calc(100vh - var(--header-height) - 6px - 6px - 6px - 6px);
   width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
+  z-index: 20;
+
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--sidebar-border);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   gap: 0;
   padding: 12px 0;
   overflow-y: auto;
   overflow-x: hidden;
-  position: relative;
-  transition:
-    width 250ms ease,
-    min-width 250ms ease,
-    padding 250ms ease;
+
+  transition: left 250ms ease;
 }
 
-/* Collapsed state: shrink to 0 width, content hidden via React conditional.
-   overflow: visible so the edge toggle lip can protrude. */
+/* Collapsed state: slide off-screen to the left via left property
+   (NOT transform, which would break fixed-position children).
+   No opacity: 0 — it would hide the edge toggle child too (CSS opacity
+   applies to the whole subtree and can't be overridden on children). */
 .sidebar.collapsed {
-  width: 0;
-  min-width: 0;
-  padding: 0;
-  border-right-color: transparent;
+  left: calc(-1 * var(--sidebar-width) - 12px);
+  pointer-events: none;
   overflow: visible;
+}
+
+/* The edge toggle needs pointer events even when sidebar is collapsed */
+.sidebar.collapsed .edgeToggle {
+  pointer-events: auto;
 }
 
 /* ============================
    Edge Toggle (collapse/expand)
-   Uses fixed positioning so it's always vertically centered in the
-   viewport regardless of sidebar scroll height. Sits just outside
-   the sidebar's right edge. When collapsed, snaps to left: 0.
+   Fixed positioning, vertically centered. Sits just outside
+   the sidebar's right edge. When collapsed, snaps to left: 6px.
    ============================ */
 
 .edgeToggle {
   position: fixed;
-  top: 50%;
-  /* Sidebar width = 200px, so place at the sidebar's right edge */
-  left: var(--sidebar-width);
+  /* Center vertically in the main area (below header + app gaps) */
+  top: calc(var(--header-height) + 18px + (100vh - var(--header-height) - 18px) / 2);
+  /* 6px app padding + sidebar width */
+  left: calc(6px + var(--sidebar-width));
   transform: translateY(-50%);
   width: 28px;
   height: 48px;
@@ -45,12 +63,12 @@
   border: 1px solid var(--sidebar-border);
   border-left: none;
   border-radius: 0 8px 8px 0;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  z-index: 21;
   transition:
     left 250ms ease,
     color var(--transition-speed) var(--transition-ease),
@@ -58,13 +76,13 @@
 }
 
 .edgeToggle:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  background: var(--btn-hover);
 }
 
-/* When collapsed, slide the toggle to the left edge of the viewport */
+/* When collapsed, slide the toggle to the left edge (inside app padding) */
 .sidebar.collapsed .edgeToggle {
-  left: 0;
+  left: 6px;
 }
 
 /* ============================
@@ -77,7 +95,7 @@
   align-items: center;
   gap: 8px;
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--divider);
 }
 
 .toolGroup:last-child {
@@ -94,8 +112,8 @@
   height: 44px;
   border-radius: var(--border-radius);
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -108,8 +126,8 @@
 .toolButton:hover,
 .draggableItem:hover {
   transform: scale(var(--hover-scale));
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: var(--btn-hover);
+  color: var(--text-primary);
 }
 
 .toolButton:active,
@@ -136,7 +154,7 @@
 
 .zOrderLabel {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 2px;
@@ -152,8 +170,8 @@
   height: 36px;
   border-radius: var(--border-radius);
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -165,8 +183,8 @@
 
 .zOrderButton:hover:not(:disabled) {
   transform: scale(var(--hover-scale));
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: var(--btn-hover);
+  color: var(--text-primary);
 }
 
 .zOrderButton:active:not(:disabled) {
@@ -193,9 +211,9 @@
   height: 44px;
   align-self: center;
   margin-bottom: 12px;
-  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border: 2px dashed rgba(0, 0, 0, 0.15);
   border-radius: var(--border-radius);
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-tertiary);
   transition:
     border-color 200ms ease,
     background 200ms ease,

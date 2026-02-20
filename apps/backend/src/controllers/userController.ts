@@ -18,7 +18,6 @@ export const userController = {
         name: user.name,
         avatar: user.avatar,
         color: user.color,
-        subscriptionTier: user.subscriptionTier.toLowerCase(),
         subscriptionStatus: user.subscriptionStatus.toLowerCase(),
       });
     } catch (err) {
@@ -43,7 +42,6 @@ export const userController = {
         name: user.name,
         avatar: user.avatar,
         color: user.color,
-        subscriptionTier: user.subscriptionTier.toLowerCase(),
         subscriptionStatus: user.subscriptionStatus.toLowerCase(),
       });
     } catch (err) {
