@@ -4,6 +4,11 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background: var(--canvas-bg);
+  /* Outer padding so header + sidebars float away from viewport edges */
+  padding: 6px;
+  gap: 6px;
+  box-sizing: border-box;
 }
 
 .mainArea {
@@ -13,6 +18,10 @@
   overflow: hidden;
   min-width: 0;
   min-height: 0; /* prevent flex item overflow */
+  /* No gap needed — sidebars are fixed-position overlays, not flex children.
+     The canvas fills the full mainArea width underneath. */
+  padding-bottom: 6px;
+  box-sizing: border-box;
 }
 
 /* ============================

@@ -15,8 +15,10 @@ interface BoardState {
   // In Phase 3 these are placeholder values. Phase 4 populates from server.
   boardId: string | null;
   boardTitle: string;
+  boardOwnerId: string | null;
   setBoardId: (id: string | null) => void;
   setBoardTitle: (title: string) => void;
+  setBoardOwnerId: (ownerId: string | null) => void;
 
   // Max objects allowed on this board (derived from owner's subscription tier)
   maxObjectsPerBoard: number;
@@ -65,8 +67,10 @@ export const useBoardStore = create<BoardState>((set) => ({
 
   boardId: null,
   boardTitle: 'Untitled Board',
+  boardOwnerId: null,
   setBoardId: (id) => set({ boardId: id }),
   setBoardTitle: (title) => set({ boardTitle: title }),
+  setBoardOwnerId: (ownerId) => set({ boardOwnerId: ownerId }),
 
   maxObjectsPerBoard: 1000, // default to enterprise, overwritten on board load
   setMaxObjectsPerBoard: (max) => set({ maxObjectsPerBoard: max }),

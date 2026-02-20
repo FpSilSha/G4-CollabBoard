@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { boardService } from '../services/boardService';
 import { auditService, AuditAction } from '../services/auditService';
+import { getIO } from '../websocket/server';
+import { WebSocketEvent } from 'shared';
 
 export const boardController = {
   /**
@@ -80,6 +82,13 @@ export const boardController = {
         entityId: id,
         metadata: { title },
       });
+
+      // Broadcast rename to all users on this board
+      try {
+        getIO().to(id).emit(WebSocketEvent.BOARD_RENAMED, { boardId: id, title });
+      } catch {
+        // Socket.io not initialized (e.g. during tests) — skip broadcast
+      }
 
       res.json(result);
     } catch (err) {

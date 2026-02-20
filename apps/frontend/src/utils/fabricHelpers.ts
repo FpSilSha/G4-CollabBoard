@@ -173,7 +173,8 @@ export function updateStickyColor(group: fabric.Group, newColor: string): void {
 export function updateFrameColor(group: fabric.Group, newColor: string): void {
   const objects = group.getObjects();
   const borderRect = objects[0] as fabric.Rect;
-  const label = objects[1] as fabric.Text;
+  // objects[1] = labelBg (background rect), objects[2] = label text
+  const label = objects[2] as fabric.Text;
   borderRect.set('stroke', newColor);
   label.set('fill', newColor);
 }
@@ -256,17 +257,28 @@ export function createTextElement(options: {
   id?: string;
 }): fabric.IText {
   const id = options.id ?? generateLocalId();
-  return new fabric.IText(options.text ?? 'Text', {
+  const textObj = new fabric.IText(options.text ?? 'Text', {
     left: options.x,
     top: options.y,
     fontSize: options.fontSize ?? 24,
-    fill: options.color ?? '#FFFFFF',
+    fill: options.color ?? '#000000',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    lockUniScaling: true,
     data: {
       id,
       type: 'text',
     },
   });
+
+  // Corner-only resize: hide middle (side) handles so aspect ratio is always preserved
+  textObj.setControlsVisibility({
+    mt: false, // middle-top
+    mb: false, // middle-bottom
+    ml: false, // middle-left
+    mr: false, // middle-right
+  });
+
+  return textObj;
 }
 
 // ============================================================
@@ -310,7 +322,8 @@ export function createFrame(options: {
   });
 
   // Title label at top-left inside the frame
-  const label = new fabric.Text(options.title ?? 'Frame', {
+  const titleText = options.title ?? 'Frame';
+  const label = new fabric.Text(titleText, {
     left: 8,
     top: -20,
     fontSize: 13,
@@ -320,7 +333,22 @@ export function createFrame(options: {
     evented: false,
   });
 
-  const group = new fabric.Group([border, label], {
+  // Semi-opaque background behind the title for readability
+  const labelPadH = 6;
+  const labelPadV = 2;
+  const labelBg = new fabric.Rect({
+    left: 8 - labelPadH,
+    top: -20 - labelPadV,
+    width: label.width! + labelPadH * 2,
+    height: (label.height ?? 16) + labelPadV * 2,
+    fill: 'rgba(0, 0, 0, 0.06)',
+    rx: 3,
+    ry: 3,
+    selectable: false,
+    evented: false,
+  });
+
+  const group = new fabric.Group([border, labelBg, label], {
     left: options.x,
     top: options.y,
     subTargetCheck: false,
@@ -399,69 +427,64 @@ function setupFrameControls(group: fabric.Group): void {
   // prototype and appear on every fabric.Group instance (e.g. sticky notes).
   group.controls = { ...group.controls };
 
-  // Lock control — top-right, toggles anchoring
-  group.controls.lockToggle = new fabric.Control({
-    x: 0.5,
-    y: -0.5,
-    offsetX: -10,
-    offsetY: -10,
-    sizeX: controlRadius * 2,
-    sizeY: controlRadius * 2,
-    cursorStyle: 'pointer',
+  /**
+   * Position handler factory for frame title controls.
+   * Places the control next to the title label (objects[2]) rather than
+   * at the bounding box corners. `indexFromLabelEnd` controls which
+   * position: 0 = first button right of the label, 1 = second button, etc.
+   */
+  const makeTitlePositionHandler = (indexFromLabelEnd: number) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    actionName: 'lockToggle' as any,
-    render: (ctx, left, top, _styleOverride, fabricObj) => {
-      const isLocked = fabricObj.data?.locked ?? false;
-      ctx.save();
-      ctx.translate(left, top);
+    return function (_dim: any, finalMatrix: any, fabricObj: any) {
+      const grp = fabricObj as fabric.Group;
 
-      // Background circle
-      ctx.beginPath();
-      ctx.arc(0, 0, controlRadius, 0, Math.PI * 2);
-      ctx.fillStyle = isLocked ? '#4CAF50' : '#222222';
-      ctx.fill();
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Draw padlock icon
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 1.5;
-      ctx.lineCap = 'round';
-
-      // Lock body (rectangle)
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(-4, -1, 8, 6);
-
-      // Lock shackle (arc)
-      ctx.strokeStyle = isLocked ? '#4CAF50' : '#222222';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      if (isLocked) {
-        // Closed shackle
-        ctx.arc(0, -1, 3.5, Math.PI, 0);
-      } else {
-        // Open shackle (shifted right)
-        ctx.arc(0, -1, 3.5, Math.PI, -0.3);
+      // Guard: if the group isn't on a canvas yet (e.g. during multi-select
+      // ActiveSelection rendering), fall back to the default finalMatrix center.
+      if (!grp.canvas || !grp.canvas.viewportTransform) {
+        return fabric.util.transformPoint(
+          new fabric.Point(0, 0),
+          finalMatrix
+        );
       }
-      ctx.stroke();
 
-      ctx.restore();
-    },
-    // Action handler is wired externally in useCanvas — the control click
-    // needs access to canvas + socket for emitting updates
-    actionHandler: () => false, // placeholder — overridden at setup time
-  });
+      const objects = grp.getObjects();
+      // Guard: ensure we have the expected child structure [border, labelBg, label]
+      if (objects.length < 3) {
+        return fabric.util.transformPoint(
+          new fabric.Point(0, 0),
+          finalMatrix
+        );
+      }
 
-  // Edit title control — top-left area, next to the title
+      const label = objects[2] as fabric.Text;
+
+      // Label's local coords relative to group center
+      const labelLeft = label.left ?? 8;
+      const labelTop = label.top ?? -20;
+      const labelWidth = label.width ?? 40;
+      const labelHeight = label.height ?? 16;
+
+      // Position: just to the right of the label, vertically centered
+      const gap = 6;
+      const localX = labelLeft + labelWidth + gap + indexFromLabelEnd * (controlRadius * 2 + 4) + controlRadius;
+      const localY = labelTop + labelHeight / 2;
+
+      // Transform from group-local to screen coordinates
+      const objectMatrix = grp.calcTransformMatrix();
+      const viewportMatrix = grp.canvas.viewportTransform;
+      const totalMatrix = fabric.util.multiplyTransformMatrices(viewportMatrix, objectMatrix);
+      return fabric.util.transformPoint(new fabric.Point(localX, localY), totalMatrix);
+    };
+  };
+
+  // Edit title control — first button to the right of the title label
   group.controls.editTitle = new fabric.Control({
-    x: -0.5,
-    y: -0.5,
-    offsetX: 10,
-    offsetY: -10,
+    x: 0, // ignored — positionHandler overrides
+    y: 0,
     sizeX: controlRadius * 2,
     sizeY: controlRadius * 2,
     cursorStyle: 'pointer',
+    positionHandler: makeTitlePositionHandler(0),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     actionName: 'editTitle' as any,
     render: (ctx, left, top) => {
@@ -502,6 +525,81 @@ function setupFrameControls(group: fabric.Group): void {
 
       ctx.restore();
     },
+    actionHandler: () => false, // placeholder — overridden at setup time
+  });
+
+  // Lock control — second button to the right of the title label
+  group.controls.lockToggle = new fabric.Control({
+    x: 0, // ignored — positionHandler overrides
+    y: 0,
+    sizeX: controlRadius * 2,
+    sizeY: controlRadius * 2,
+    cursorStyle: 'pointer',
+    positionHandler: makeTitlePositionHandler(1),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'lockToggle' as any,
+    render: (ctx, left, top, _styleOverride, fabricObj) => {
+      const isLocked = fabricObj.data?.locked ?? false;
+      ctx.save();
+      ctx.translate(left, top);
+
+      // Background circle
+      ctx.beginPath();
+      ctx.arc(0, 0, controlRadius, 0, Math.PI * 2);
+      ctx.fillStyle = isLocked ? '#4CAF50' : '#222222';
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      if (isLocked) {
+        // ---- CLOSED LOCK ----
+        // Lock body (rounded rect)
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.roundRect(-4, 0, 8, 6, 1);
+        ctx.fill();
+
+        // Closed shackle — centered arc sitting on top of the body
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(0, 0, 3.5, Math.PI, 0);
+        ctx.stroke();
+
+        // Keyhole dot
+        ctx.fillStyle = '#4CAF50';
+        ctx.beginPath();
+        ctx.arc(0, 3, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // ---- OPEN LOCK ----
+        // Lock body (rounded rect)
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.roundRect(-4, 1, 8, 6, 1);
+        ctx.fill();
+
+        // Open shackle — shifted up and to the right, not connected to body
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(2, -2, 3.5, Math.PI, -0.15);
+        ctx.stroke();
+
+        // Keyhole dot
+        ctx.fillStyle = '#222222';
+        ctx.beginPath();
+        ctx.arc(0, 4, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    },
+    // Action handler is wired externally in useCanvas — the control click
+    // needs access to canvas + socket for emitting updates
     actionHandler: () => false, // placeholder — overridden at setup time
   });
 
@@ -798,7 +896,10 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
       type: 'text' as const,
       text: itext.text ?? '',
       fontSize: itext.fontSize ?? 24,
-      color: (itext.fill as string) ?? '#FFFFFF',
+      color: (itext.fill as string) ?? '#000000',
+      rotation: fabricObj.angle ?? 0,
+      scaleX: scaleX !== 1 ? scaleX : undefined,
+      scaleY: scaleY !== 1 ? scaleY : undefined,
     };
   }
 
@@ -822,11 +923,14 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
 
   if (data.type === 'connector') {
     const line = fabricObj as fabric.Line;
-    // After syncConnectorCoordsAfterMove, x1/y1/x2/y2 are absolute canvas
-    // coordinates. For freshly created connectors, they're also absolute.
-    // base.x/base.y already use fabricObj.left/top which equals min(x1,x2)/min(y1,y2).
+    // Connector x/y must be the FIRST endpoint (x1/y1), NOT left/top.
+    // left/top = min(x1,x2)/min(y1,y2) which loses orientation info.
+    // createConnector treats options.x/y as x1/y1, so we must serialize
+    // the actual first endpoint to preserve the line's direction.
     return {
       ...base,
+      x: line.x1 ?? 0,
+      y: line.y1 ?? 0,
       type: 'connector' as const,
       fromObjectId: data.fromObjectId ?? '',
       toObjectId: data.toObjectId ?? '',
@@ -897,8 +1001,8 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
       }
       break;
 
-    case 'text':
-      fabricObj = createTextElement({
+    case 'text': {
+      const textEl = createTextElement({
         x: obj.x,
         y: obj.y,
         text: obj.text,
@@ -906,7 +1010,13 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         color: obj.color,
         id: obj.id,
       });
+      if (obj.rotation) textEl.set('angle', obj.rotation);
+      // Restore resize scale (IText uses scaleX/Y, not width/height)
+      if (obj.scaleX) textEl.set('scaleX', obj.scaleX);
+      if (obj.scaleY) textEl.set('scaleY', obj.scaleY);
+      fabricObj = textEl;
       break;
+    }
 
     case 'frame':
       fabricObj = createFrame({

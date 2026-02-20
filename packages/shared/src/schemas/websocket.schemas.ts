@@ -113,3 +113,11 @@ export const ObjectsBatchCreatePayloadSchema = z.object({
   }).passthrough()).min(1).max(50), // Cap at 50 objects per batch
   timestamp: z.number().int().positive(),
 });
+
+// objects:batch_delete — batch delete for multi-select deletion
+// Sends all object IDs in a single message to avoid rate-limit issues
+export const ObjectsBatchDeletePayloadSchema = z.object({
+  boardId: z.string().uuid(),
+  objectIds: z.array(z.string().min(1)).min(1).max(200), // Cap at 200 per batch
+  timestamp: z.number().int().positive(),
+});

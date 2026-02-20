@@ -14,6 +14,7 @@ import {
   type EditWarningPayload,
   type ObjectsBatchMovedPayload,
   type ObjectsBatchCreatedPayload,
+  type ObjectsBatchDeletedPayload,
   type BoardObject,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
@@ -492,8 +493,13 @@ export function useCanvasSync(
         }
         if (u.title !== undefined) {
           fabricObj.data.title = u.title as string;
-          const labelText = fabricObj.getObjects()[1] as fabric.Text;
+          // Frame group: [border, labelBg, label]
+          const labelText = fabricObj.getObjects()[2] as fabric.Text;
           labelText.set('text', u.title as string);
+          // Resize label background to match new text width
+          const labelBg = fabricObj.getObjects()[1] as fabric.Rect;
+          labelBg.set('width', (labelText.width ?? 0) + 12);
+          labelBg.set('height', (labelText.height ?? 16) + 4);
         }
         if (u.locked !== undefined) {
           fabricObj.data.locked = u.locked as boolean;
@@ -619,6 +625,38 @@ export function useCanvasSync(
 
     socket.on(WebSocketEvent.OBJECT_DELETED, handleObjectDeleted);
 
+    // --- objects:batch_deleted ---
+    const handleBatchDeleted = (payload: ObjectsBatchDeletedPayload) => {
+      const { objectIds, userId } = payload;
+      const currentLocalUserId = usePresenceStore.getState().localUserId;
+
+      // Skip if we were the sender (we already removed them locally)
+      if (userId === currentLocalUserId) return;
+
+      for (const objectId of objectIds) {
+        const fabricObj = findFabricObjectById(canvas, objectId);
+        if (fabricObj) {
+          // If a frame is deleted, orphan all its anchored children
+          if (fabricObj.data?.type === 'frame') {
+            for (const obj of canvas.getObjects()) {
+              if (obj.data?.frameId === objectId) {
+                obj.data = { ...obj.data, frameId: null };
+                obj.set({ selectable: true, evented: true });
+                useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+              }
+            }
+          }
+
+          canvas.remove(fabricObj);
+        }
+        useBoardStore.getState().removeObject(objectId);
+      }
+
+      canvas.requestRenderAll();
+    };
+
+    socket.on(WebSocketEvent.OBJECTS_BATCH_DELETED, handleBatchDeleted);
+
     // --- cursor:moved ---
     const handleCursorMoved = (payload: CursorMovedPayload) => {
       const currentLocalUserId = usePresenceStore.getState().localUserId;
@@ -730,6 +768,12 @@ export function useCanvasSync(
       });
     }, 1000);
 
+    // --- board:renamed (owner changed the title via REST) ---
+    const handleBoardRenamed = (payload: { boardId: string; title: string }) => {
+      useBoardStore.getState().setBoardTitle(payload.title);
+    };
+    socket.on(WebSocketEvent.BOARD_RENAMED, handleBoardRenamed);
+
     // =========================================================
     // Cleanup
     // =========================================================
@@ -744,6 +788,7 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.OBJECT_UPDATED, handleObjectUpdated);
       socket.off(WebSocketEvent.OBJECTS_BATCH_UPDATE, handleBatchMoved);
       socket.off(WebSocketEvent.OBJECT_DELETED, handleObjectDeleted);
+      socket.off(WebSocketEvent.OBJECTS_BATCH_DELETED, handleBatchDeleted);
       socket.off(WebSocketEvent.CURSOR_MOVED, handleCursorMoved);
       socket.off(WebSocketEvent.USER_JOINED, handleUserJoined);
       socket.off(WebSocketEvent.USER_LEFT, handleUserLeft);
@@ -751,6 +796,7 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.EDIT_WARNING, handleEditWarning);
       socket.off(WebSocketEvent.EDIT_START, handleEditStartBroadcast);
       socket.off(WebSocketEvent.EDIT_END, handleEditEndBroadcast);
+      socket.off(WebSocketEvent.BOARD_RENAMED, handleBoardRenamed);
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();

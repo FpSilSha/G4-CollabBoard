@@ -139,6 +139,7 @@ export const boardService = {
     return {
       id: board.id,
       title: board.title,
+      ownerId: board.ownerId,
       slot: board.slot,
       objects: board.objects as unknown[],
       version: board.version,

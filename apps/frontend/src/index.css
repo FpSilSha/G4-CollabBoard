@@ -7,9 +7,9 @@
   --dot-grid-spacing: 20px;
   --dot-grid-color: #9AA3B2;
 
-  /* Chrome (sidebar, header) */
-  --sidebar-bg: #E5E8EE;
-  --sidebar-border: #D5D9E2;
+  /* Chrome (sidebar, header) — light blue-gray tint */
+  --sidebar-bg: #DFE5F0;
+  --sidebar-border: #CDD4E4;
   --sidebar-width: 200px;
   --right-sidebar-width: 220px;
   --header-height: 48px;

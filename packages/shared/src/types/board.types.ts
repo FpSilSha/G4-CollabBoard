@@ -84,6 +84,9 @@ export interface TextElement extends BaseObject {
   text: string;
   fontSize: number;
   color: string;
+  rotation?: number; // Degrees
+  scaleX?: number;   // Preserve resize (Fabric.js uses scale, not width/height for IText)
+  scaleY?: number;
 }
 
 export type BoardObject = StickyNote | Shape | Frame | Connector | TextElement;

@@ -74,6 +74,14 @@ function verifyAuth0Token(token: string): Promise<jwt.JwtPayload> {
 /**
  * Initialize Socket.io server and attach it to the HTTP server.
  */
+let ioInstance: Server | null = null;
+
+/** Get the global Socket.io server instance (available after initializeWebSocket). */
+export function getIO(): Server {
+  if (!ioInstance) throw new Error('Socket.io not initialized yet');
+  return ioInstance;
+}
+
 export function initializeWebSocket(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
@@ -213,6 +221,7 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     registerEditHandlers(io, authSocket);
   });
 
+  ioInstance = io;
   logger.info('WebSocket server initialized');
   return io;
 }

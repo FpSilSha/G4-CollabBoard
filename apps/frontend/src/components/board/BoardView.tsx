@@ -54,6 +54,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   const storeBoardId = useBoardStore((s) => s.boardId);
   const setBoardId = useBoardStore((s) => s.setBoardId);
   const setBoardTitle = useBoardStore((s) => s.setBoardTitle);
+  const setBoardOwnerId = useBoardStore((s) => s.setBoardOwnerId);
   const setMaxObjectsPerBoard = useBoardStore((s) => s.setMaxObjectsPerBoard);
   const clearObjects = useBoardStore((s) => s.clearObjects);
 
@@ -100,6 +101,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
         if (!cancelled) {
           setBoardId(data.id);
           setBoardTitle(data.title || 'Untitled Board');
+          setBoardOwnerId(data.ownerId ?? null);
           if (data.maxObjectsPerBoard != null) {
             setMaxObjectsPerBoard(data.maxObjectsPerBoard);
           }

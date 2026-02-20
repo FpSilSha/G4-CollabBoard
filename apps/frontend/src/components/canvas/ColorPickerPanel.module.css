@@ -6,8 +6,10 @@
 
 .panel {
   position: fixed;
-  top: calc(var(--header-height) + 12px);
-  left: calc(var(--sidebar-width) + 12px);
+  /* Account for app padding (6px) + header height + gap (6px) + offset */
+  top: calc(var(--header-height) + 24px);
+  /* Account for app padding (6px) + sidebar width + gap (6px) + offset */
+  left: calc(var(--sidebar-width) + 24px);
   z-index: 100;
   width: 240px;
   padding: 14px;

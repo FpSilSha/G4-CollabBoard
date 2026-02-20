@@ -1,43 +1,61 @@
+/* ============================
+   Left Sidebar — Overlay Positioning
+   Fixed-position overlay that floats ON TOP of the canvas.
+   The canvas always fills the full mainArea width underneath.
+   This prevents viewport shift when sidebars collapse/expand.
+   ============================ */
+
 .sidebar {
+  position: fixed;
+  /* 6px app padding from top (header row) + header height + 6px gap */
+  top: calc(6px + var(--header-height) + 6px);
+  left: 6px;
+  /* Fill available height: viewport - header - padding - gaps */
+  height: calc(100vh - var(--header-height) - 6px - 6px - 6px - 6px);
   width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
+  z-index: 20;
+
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--sidebar-border);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   gap: 0;
   padding: 12px 0;
   overflow-y: auto;
   overflow-x: hidden;
-  position: relative;
-  transition:
-    width 250ms ease,
-    min-width 250ms ease,
-    padding 250ms ease;
+
+  transition: left 250ms ease;
 }
 
-/* Collapsed state: shrink to 0 width, content hidden via React conditional.
-   overflow: visible so the edge toggle lip can protrude. */
+/* Collapsed state: slide off-screen to the left via left property
+   (NOT transform, which would break fixed-position children).
+   No opacity: 0 — it would hide the edge toggle child too (CSS opacity
+   applies to the whole subtree and can't be overridden on children). */
 .sidebar.collapsed {
-  width: 0;
-  min-width: 0;
-  padding: 0;
-  border-right-color: transparent;
+  left: calc(-1 * var(--sidebar-width) - 12px);
+  pointer-events: none;
   overflow: visible;
+}
+
+/* The edge toggle needs pointer events even when sidebar is collapsed */
+.sidebar.collapsed .edgeToggle {
+  pointer-events: auto;
 }
 
 /* ============================
    Edge Toggle (collapse/expand)
-   Uses fixed positioning so it's always vertically centered in the
-   viewport regardless of sidebar scroll height. Sits just outside
-   the sidebar's right edge. When collapsed, snaps to left: 0.
+   Fixed positioning, vertically centered. Sits just outside
+   the sidebar's right edge. When collapsed, snaps to left: 6px.
    ============================ */
 
 .edgeToggle {
   position: fixed;
-  /* Center vertically in the sidebar area (below the header) */
-  top: calc(var(--header-height) + (100vh - var(--header-height)) / 2);
-  left: var(--sidebar-width);
+  /* Center vertically in the main area (below header + app gaps) */
+  top: calc(var(--header-height) + 18px + (100vh - var(--header-height) - 18px) / 2);
+  /* 6px app padding + sidebar width */
+  left: calc(6px + var(--sidebar-width));
   transform: translateY(-50%);
   width: 28px;
   height: 48px;
@@ -50,7 +68,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  z-index: 21;
   transition:
     left 250ms ease,
     color var(--transition-speed) var(--transition-ease),
@@ -62,9 +80,9 @@
   background: var(--btn-hover);
 }
 
-/* When collapsed, slide the toggle to the left edge of the viewport */
+/* When collapsed, slide the toggle to the left edge (inside app padding) */
 .sidebar.collapsed .edgeToggle {
-  left: 0;
+  left: 6px;
 }
 
 /* ============================

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { STICKY_NOTE_COLORS } from 'shared';
 import type { BoardObject, ColorPaletteKey } from 'shared';
+import { useBoardStore } from './boardStore';
 
 /**
  * Tool modes available in the toolbar.
@@ -17,6 +18,9 @@ export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'fram
 
 /** Maximum number of custom color slots (2 rows of 5) */
 const MAX_CUSTOM_COLORS = 10;
+
+/** Maximum number of clipboard history entries (FIFO). */
+const MAX_CLIPBOARD_HISTORY = 5;
 
 interface UIState {
   // Current active tool
@@ -75,9 +79,21 @@ interface UIState {
   showToast: (message: string) => void;
   clearToast: () => void;
 
-  // Copy/paste clipboard (client-side only, never synced to server)
-  clipboard: BoardObject[];
-  setClipboard: (entries: BoardObject[]) => void;
+  // Copy/paste clipboard history (client-side only, never synced to server).
+  // Stores up to MAX_CLIPBOARD_HISTORY (5) past copy operations, newest first.
+  // `clipboard` is derived from `clipboardHistory[activeClipboardIndex]`.
+  clipboardHistory: BoardObject[][];
+  activeClipboardIndex: number;
+  clipboard: BoardObject[];   // derived shortcut for the active entry
+
+  /** Push a new clipboard entry (FIFO). Resets active index to 0 (newest). */
+  pushClipboard: (entries: BoardObject[]) => void;
+
+  /** Switch which history entry is active for the next paste. */
+  setActiveClipboardIndex: (index: number) => void;
+
+  /** Update the active clipboard entry in-place (for cascading paste offsets). */
+  updateActiveClipboard: (entries: BoardObject[]) => void;
 
   // Currently selected object IDs on the canvas (set by canvas selection events).
   // Used by the sidebar to conditionally show z-order controls.
@@ -106,7 +122,18 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   activeTool: 'select',
-  setActiveTool: (tool) => set({ activeTool: tool, colorPickerOpen: false }),
+  setActiveTool: (tool) => {
+    set({ activeTool: tool, colorPickerOpen: false });
+    // When switching to any creation tool, deselect the canvas so the user
+    // starts fresh. 'select' and 'dropper' keep the current selection.
+    if (tool !== 'select' && tool !== 'dropper') {
+      const canvas = useBoardStore.getState().canvas;
+      if (canvas) {
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+      }
+    }
+  },
 
   activeColor: STICKY_NOTE_COLORS[0], // default yellow
   setActiveColor: (color) => set({ activeColor: color }),
@@ -158,8 +185,41 @@ export const useUIStore = create<UIState>((set) => ({
   },
   clearToast: () => set({ toastMessage: null }),
 
+  clipboardHistory: [],
+  activeClipboardIndex: 0,
   clipboard: [],
-  setClipboard: (entries) => set({ clipboard: entries }),
+
+  pushClipboard: (entries) =>
+    set((state) => {
+      const next = [entries, ...state.clipboardHistory].slice(0, MAX_CLIPBOARD_HISTORY);
+      return {
+        clipboardHistory: next,
+        activeClipboardIndex: 0,
+        clipboard: next[0] ?? [],
+      };
+    }),
+
+  setActiveClipboardIndex: (index) =>
+    set((state) => {
+      const clamped = Math.max(0, Math.min(index, state.clipboardHistory.length - 1));
+      return {
+        activeClipboardIndex: clamped,
+        clipboard: state.clipboardHistory[clamped] ?? [],
+      };
+    }),
+
+  updateActiveClipboard: (entries) =>
+    set((state) => {
+      const history = [...state.clipboardHistory];
+      const idx = state.activeClipboardIndex;
+      if (idx >= 0 && idx < history.length) {
+        history[idx] = entries;
+      }
+      return {
+        clipboardHistory: history,
+        clipboard: entries,
+      };
+    }),
 
   selectedObjectIds: [],
   selectedObjectTypes: [],

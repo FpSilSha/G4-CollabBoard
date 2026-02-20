@@ -25,11 +25,15 @@ export function Header() {
   const canvas = useBoardStore((s) => s.canvas);
   const boardTitle = useBoardStore((s) => s.boardTitle);
   const boardId = useBoardStore((s) => s.boardId);
+  const boardOwnerId = useBoardStore((s) => s.boardOwnerId);
   const setBoardTitle = useBoardStore((s) => s.setBoardTitle);
   const setZoom = useBoardStore((s) => s.setZoom);
   const connectionStatus = usePresenceStore((s) => s.connectionStatus);
+  const localUserId = usePresenceStore((s) => s.localUserId);
   const remoteUsers = usePresenceStore((s) => s.remoteUsers);
   const { getAccessTokenSilently } = useAuth0();
+
+  const isOwner = !!(boardOwnerId && localUserId && boardOwnerId === localUserId);
 
   const handleZoom = (newZoom: number) => {
     if (!canvas) return;
@@ -122,7 +126,7 @@ export function Header() {
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
         </Link>
-        {isEditingTitle ? (
+        {isEditingTitle && isOwner ? (
           <input
             ref={titleInputRef}
             className={styles.boardTitleInput}
@@ -136,19 +140,21 @@ export function Header() {
         ) : (
           <div className={styles.boardTitleRow}>
             <h1 className={styles.boardTitle}>{boardTitle}</h1>
-            <button
-              className={styles.editTitleButton}
-              onClick={() => {
-                setTitleDraft(boardTitle);
-                setIsEditingTitle(true);
-              }}
-              title="Rename board"
-              aria-label="Rename board"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-              </svg>
-            </button>
+            {isOwner && (
+              <button
+                className={styles.editTitleButton}
+                onClick={() => {
+                  setTitleDraft(boardTitle);
+                  setIsEditingTitle(true);
+                }}
+                title="Rename board"
+                aria-label="Rename board"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
       </div>
