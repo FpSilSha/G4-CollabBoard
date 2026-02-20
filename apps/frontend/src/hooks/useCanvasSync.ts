@@ -338,6 +338,9 @@ export function useCanvasSync(
 
       canvas.requestRenderAll();
 
+      // Signal that objects are rendered — useThumbnailCapture listens for this
+      useBoardStore.getState().setBoardStateLoaded(true);
+
       // Update presence — filter out local user
       const currentLocalUserId = usePresenceStore.getState().localUserId;
       const remote = users.filter((u) => u.userId !== currentLocalUserId);

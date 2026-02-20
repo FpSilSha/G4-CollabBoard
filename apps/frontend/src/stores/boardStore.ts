@@ -58,6 +58,17 @@ interface BoardState {
   addConcurrentEditor: (editor: { userId: string; userName: string }) => void;
   removeConcurrentEditor: (userId: string) => void;
 
+  // --- Thumbnail ---
+  // When the thumbnail was last captured (ISO string from server).
+  // Used by useThumbnailCapture to enforce 5-minute cooldown.
+  thumbnailUpdatedAt: string | null;
+  setThumbnailUpdatedAt: (ts: string | null) => void;
+
+  // Flipped to true by useCanvasSync after board:state objects are rendered.
+  // useThumbnailCapture watches this to trigger capture on board enter.
+  boardStateLoaded: boolean;
+  setBoardStateLoaded: (loaded: boolean) => void;
+
   // --- Zoom ---
   zoom: number;
   setZoom: (zoom: number) => void;
@@ -131,6 +142,12 @@ export const useBoardStore = create<BoardState>((set) => ({
     set((state) => ({
       concurrentEditors: state.concurrentEditors.filter((e) => e.userId !== userId),
     })),
+
+  thumbnailUpdatedAt: null,
+  setThumbnailUpdatedAt: (ts) => set({ thumbnailUpdatedAt: ts }),
+
+  boardStateLoaded: false,
+  setBoardStateLoaded: (loaded) => set({ boardStateLoaded: loaded }),
 
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),

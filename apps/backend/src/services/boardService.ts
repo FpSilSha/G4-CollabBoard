@@ -32,6 +32,7 @@ export const boardService = {
         thumbnail: true,
         version: true,
         thumbnailVersion: true,
+        thumbnailUpdatedAt: true,
       },
     });
 
@@ -51,6 +52,7 @@ export const boardService = {
             thumbnail: true,
             version: true,
             thumbnailVersion: true,
+            thumbnailUpdatedAt: true,
           },
         },
       },
@@ -83,6 +85,7 @@ export const boardService = {
       ownerId: b.ownerId,
       version: b.version,
       thumbnailVersion: b.thumbnailVersion,
+      thumbnailUpdatedAt: b.thumbnailUpdatedAt,
     });
 
     return {
@@ -170,6 +173,7 @@ export const boardService = {
       version: board.version,
       lastAccessedAt: board.lastAccessedAt,
       maxObjectsPerBoard: MAX_OBJECTS_PER_BOARD,
+      thumbnailUpdatedAt: board.thumbnailUpdatedAt,
     };
   },
 
@@ -338,14 +342,27 @@ export const boardService = {
   /**
    * Save a JPEG thumbnail (base64) for a board card preview.
    * Any user who has been on the board can update the thumbnail.
-   * Stores the board version at capture time so clients can skip
-   * redundant updates when the board hasn't changed.
+   * Enforces a 5-minute cooldown to prevent churn from rapid join/leave.
    */
   async saveThumbnail(boardId: string, thumbnail: string, version?: number) {
+    // Check 5-minute cooldown
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { thumbnailUpdatedAt: true },
+    });
+
+    if (board?.thumbnailUpdatedAt) {
+      const elapsed = Date.now() - board.thumbnailUpdatedAt.getTime();
+      if (elapsed < 5 * 60 * 1000) {
+        return { success: false, reason: 'cooldown' };
+      }
+    }
+
     await prisma.board.update({
       where: { id: boardId },
       data: {
         thumbnail,
+        thumbnailUpdatedAt: new Date(),
         ...(version != null ? { thumbnailVersion: version } : {}),
       },
     });
