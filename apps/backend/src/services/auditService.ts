@@ -13,6 +13,7 @@ export const AuditAction = {
   // Board
   BOARD_CREATE: 'board.create',
   BOARD_VIEW: 'board.view',
+  BOARD_UPDATE: 'board.update',
   BOARD_DELETE: 'board.delete',
   BOARD_JOIN: 'board.join',
   BOARD_LEAVE: 'board.leave',

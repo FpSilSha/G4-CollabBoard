@@ -3,6 +3,7 @@ import { fabric } from 'fabric';
 import { CANVAS_CONFIG, UI_COLORS, WebSocketEvent } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { useUIStore } from '../stores/uiStore';
+import { getObjectFillColor } from '../utils/fabricHelpers';
 import type { Socket } from 'socket.io-client';
 
 /**
@@ -61,8 +62,14 @@ export function useCanvas(
     // --- Z-ordering: bring clicked object to front ---
     setupZOrderHandler(canvas);
 
-    // --- Trash zone: drag objects to sidebar trash to delete ---
-    const cleanupTrash = setupTrashZone(canvas, socketRef ?? null);
+    // --- Selection glow: colored aura around selected objects ---
+    const cleanupGlow = setupSelectionGlow(canvas);
+
+    // --- Drag state: auto-close sidebars + edge overlay while dragging ---
+    const cleanupDragState = setupDragState(canvas, socketRef ?? null);
+
+    // --- Edge scroll: auto-pan when dragging objects near viewport edges ---
+    const cleanupEdgeScroll = setupEdgeScroll(canvas);
 
     // --- Resize observer ---
     // Debounced so sidebar collapse/expand CSS transitions (250ms) don't
@@ -87,7 +94,9 @@ export function useCanvas(
     // --- Cleanup ---
     return () => {
       cleanupPan();
-      cleanupTrash();
+      cleanupGlow();
+      cleanupDragState();
+      cleanupEdgeScroll();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       canvas.dispose();
@@ -168,7 +177,7 @@ function setupDotGrid(canvas: fabric.Canvas): void {
     const firstRow = Math.floor(startY / spacing) * spacing;
 
     ctx.save();
-    ctx.fillStyle = `rgba(0, 0, 0, ${UI_COLORS.DOT_GRID_OPACITY})`;
+    ctx.fillStyle = `rgba(255, 255, 255, ${UI_COLORS.DOT_GRID_OPACITY})`;
 
     for (let x = firstCol; x <= endX; x += spacing) {
       for (let y = firstRow; y <= endY; y += spacing) {
@@ -281,6 +290,114 @@ function setupZOrderHandler(canvas: fabric.Canvas): void {
 }
 
 // ============================================================
+// Selection Glow (Colored Aura on Selected Objects)
+// ============================================================
+
+/**
+ * Applies a bold colored glow aura around selected objects using
+ * Fabric.js shadow + a colored semi-transparent stroke outline.
+ *
+ * Uses fabric.Shadow with aggressive blur (60) at full opacity for
+ * the glow halo, plus a 3px colored stroke ring around the object
+ * for extra "pop". Original shadows are saved in a WeakMap and
+ * restored on deselection (important for sticky notes' default shadow).
+ *
+ * Events:
+ *   selection:created  — objects just selected
+ *   selection:updated  — selection changed (shift-click add/remove)
+ *   selection:cleared  — all deselected
+ */
+function setupSelectionGlow(canvas: fabric.Canvas): () => void {
+  const originalShadows = new WeakMap<fabric.Object, fabric.Shadow | string | null>();
+  const originalStrokes = new WeakMap<fabric.Object, { stroke: string | null; strokeWidth: number }>();
+
+  function applyGlow(obj: fabric.Object): void {
+    // Don't re-apply if already glowing
+    if (originalShadows.has(obj)) return;
+
+    // Save original shadow and stroke
+    originalShadows.set(obj, obj.shadow ?? null);
+    originalStrokes.set(obj, {
+      stroke: (obj.stroke as string) ?? null,
+      strokeWidth: obj.strokeWidth ?? 0,
+    });
+
+    const hex = getObjectFillColor(obj);
+
+    // Apply a very aggressive shadow glow: full color, huge blur, full opacity
+    obj.set('shadow', new fabric.Shadow({
+      color: hex,
+      blur: 60,
+      offsetX: 0,
+      offsetY: 0,
+    }));
+
+    // Add a colored stroke ring around the object for extra definition
+    obj.set('stroke', hex);
+    obj.set('strokeWidth', 3);
+  }
+
+  function removeGlow(obj: fabric.Object): void {
+    if (!originalShadows.has(obj)) return;
+
+    // Restore original shadow
+    const origShadow = originalShadows.get(obj);
+    obj.set('shadow', origShadow ?? undefined);
+    originalShadows.delete(obj);
+
+    // Restore original stroke
+    const origStroke = originalStrokes.get(obj);
+    if (origStroke) {
+      obj.set('stroke', origStroke.stroke ?? '');
+      obj.set('strokeWidth', origStroke.strokeWidth);
+    }
+    originalStrokes.delete(obj);
+  }
+
+  const onSelectionCreated = (opt: fabric.IEvent) => {
+    if (opt.selected) {
+      for (const obj of opt.selected) {
+        applyGlow(obj);
+      }
+    }
+    canvas.requestRenderAll();
+  };
+
+  const onSelectionUpdated = (opt: fabric.IEvent) => {
+    if (opt.deselected) {
+      for (const obj of opt.deselected) {
+        removeGlow(obj);
+      }
+    }
+    if (opt.selected) {
+      for (const obj of opt.selected) {
+        applyGlow(obj);
+      }
+    }
+    canvas.requestRenderAll();
+  };
+
+  const onSelectionCleared = (opt: fabric.IEvent) => {
+    if (opt.deselected) {
+      for (const obj of opt.deselected) {
+        removeGlow(obj);
+      }
+    }
+    canvas.requestRenderAll();
+  };
+
+  canvas.on('selection:created', onSelectionCreated);
+  canvas.on('selection:updated', onSelectionUpdated);
+  canvas.on('selection:cleared', onSelectionCleared);
+
+  return () => {
+    canvas.off('selection:created', onSelectionCreated);
+    canvas.off('selection:updated', onSelectionUpdated);
+    canvas.off('selection:cleared', onSelectionCleared);
+  };
+}
+
+// ============================================================
 // Zoom Handler (Mouse Wheel)
 // ============================================================
 
@@ -315,34 +432,38 @@ function setupZoomHandler(
 }
 
 // ============================================================
-// Trash Zone (Drag-to-Delete via Sidebar Trash Icon)
+// Drag State (Sidebar Auto-Close + Floating Trash + Edge Overlay)
 // ============================================================
 
 /**
- * Detects when Fabric.js objects are dragged over the sidebar trash zone
- * and deletes them on drop.
+ * Manages the isDraggingObject state, sidebar auto-close behavior,
+ * and the floating trash button at the bottom of the canvas.
  *
- * Since Fabric.js objects use canvas events (not HTML5 drag-and-drop),
- * we detect the trash zone by comparing the mouse pointer's screen position
- * against the trash zone DOM element's bounding rect during object:moving.
+ * On drag start (object:moving):
+ * - Sidebars temporarily close for full viewport
+ * - Edge glow overlay + floating trash appear
  *
- * On object:modified (mouse up), if pointer is over the trash zone, delete
- * the object(s) and emit OBJECT_DELETE to the server.
+ * During drag (object:moving continues):
+ * - Detects if pointer is over the floating trash and highlights it
  *
- * Works for both single objects and ActiveSelection groups.
+ * On drag end (mouse:up / object:modified):
+ * - If pointer was over floating trash, delete the object(s)
+ * - Sidebars re-open to their pre-drag state
+ * - Edge overlay + floating trash disappear
  */
-function setupTrashZone(
+function setupDragState(
   canvas: fabric.Canvas,
   socketRef: React.MutableRefObject<Socket | null> | null
 ): () => void {
+  let dragActive = false;
   let isOverTrash = false;
 
-  function getTrashElement(): HTMLElement | null {
-    return document.querySelector('[data-trash-zone="true"]');
+  function getFloatingTrashEl(): HTMLElement | null {
+    return document.querySelector('[data-floating-trash="true"]');
   }
 
   function isPointerOverTrash(clientX: number, clientY: number): boolean {
-    const trashEl = getTrashElement();
+    const trashEl = getFloatingTrashEl();
     if (!trashEl) return false;
     const rect = trashEl.getBoundingClientRect();
     return (
@@ -354,28 +475,22 @@ function setupTrashZone(
   }
 
   function setTrashHighlight(highlight: boolean): void {
-    const trashEl = getTrashElement();
+    const trashEl = getFloatingTrashEl();
     if (!trashEl) return;
     if (highlight) {
-      trashEl.classList.add('drag-over');
+      trashEl.classList.add('dragOver');
     } else {
-      trashEl.classList.remove('drag-over');
+      trashEl.classList.remove('dragOver');
     }
   }
 
-  /**
-   * Delete a single fabric object: remove from canvas, store, and emit to server.
-   */
   function deleteObject(obj: fabric.Object): void {
-    // Skip pinned objects
     if (obj.data?.pinned) return;
-
     const objectId = obj.data?.id;
     canvas.remove(obj);
 
     if (objectId) {
       useBoardStore.getState().removeObject(objectId);
-
       const boardId = useBoardStore.getState().boardId;
       const socket = socketRef?.current;
       if (boardId && socket?.connected) {
@@ -388,59 +503,176 @@ function setupTrashZone(
     }
   }
 
-  // Track pointer position during object movement
   const onObjectMoving = (opt: fabric.IEvent<Event>) => {
+    if (!dragActive) {
+      dragActive = true;
+      const uiState = useUIStore.getState();
+      useUIStore.setState({ sidebarOpenBeforeDrag: uiState.sidebarOpen });
+      uiState.setSidebarOpen(false);
+      uiState.setIsDraggingObject(true);
+    }
+
+    // Check floating trash hover
     const evt = opt.e as MouseEvent;
     const over = isPointerOverTrash(evt.clientX, evt.clientY);
-
     if (over !== isOverTrash) {
       isOverTrash = over;
       setTrashHighlight(over);
     }
   };
 
-  // On mouse up after object move: if over trash, delete the object(s)
-  const onObjectModified = (opt: fabric.IEvent<Event>) => {
-    if (!isOverTrash) return;
+  const onDragEnd = (opt?: fabric.IEvent<Event>) => {
+    if (!dragActive) return;
 
-    // Reset trash state
-    isOverTrash = false;
-    setTrashHighlight(false);
-
-    const target = opt.target;
-    if (!target) return;
-
-    if (target.type === 'activeSelection') {
-      // Multi-select: delete all objects in the group
-      const objects = (target as fabric.ActiveSelection).getObjects().slice();
-      canvas.discardActiveObject();
-      for (const obj of objects) {
-        deleteObject(obj);
+    // If dropped on floating trash, delete the object(s)
+    if (isOverTrash && opt?.target) {
+      const target = opt.target;
+      if (target.type === 'activeSelection') {
+        const objects = (target as fabric.ActiveSelection).getObjects().slice();
+        canvas.discardActiveObject();
+        for (const obj of objects) {
+          deleteObject(obj);
+        }
+      } else {
+        deleteObject(target);
       }
-    } else {
-      // Single object deletion
-      deleteObject(target);
+      canvas.requestRenderAll();
     }
 
-    canvas.requestRenderAll();
+    // Reset state
+    isOverTrash = false;
+    setTrashHighlight(false);
+    dragActive = false;
+
+    const uiState = useUIStore.getState();
+    uiState.setSidebarOpen(uiState.sidebarOpenBeforeDrag);
+    uiState.setIsDraggingObject(false);
   };
 
-  // Also reset highlight if drag leaves the trash zone area
-  const onMouseUp = () => {
-    if (isOverTrash) {
-      isOverTrash = false;
-      setTrashHighlight(false);
+  canvas.on('object:moving', onObjectMoving);
+  canvas.on('object:modified', onDragEnd);
+  canvas.on('mouse:up', onDragEnd);
+
+  return () => {
+    onDragEnd();
+    canvas.off('object:moving', onObjectMoving);
+    canvas.off('object:modified', onDragEnd);
+    canvas.off('mouse:up', onDragEnd);
+  };
+}
+
+// ============================================================
+// Edge Scroll (Auto-Pan When Dragging Objects Near Viewport Edges)
+// ============================================================
+
+/**
+ * Auto-pans the canvas when the user drags an object near the edges
+ * of the viewport. This enables moving objects off-screen without
+ * manually zooming out or releasing and panning.
+ *
+ * Speed scales linearly: gentle at the threshold boundary, max speed
+ * at the very edge. Diagonal movement (corners) works naturally since
+ * each edge axis is computed independently.
+ *
+ * The scroll loop runs via requestAnimationFrame while active, so the
+ * viewport pans smoothly even if the mouse stays still near the edge.
+ *
+ * Returns a cleanup function that cancels the RAF loop and removes
+ * all event listeners.
+ */
+function setupEdgeScroll(canvas: fabric.Canvas): () => void {
+  const THRESHOLD = CANVAS_CONFIG.EDGE_SCROLL_THRESHOLD;
+  const MIN_SPEED = CANVAS_CONFIG.EDGE_SCROLL_MIN_SPEED;
+  const MAX_SPEED = CANVAS_CONFIG.EDGE_SCROLL_MAX_SPEED;
+
+  let rafId: number | null = null;
+  let isDragging = false;
+  let pointerX = 0;
+  let pointerY = 0;
+
+  /**
+   * Compute scroll delta for one axis.
+   * Returns negative value for left/top edge, positive for right/bottom.
+   * Returns 0 if pointer is not in an edge zone.
+   */
+  function edgeDelta(pos: number, viewportSize: number): number {
+    if (pos < THRESHOLD) {
+      // Near the left/top edge — scroll in negative direction (pan right/down)
+      const depth = (THRESHOLD - pos) / THRESHOLD; // 0 at threshold, 1 at edge
+      return -(MIN_SPEED + (MAX_SPEED - MIN_SPEED) * depth);
+    }
+    if (pos > viewportSize - THRESHOLD) {
+      // Near the right/bottom edge — scroll in positive direction (pan left/up)
+      const depth = (pos - (viewportSize - THRESHOLD)) / THRESHOLD;
+      return MIN_SPEED + (MAX_SPEED - MIN_SPEED) * Math.min(depth, 1);
+    }
+    return 0;
+  }
+
+  function scrollLoop(): void {
+    if (!isDragging) return;
+
+    const canvasWidth = canvas.getWidth();
+    const canvasHeight = canvas.getHeight();
+
+    const dx = edgeDelta(pointerX, canvasWidth);
+    const dy = edgeDelta(pointerY, canvasHeight);
+
+    if (dx !== 0 || dy !== 0) {
+      const vpt = canvas.viewportTransform!;
+      // Pan the viewport (opposite direction to make objects "follow" the edge)
+      vpt[4] -= dx;
+      vpt[5] -= dy;
+      canvas.setViewportTransform(vpt);
+
+      // Also move the active object(s) so they stay under the cursor
+      const activeObj = canvas.getActiveObject();
+      if (activeObj) {
+        const zoom = canvas.getZoom();
+        activeObj.set({
+          left: (activeObj.left ?? 0) + dx / zoom,
+          top: (activeObj.top ?? 0) + dy / zoom,
+        });
+        activeObj.setCoords();
+      }
+    }
+
+    rafId = requestAnimationFrame(scrollLoop);
+  }
+
+  const onObjectMoving = (opt: fabric.IEvent<Event>) => {
+    const evt = opt.e as MouseEvent;
+
+    // Use offsetX/offsetY for canvas-relative pointer position
+    // (clientX/Y would need adjustment for canvas container offset)
+    const canvasEl = canvas.getElement();
+    const rect = canvasEl.getBoundingClientRect();
+    pointerX = evt.clientX - rect.left;
+    pointerY = evt.clientY - rect.top;
+
+    if (!isDragging) {
+      isDragging = true;
+      rafId = requestAnimationFrame(scrollLoop);
+    }
+  };
+
+  const onDragEnd = () => {
+    isDragging = false;
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
     }
   };
 
   canvas.on('object:moving', onObjectMoving);
-  canvas.on('object:modified', onObjectModified);
-  canvas.on('mouse:up', onMouseUp);
+  canvas.on('object:modified', onDragEnd);
+  canvas.on('mouse:up', onDragEnd);
 
   return () => {
+    onDragEnd(); // Stop any active RAF
     canvas.off('object:moving', onObjectMoving);
-    canvas.off('object:modified', onObjectModified);
-    canvas.off('mouse:up', onMouseUp);
+    canvas.off('object:modified', onDragEnd);
+    canvas.off('mouse:up', onDragEnd);
   };
 }
 

@@ -9,6 +9,10 @@ export const CreateBoardSchema = z.object({
   title: z.string().min(1).max(255).trim(),
 });
 
+export const UpdateBoardSchema = z.object({
+  title: z.string().min(1).max(255).trim(),
+});
+
 // --- Object Schemas ---
 
 const BaseObjectFields = {

@@ -6,10 +6,12 @@ import {
   ObjectDeletePayloadSchema,
   ObjectUpdateFieldsSchema,
   ObjectsBatchMovePayloadSchema,
+  ObjectsBatchCreatePayloadSchema,
   type ObjectCreatedPayload,
   type ObjectUpdatedPayload,
   type ObjectDeletedPayload,
   type ObjectsBatchMovedPayload,
+  type ObjectsBatchCreatedPayload,
 } from 'shared';
 import { boardService } from '../../services/boardService';
 import { editLockService } from '../../services/editLockService';
@@ -312,6 +314,88 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
         timestamp: Date.now(),
       });
       logger.error(`objects:batch_update error for ${userId} on board ${boardId}: ${message}`);
+    }
+  });
+
+  // ========================================
+  // objects:batch_create (paste operations)
+  // ========================================
+  // Creates multiple objects in a single message to avoid rate-limit issues.
+  // Follows the same pattern as batch_update: single Redis read/write, single broadcast.
+  socket.on(WebSocketEvent.OBJECTS_BATCH_CREATE, async (payload: unknown) => {
+    const parsed = ObjectsBatchCreatePayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'INVALID_PAYLOAD',
+        message: 'Invalid objects:batch_create payload',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const { boardId, objects } = parsed.data;
+    const userId = socket.data.userId;
+
+    if (socket.data.currentBoardId !== boardId) {
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'NOT_IN_BOARD',
+        message: 'You must join the board before creating objects',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const createdObjects = [];
+
+      // Single Redis read, add all objects, single Redis write
+      const cachedState = await boardService.getOrLoadBoardState(boardId);
+
+      for (const object of objects) {
+        const boardObject = {
+          ...object,
+          createdBy: userId,
+          lastEditedBy: userId,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        };
+
+        cachedState.objects.push(boardObject as unknown as typeof cachedState.objects[number]);
+        createdObjects.push(boardObject);
+      }
+
+      await boardService.saveBoardStateToRedis(boardId, cachedState);
+
+      // Single broadcast to ALL users in the room (including sender for confirmation)
+      const batchPayload: ObjectsBatchCreatedPayload = {
+        boardId,
+        objects: createdObjects as unknown as ObjectsBatchCreatedPayload['objects'],
+        userId,
+        timestamp: Date.now(),
+      };
+
+      trackedEmit(io.to(boardId), WebSocketEvent.OBJECTS_BATCH_CREATED, batchPayload);
+
+      for (const object of objects) {
+        auditService.log({
+          userId,
+          action: AuditAction.OBJECT_CREATE,
+          entityType: 'object',
+          entityId: object.id,
+          metadata: { boardId, objectType: object.type, batch: true },
+        });
+      }
+
+      logger.info(`Batch created ${objects.length} objects on board ${boardId} by ${userId}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to batch create objects';
+      socket.emit(WebSocketEvent.BOARD_ERROR, {
+        code: 'BATCH_CREATE_FAILED',
+        message,
+        timestamp: Date.now(),
+      });
+      logger.error(`objects:batch_create error for ${userId} on board ${boardId}: ${message}`);
     }
   });
 }

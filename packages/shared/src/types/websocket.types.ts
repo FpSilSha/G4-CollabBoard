@@ -27,6 +27,8 @@ export enum WebSocketEvent {
   OBJECT_DELETE = 'object:delete',
   OBJECT_DELETED = 'object:deleted',
   OBJECTS_BATCH_UPDATE = 'objects:batch_update',
+  OBJECTS_BATCH_CREATE = 'objects:batch_create',
+  OBJECTS_BATCH_CREATED = 'objects:batch_created',
 
   // Editing / Conflict
   EDIT_START = 'edit:start',
@@ -183,6 +185,27 @@ export interface ObjectsBatchMovePayload {
 export interface ObjectsBatchMovedPayload {
   boardId: string;
   moves: Array<{ objectId: string; x: number; y: number }>;
+  userId: string;
+  timestamp: number;
+}
+
+/**
+ * Batch create payload for paste operations (multiple objects at once).
+ * Sends all objects in a single WebSocket message to avoid rate-limit
+ * issues when pasting many objects rapidly.
+ */
+export interface ObjectsBatchCreatePayload {
+  boardId: string;
+  objects: Array<Omit<BoardObject, 'createdAt' | 'updatedAt'>>;
+  timestamp: number;
+}
+
+/**
+ * Server → clients broadcast for batch create.
+ */
+export interface ObjectsBatchCreatedPayload {
+  boardId: string;
+  objects: BoardObject[];
   userId: string;
   timestamp: number;
 }

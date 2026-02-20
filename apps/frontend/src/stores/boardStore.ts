@@ -18,6 +18,10 @@ interface BoardState {
   setBoardId: (id: string | null) => void;
   setBoardTitle: (title: string) => void;
 
+  // Max objects allowed on this board (derived from owner's subscription tier)
+  maxObjectsPerBoard: number;
+  setMaxObjectsPerBoard: (max: number) => void;
+
   // --- Local Object Tracking ---
   // Map of BoardObject.id -> BoardObject
   // In Phase 3: populated locally on creation.
@@ -63,6 +67,9 @@ export const useBoardStore = create<BoardState>((set) => ({
   boardTitle: 'Untitled Board',
   setBoardId: (id) => set({ boardId: id }),
   setBoardTitle: (title) => set({ boardTitle: title }),
+
+  maxObjectsPerBoard: 1000, // default to enterprise, overwritten on board load
+  setMaxObjectsPerBoard: (max) => set({ maxObjectsPerBoard: max }),
 
   objects: new Map(),
   addObject: (obj) =>

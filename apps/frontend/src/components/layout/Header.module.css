@@ -45,6 +45,13 @@
   opacity: 1;
 }
 
+.boardTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .boardTitle {
   font-size: var(--font-size-base);
   font-weight: 600;
@@ -52,6 +59,50 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+}
+
+.boardTitleInput {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  max-width: 200px;
+  outline: none;
+  font-family: inherit;
+}
+
+.boardTitleInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+.boardTitleInput:focus {
+  border-color: var(--focus-blue);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
+}
+
+.editTitleButton {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  transition: color 150ms ease, background 150ms ease;
+  flex-shrink: 0;
+}
+
+.editTitleButton:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .zoomControls {

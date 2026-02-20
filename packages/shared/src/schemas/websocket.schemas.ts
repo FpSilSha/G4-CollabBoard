@@ -96,3 +96,14 @@ export const ObjectsBatchMovePayloadSchema = z.object({
   })).min(1).max(50), // Reasonable cap
   timestamp: z.number().int().positive(),
 });
+
+// objects:batch_create — batch create for paste operations
+// Sends all pasted objects in a single message to avoid rate-limit issues
+export const ObjectsBatchCreatePayloadSchema = z.object({
+  boardId: z.string().uuid(),
+  objects: z.array(z.object({
+    id: z.string().uuid(),
+    type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
+  }).passthrough()).min(1).max(50), // Cap at 50 objects per batch
+  timestamp: z.number().int().positive(),
+});

@@ -13,6 +13,7 @@ import {
   type UserLeftPayload,
   type EditWarningPayload,
   type ObjectsBatchMovedPayload,
+  type ObjectsBatchCreatedPayload,
   type BoardObject,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
@@ -317,6 +318,25 @@ export function useCanvasSync(
 
     socket.on(WebSocketEvent.OBJECT_CREATED, handleObjectCreated);
 
+    // --- objects:batch_created (paste from another user) ---
+    const handleBatchCreated = (payload: ObjectsBatchCreatedPayload) => {
+      const currentLocalUserId = usePresenceStore.getState().localUserId;
+
+      // Skip if this is our own batch (already on canvas optimistically)
+      if (payload.userId === currentLocalUserId) return;
+
+      for (const object of payload.objects) {
+        const fabricObj = boardObjectToFabric(object);
+        if (fabricObj) {
+          canvas.add(fabricObj);
+          useBoardStore.getState().addObject(object);
+        }
+      }
+      canvas.requestRenderAll();
+    };
+
+    socket.on(WebSocketEvent.OBJECTS_BATCH_CREATED, handleBatchCreated);
+
     // --- object:updated ---
     const handleObjectUpdated = (payload: ObjectUpdatedPayload) => {
       const { objectId, updates, userId } = payload;
@@ -577,6 +597,7 @@ export function useCanvasSync(
 
       socket.off(WebSocketEvent.BOARD_STATE, handleBoardState);
       socket.off(WebSocketEvent.OBJECT_CREATED, handleObjectCreated);
+      socket.off(WebSocketEvent.OBJECTS_BATCH_CREATED, handleBatchCreated);
       socket.off(WebSocketEvent.OBJECT_UPDATED, handleObjectUpdated);
       socket.off(WebSocketEvent.OBJECTS_BATCH_UPDATE, handleBatchMoved);
       socket.off(WebSocketEvent.OBJECT_DELETED, handleObjectDeleted);

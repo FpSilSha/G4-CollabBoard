@@ -196,6 +196,12 @@ export function useObjectCreation(
     const canvas = fabricRef.current;
     if (!canvas) return;
 
+    /**
+     * Dropper uses mouse:down:before to intercept BEFORE Fabric.js
+     * processes the click for selection. We sample the color from the
+     * object under the pointer, then prevent Fabric from selecting it
+     * by discarding any active object immediately after.
+     */
     const handleDropperClick = (opt: fabric.IEvent) => {
       if (useUIStore.getState().activeTool !== 'dropper') return;
       if (!opt.target) return;
@@ -215,6 +221,11 @@ export function useObjectCreation(
         // Add to custom color slots and set as active color
         useUIStore.getState().addCustomColor(fill);
         useUIStore.getState().setActiveTool('select');
+
+        // Prevent the clicked object from becoming selected —
+        // the dropper should only sample, not select.
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
       }
     };
 

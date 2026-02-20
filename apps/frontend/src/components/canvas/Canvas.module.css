@@ -5,7 +5,7 @@
   /* The dot grid is rendered by the Fabric.js after:render callback
      (see useCanvas.ts setupDotGrid). The container background provides
      the base canvas color. */
-  background-color: #E5E5E5;
+  background-color: #2A2A2E;
 }
 
 /* Ensure the Fabric.js canvas element fills the container */

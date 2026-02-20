@@ -60,9 +60,10 @@
 .main {
   flex: 1;
   padding: 32px;
-  max-width: 960px;
+  max-width: 1100px;
   width: 100%;
   margin: 0 auto;
+  overflow-y: auto;
 }
 
 .toolbar {
@@ -127,7 +128,7 @@
 
 .boardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
 }
 
@@ -139,9 +140,9 @@
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  text-decoration: none;
   color: inherit;
   min-height: 120px;
+  position: relative;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
@@ -151,6 +152,15 @@
   transform: translateY(-2px);
 }
 
+.boardCardLink {
+  text-decoration: none;
+  color: inherit;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
 .boardCardTitle {
   font-size: 16px;
   font-weight: 600;
@@ -158,6 +168,129 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.boardCardTitleInput {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  width: 100%;
+  outline: none;
+  font-family: inherit;
+  margin: 0;
+}
+
+.boardCardTitleInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+.boardCardTitleInput:focus {
+  border-color: #6c63ff;
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.3);
+}
+
+/* Action buttons container (rename + delete) */
+.boardCardActions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.boardCard:hover .boardCardActions {
+  opacity: 1;
+}
+
+.boardCardRenameButton,
+.boardCardDeleteButton {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.boardCardRenameButton:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.boardCardDeleteButton:hover {
+  color: #f44336;
+  background: rgba(244, 67, 54, 0.15);
+}
+
+/* Delete confirmation overlay */
+.deleteConfirm {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: rgba(20, 20, 35, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 2;
+}
+
+.deleteConfirmText {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+}
+
+.deleteConfirmActions {
+  display: flex;
+  gap: 8px;
+}
+
+.deleteConfirmYes {
+  padding: 5px 16px;
+  border-radius: 6px;
+  background: #f44336;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.deleteConfirmYes:hover {
+  background: #d32f2f;
+}
+
+.deleteConfirmNo {
+  padding: 5px 16px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.deleteConfirmNo:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .boardCardMeta {

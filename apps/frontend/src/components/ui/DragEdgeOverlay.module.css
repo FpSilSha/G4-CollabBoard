@@ -1,0 +1,32 @@
+/* Translucent border glow + solid border lines around the viewport edges
+   when dragging objects. Two borders visible:
+   1. Outer border: at the very edge of the viewport (fast scroll zone)
+   2. Inner border: 60px inset, marking where the edge-scroll zone STARTS
+
+   pointer-events: none so it doesn't interfere with drag. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  box-shadow: inset 0 0 50px 10px rgba(255, 210, 60, 0.10);
+  border: 2px solid rgba(255, 210, 60, 0.55);
+  border-radius: 0;
+  animation: fadeIn 150ms ease-out;
+}
+
+/* Inner border at edge-scroll threshold (60px from each edge).
+   This marks where dragging objects will start auto-scrolling. */
+.overlay::after {
+  content: '';
+  position: absolute;
+  inset: 60px;
+  border: 1px solid rgba(255, 210, 60, 0.30);
+  border-radius: 0;
+  pointer-events: none;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

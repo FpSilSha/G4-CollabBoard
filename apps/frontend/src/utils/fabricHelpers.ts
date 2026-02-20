@@ -113,6 +113,25 @@ export function createStickyNote(options: {
 }
 
 /**
+ * Extract the visual fill color from any supported Fabric.js object.
+ * Used by selection glow to match the aura color to the object's color.
+ *
+ * - Sticky group: reads base polygon fill
+ * - Shape (rect/circle): reads obj.fill
+ * - Fallback: Focus Blue (#007AFF)
+ */
+export function getObjectFillColor(obj: fabric.Object): string {
+  if (obj.data?.type === 'sticky' && obj instanceof fabric.Group) {
+    const { base } = getStickyChildren(obj);
+    return (base.fill as string) ?? '#007AFF';
+  }
+  if (obj.fill && typeof obj.fill === 'string') {
+    return obj.fill;
+  }
+  return '#007AFF';
+}
+
+/**
  * Helper: get the child objects of a sticky group by role.
  * Index 0 = base polygon, 1 = fold polygon, 2 = text object.
  */

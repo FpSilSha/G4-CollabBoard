@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from './Dashboard.module.css';
 
@@ -37,12 +37,19 @@ const AUTH_PARAMS = {
  */
 export function Dashboard() {
   const { getAccessTokenSilently, logout, user } = useAuth0();
-  const navigate = useNavigate();
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [slots, setSlots] = useState<{ used: number; total: number; tier: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // --- Board rename on dashboard ---
+  const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Board delete on dashboard ---
+  const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
 
   // Fetch boards on mount. The cancelled flag prevents stale updates
   // if the component unmounts before the fetch resolves.
@@ -101,11 +108,78 @@ export function Dashboard() {
         throw new Error(data.message || 'Failed to create board');
       }
       const created = await res.json();
-      // Navigate directly to the new board
-      navigate(`/board/${created.id}`);
+
+      // Add the new board to the list and update slot count
+      const newBoard: BoardSummary = {
+        id: created.id,
+        title: created.title ?? 'Untitled Board',
+        slot: created.slot ?? (slots ? slots.used + 1 : 1),
+        lastAccessedAt: new Date().toISOString(),
+        objectCount: 0,
+        isDeleted: false,
+      };
+      setBoards((prev) => [...prev, newBoard]);
+      setSlots((prev) => prev ? { ...prev, used: prev.used + 1 } : prev);
+
+      // Auto-focus the title field on the new card for immediate rename
+      setRenameDraft('');
+      setRenamingBoardId(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create board');
+    } finally {
       setCreating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (renamingBoardId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingBoardId]);
+
+  const handleRenameBoard = async (boardId: string, newTitle: string) => {
+    const trimmed = newTitle.trim();
+    const finalTitle = trimmed || 'Untitled Board';
+    setRenamingBoardId(null);
+
+    // Optimistic update
+    setBoards((prev) =>
+      prev.map((b) => (b.id === boardId ? { ...b, title: finalTitle } : b))
+    );
+
+    try {
+      const token = await getAccessTokenSilently(AUTH_PARAMS);
+      await fetch(`${API_URL}/boards/${boardId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: finalTitle }),
+      });
+    } catch (err) {
+      console.error('[Dashboard] Failed to rename board:', err);
+    }
+  };
+
+  const handleDeleteBoard = async (boardId: string) => {
+    // Optimistic removal from list
+    setBoards((prev) => prev.filter((b) => b.id !== boardId));
+    setSlots((prev) => prev ? { ...prev, used: Math.max(0, prev.used - 1) } : prev);
+    setDeletingBoardId(null);
+
+    try {
+      const token = await getAccessTokenSilently(AUTH_PARAMS);
+      const res = await fetch(`${API_URL}/boards/${boardId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        console.error('[Dashboard] Failed to delete board:', res.status);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Failed to delete board:', err);
     }
   };
 
@@ -166,16 +240,97 @@ export function Dashboard() {
         ) : (
           <div className={styles.boardGrid}>
             {boards.map((board) => (
-              <Link
-                key={board.id}
-                to={`/board/${board.id}`}
-                className={styles.boardCard}
-              >
-                <h3 className={styles.boardCardTitle}>{board.title}</h3>
-                <p className={styles.boardCardMeta}>
-                  {board.objectCount} object{board.objectCount !== 1 ? 's' : ''}
-                </p>
-              </Link>
+              <div key={board.id} className={styles.boardCard}>
+                <Link
+                  to={`/board/${board.id}`}
+                  className={styles.boardCardLink}
+                >
+                  {renamingBoardId === board.id ? (
+                    <input
+                      ref={renameInputRef}
+                      className={styles.boardCardTitleInput}
+                      value={renameDraft}
+                      placeholder="title?"
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleRenameBoard(board.id, renameDraft);
+                        } else if (e.key === 'Escape') {
+                          setRenamingBoardId(null);
+                        }
+                      }}
+                      onBlur={() => handleRenameBoard(board.id, renameDraft)}
+                      onClick={(e) => e.preventDefault()}
+                      maxLength={255}
+                    />
+                  ) : (
+                    <h3 className={styles.boardCardTitle}>{board.title}</h3>
+                  )}
+                  <p className={styles.boardCardMeta}>
+                    {board.objectCount} object{board.objectCount !== 1 ? 's' : ''}
+                  </p>
+                </Link>
+                {renamingBoardId !== board.id && (
+                  <div className={styles.boardCardActions}>
+                    <button
+                      className={styles.boardCardRenameButton}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRenameDraft(board.title);
+                        setRenamingBoardId(board.id);
+                      }}
+                      title="Rename board"
+                      aria-label="Rename board"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                      </svg>
+                    </button>
+                    <button
+                      className={styles.boardCardDeleteButton}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingBoardId(board.id);
+                      }}
+                      title="Delete board"
+                      aria-label="Delete board"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                {/* Delete confirmation overlay */}
+                {deletingBoardId === board.id && (
+                  <div className={styles.deleteConfirm}>
+                    <p className={styles.deleteConfirmText}>Delete this board?</p>
+                    <div className={styles.deleteConfirmActions}>
+                      <button
+                        className={styles.deleteConfirmYes}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleDeleteBoard(board.id);
+                        }}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        className={styles.deleteConfirmNo}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setDeletingBoardId(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
