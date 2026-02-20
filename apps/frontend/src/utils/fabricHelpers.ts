@@ -301,7 +301,7 @@ export function createFrame(options: {
   const border = new fabric.Rect({
     width: w,
     height: h,
-    fill: 'rgba(255, 255, 255, 0.03)',
+    fill: 'rgba(0, 0, 0, 0.02)',
     stroke: color,
     strokeWidth: 2,
     strokeDashArray: [8, 4],
