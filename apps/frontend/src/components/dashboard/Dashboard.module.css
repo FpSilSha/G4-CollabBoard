@@ -66,51 +66,50 @@
   overflow-y: auto;
 }
 
-.toolbar {
+/* ============================
+   Tab Row
+   ============================ */
+
+.tabRow {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.tab {
+  padding: 10px 20px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 8px;
 }
 
-.sectionTitle {
-  font-size: 18px;
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tabActive {
+  color: var(--text-primary);
   font-weight: 600;
-  margin: 0;
-  flex: 1;
+  border-bottom-color: var(--focus-blue);
 }
 
-.slotInfo {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-
-.createButton {
-  padding: 8px 20px;
-  border-radius: 8px;
-  background: var(--focus-blue);
-  color: #ffffff;
-  font-size: 14px;
+.tabBadge {
+  font-size: 11px;
   font-weight: 600;
-  border: none;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s ease, transform 0.1s ease;
-}
-
-.createButton:hover:not(:disabled) {
-  background: #0066dd;
-  transform: translateY(-1px);
-}
-
-.createButton:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.createButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  background: rgba(0, 122, 255, 0.12);
+  color: var(--focus-blue);
+  padding: 1px 7px;
+  border-radius: 10px;
+  line-height: 1.4;
 }
 
 .error {
@@ -135,14 +134,13 @@
 .boardCard {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 20px;
   border-radius: 12px;
   background: #ffffff;
   border: 1px solid var(--sidebar-border);
   color: inherit;
   min-height: 120px;
   position: relative;
+  overflow: hidden;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
@@ -159,11 +157,26 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.thumbnail {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.boardCardContent {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
   justify-content: space-between;
+  flex: 1;
 }
 
 .boardCardTitle {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   margin: 0;
   overflow: hidden;
@@ -172,7 +185,7 @@
 }
 
 .boardCardTitleInput {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
   background: rgba(0, 0, 0, 0.03);
@@ -195,7 +208,7 @@
   box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
 }
 
-/* Action buttons container (rename + delete) */
+/* Action buttons container (rename + delete / unlink) */
 .boardCardActions {
   position: absolute;
   top: 8px;
@@ -211,14 +224,15 @@
 }
 
 .boardCardRenameButton,
-.boardCardDeleteButton {
+.boardCardDeleteButton,
+.unlinkButton {
   width: 24px;
   height: 24px;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.85);
   color: var(--text-placeholder);
   cursor: pointer;
   border: none;
@@ -236,7 +250,12 @@
   background: rgba(244, 67, 54, 0.1);
 }
 
-/* Delete confirmation overlay */
+.unlinkButton:hover {
+  color: #f57c00;
+  background: rgba(245, 124, 0, 0.1);
+}
+
+/* Delete/Unlink confirmation overlay */
 .deleteConfirm {
   position: absolute;
   inset: 0;
@@ -297,7 +316,42 @@
 .boardCardMeta {
   font-size: 13px;
   color: var(--text-tertiary);
-  margin: 0;
+  margin: 4px 0 0;
+}
+
+/* ============================
+   New Board Card
+   ============================ */
+
+.newBoardCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  border-radius: 12px;
+  border: 2px dashed var(--sidebar-border);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.newBoardCard:hover:not(:disabled) {
+  border-color: var(--focus-blue);
+  color: var(--focus-blue);
+  background: rgba(0, 122, 255, 0.04);
+}
+
+.newBoardCard:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.newBoardLabel {
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* ============================

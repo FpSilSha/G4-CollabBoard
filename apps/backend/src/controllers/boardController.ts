@@ -117,4 +117,46 @@ export const boardController = {
       next(err);
     }
   },
+
+  /**
+   * DELETE /boards/:id/link
+   * Remove a linked-board entry (user visited via link). Does NOT delete the board.
+   */
+  async unlinkBoard(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { sub } = (req as AuthenticatedRequest).user;
+      const { id } = req.params;
+      const result = await boardService.unlinkBoard(id, sub);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * PUT /boards/:id/thumbnail
+   * Save a JPEG thumbnail (base64) for the board's dashboard card.
+   */
+  async saveThumbnail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { thumbnail } = req.body;
+
+      if (!thumbnail || typeof thumbnail !== 'string') {
+        res.status(400).json({ error: 'Missing thumbnail data' });
+        return;
+      }
+
+      // Cap at ~200KB to prevent abuse
+      if (thumbnail.length > 200_000) {
+        res.status(400).json({ error: 'Thumbnail too large (max ~200KB)' });
+        return;
+      }
+
+      const result = await boardService.saveThumbnail(id, thumbnail);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
 };

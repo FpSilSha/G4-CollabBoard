@@ -102,6 +102,8 @@ app.post('/boards', requireAuth, apiRateLimit, validate(CreateBoardSchema), boar
 app.get('/boards/:id', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), boardController.getBoard);
 app.patch('/boards/:id', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), validate(UpdateBoardSchema), boardController.renameBoard);
 app.delete('/boards/:id', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), boardController.deleteBoard);
+app.delete('/boards/:id/link', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), boardController.unlinkBoard);
+app.put('/boards/:id/thumbnail', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), boardController.saveThumbnail);
 
 // --- Version Routes ---
 app.get('/boards/:id/versions', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), versionController.listVersions);

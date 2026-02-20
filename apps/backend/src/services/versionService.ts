@@ -1,13 +1,12 @@
 import prisma from '../models/index';
 import { Prisma } from '@prisma/client';
-import { PERSISTENCE_CONFIG, TIER_LIMITS, type SubscriptionTier } from 'shared';
+import { PERSISTENCE_CONFIG } from 'shared';
 import { AppError } from '../middleware/errorHandler';
 
 export const versionService = {
   async listVersions(boardId: string, userId: string) {
     const board = await prisma.board.findUnique({
       where: { id: boardId },
-      include: { owner: { select: { subscriptionTier: true } } },
     });
 
     if (!board) {
@@ -18,10 +17,7 @@ export const versionService = {
       throw new AppError(403, 'You do not have access to this board');
     }
 
-    const tier = board.owner.subscriptionTier.toLowerCase() as SubscriptionTier;
-    if (!TIER_LIMITS[tier].VERSION_HISTORY) {
-      throw new AppError(403, 'Version history is available on paid plans only');
-    }
+    // Version history is enabled for all users.
 
     const versions = await prisma.boardVersion.findMany({
       where: { boardId },

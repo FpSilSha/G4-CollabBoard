@@ -72,7 +72,7 @@ export const useBoardStore = create<BoardState>((set) => ({
   setBoardTitle: (title) => set({ boardTitle: title }),
   setBoardOwnerId: (ownerId) => set({ boardOwnerId: ownerId }),
 
-  maxObjectsPerBoard: 1000, // default to enterprise, overwritten on board load
+  maxObjectsPerBoard: 2000, // hard cap, overwritten on board load from API
   setMaxObjectsPerBoard: (max) => set({ maxObjectsPerBoard: max }),
 
   objects: new Map(),

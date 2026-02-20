@@ -132,10 +132,47 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   // Cleanup: leave board when truly unmounting (navigating away to dashboard
   // or another board). Deferred with setTimeout(0) so StrictMode's simulated
   // unmount→remount cycle can cancel it — prevents spurious board:leave.
+  // Also captures a thumbnail snapshot for the dashboard card.
   useEffect(() => {
     return () => {
       mountedRef.current = false;
       const currentBoardId = useBoardStore.getState().boardId;
+      const canvas = useBoardStore.getState().canvas;
+
+      // Capture thumbnail before leaving (fire-and-forget)
+      if (currentBoardId && canvas) {
+        try {
+          const multiplier = 300 / Math.max(canvas.getWidth(), 1);
+          const thumbnail = canvas.toDataURL({
+            format: 'jpeg',
+            quality: 0.5,
+            multiplier,
+          });
+          // Fire-and-forget upload — don't block navigation
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          getAccessTokenSilently({
+            authorizationParams: {
+              audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
+            },
+          }).then((token) => {
+            fetch(`${apiUrl}/boards/${currentBoardId}/thumbnail`, {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ thumbnail }),
+            }).catch(() => {
+              // Non-critical — silently ignore thumbnail save errors
+            });
+          }).catch(() => {
+            // Token fetch failed — silently ignore
+          });
+        } catch {
+          // Canvas toDataURL failed — silently ignore
+        }
+      }
+
       if (currentBoardId) {
         // Defer so StrictMode re-mount can cancel by setting mountedRef = true
         setTimeout(() => {

@@ -1,23 +1,8 @@
-export const TIER_LIMITS = {
-  free: {
-    BOARD_SLOTS: 2,
-    OBJECTS_PER_BOARD: 100,
-    VERSION_HISTORY: false,
-    AI_COMMANDS_PER_10_MIN: 10,
-  },
-  team: {
-    BOARD_SLOTS: 10,
-    OBJECTS_PER_BOARD: 500,
-    VERSION_HISTORY: true,
-    AI_COMMANDS_PER_10_MIN: 50,
-  },
-  enterprise: {
-    BOARD_SLOTS: Infinity,
-    OBJECTS_PER_BOARD: 1000,
-    VERSION_HISTORY: true,
-    AI_COMMANDS_PER_10_MIN: Infinity,
-  },
-} as const;
+/** Hard cap: maximum objects allowed on a single board. */
+export const MAX_OBJECTS_PER_BOARD = 2000;
+
+/** No board-slot cap — users can create unlimited boards. */
+export const MAX_BOARDS_PER_USER = Infinity;
 
 export const RATE_LIMITS = {
   API_REQUESTS_PER_MINUTE: 100,

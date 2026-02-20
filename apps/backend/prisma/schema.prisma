@@ -22,6 +22,7 @@ model User {
   subscriptions Subscription[]
   boardVersions BoardVersion[]
   teleportFlags TeleportFlag[]
+  linkedBoards  LinkedBoard[]
 
   @@index([email])
 }
@@ -51,10 +52,12 @@ model Board {
   isDeleted      Boolean   @default(false)
   deletedAt      DateTime?
   slot           Int       @default(0)
+  thumbnail      String?          // Base64 JPEG thumbnail for dashboard card preview
 
   owner         User           @relation("BoardOwner", fields: [ownerId], references: [id])
   versions      BoardVersion[]
   teleportFlags TeleportFlag[]
+  linkedBoards  LinkedBoard[]
 
   @@unique([ownerId, slot])
   @@index([ownerId])
@@ -111,6 +114,20 @@ model TeleportFlag {
   board   Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
   creator User  @relation(fields: [createdBy], references: [id])
 
+  @@index([boardId])
+}
+
+model LinkedBoard {
+  id        String   @id @default(uuid())
+  userId    String
+  boardId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, boardId])
+  @@index([userId])
   @@index([boardId])
 }
 

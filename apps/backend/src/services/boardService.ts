@@ -1,6 +1,6 @@
 import prisma from '../models/index';
 import { Prisma } from '@prisma/client';
-import { TIER_LIMITS, type SubscriptionTier, type CachedBoardState, type BoardObject } from 'shared';
+import { MAX_OBJECTS_PER_BOARD, type CachedBoardState, type BoardObject } from 'shared';
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { metricsService } from './metricsService';
 import { AppError } from '../middleware/errorHandler';
@@ -18,65 +18,74 @@ export const boardService = {
       where.isDeleted = false;
     }
 
-    const boards = await prisma.board.findMany({
+    const ownedBoards = await prisma.board.findMany({
       where,
       orderBy: { slot: 'asc' },
       select: {
         id: true,
+        ownerId: true,
         title: true,
         slot: true,
         lastAccessedAt: true,
         isDeleted: true,
         objects: true,
+        thumbnail: true,
       },
     });
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { subscriptionTier: true },
+    // Linked boards — boards this user has visited via link (not owned)
+    const linkedRecords = await prisma.linkedBoard.findMany({
+      where: { userId },
+      include: {
+        board: {
+          select: {
+            id: true,
+            ownerId: true,
+            title: true,
+            slot: true,
+            lastAccessedAt: true,
+            isDeleted: true,
+            objects: true,
+            thumbnail: true,
+          },
+        },
+      },
     });
 
-    const tier = (user?.subscriptionTier?.toLowerCase() ?? 'free') as SubscriptionTier;
-    const activeCount = boards.filter((b) => !b.isDeleted).length;
+    const linkedBoards = linkedRecords
+      .map((lb) => lb.board)
+      .filter((b) => !b.isDeleted);
+
+    // Helper: get object count from Redis (fresh) or Postgres (fallback)
+    const getObjectCount = async (board: { id: string; objects: unknown }): Promise<number> => {
+      try {
+        const cached = await this.getBoardStateFromRedis(board.id);
+        if (cached) return cached.objects.length;
+      } catch {
+        // Redis unavailable — fall through to Postgres count
+      }
+      return Array.isArray(board.objects) ? (board.objects as unknown[]).length : 0;
+    };
+
+    const mapBoard = async (b: typeof ownedBoards[0], isOwned: boolean) => ({
+      id: b.id,
+      title: b.title,
+      slot: b.slot,
+      lastAccessedAt: b.lastAccessedAt,
+      objectCount: await getObjectCount(b),
+      isDeleted: b.isDeleted,
+      thumbnail: b.thumbnail,
+      isOwned,
+      ownerId: b.ownerId,
+    });
 
     return {
-      boards: boards.map((b) => ({
-        id: b.id,
-        title: b.title,
-        slot: b.slot,
-        lastAccessedAt: b.lastAccessedAt,
-        objectCount: Array.isArray(b.objects) ? (b.objects as unknown[]).length : 0,
-        isDeleted: b.isDeleted,
-      })),
-      slots: {
-        used: activeCount,
-        total: TIER_LIMITS[tier].BOARD_SLOTS,
-        tier,
-      },
+      ownedBoards: await Promise.all(ownedBoards.map((b) => mapBoard(b, true))),
+      linkedBoards: await Promise.all(linkedBoards.map((b) => mapBoard(b, false))),
     };
   },
 
   async createBoard(userId: string, title: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { subscriptionTier: true },
-    });
-
-    if (!user) {
-      throw new AppError(404, 'User not found');
-    }
-
-    const tier = user.subscriptionTier.toLowerCase() as SubscriptionTier;
-    const maxSlots = TIER_LIMITS[tier].BOARD_SLOTS;
-
-    const activeCount = await prisma.board.count({
-      where: { ownerId: userId, isDeleted: false },
-    });
-
-    if (activeCount >= maxSlots) {
-      throw new AppError(403, `Board limit reached. Your ${tier} plan allows ${maxSlots} boards.`, 'BOARD_LIMIT_REACHED');
-    }
-
     // Find next available slot.
     // Include ALL boards (even soft-deleted) because the unique constraint
     // on (ownerId, slot) applies to all rows regardless of isDeleted status.
@@ -113,7 +122,6 @@ export const boardService = {
   async getBoard(boardId: string, userId: string) {
     const board = await prisma.board.findUnique({
       where: { id: boardId },
-      include: { owner: { select: { subscriptionTier: true } } },
     });
 
     if (!board) {
@@ -134,7 +142,18 @@ export const boardService = {
       data: { lastAccessedAt: new Date() },
     });
 
-    const tier = board.owner.subscriptionTier.toLowerCase() as SubscriptionTier;
+    // Auto-link: if user is not the owner, remember this board for their dashboard
+    if (board.ownerId !== userId) {
+      try {
+        await prisma.linkedBoard.upsert({
+          where: { userId_boardId: { userId, boardId } },
+          create: { userId, boardId },
+          update: {}, // no-op if already exists
+        });
+      } catch {
+        // Non-critical — don't fail the board load if linking fails
+      }
+    }
 
     return {
       id: board.id,
@@ -144,7 +163,7 @@ export const boardService = {
       objects: board.objects as unknown[],
       version: board.version,
       lastAccessedAt: board.lastAccessedAt,
-      maxObjectsPerBoard: TIER_LIMITS[tier].OBJECTS_PER_BOARD,
+      maxObjectsPerBoard: MAX_OBJECTS_PER_BOARD,
     };
   },
 
@@ -297,6 +316,29 @@ export const boardService = {
       where: { id: boardId },
       data: { objects: filtered as Prisma.InputJsonArray },
     });
+  },
+
+  /**
+   * Remove a linked-board record so the board no longer appears
+   * in the user's "Linked Boards" tab. Does NOT delete the actual board.
+   */
+  async unlinkBoard(boardId: string, userId: string) {
+    await prisma.linkedBoard.deleteMany({
+      where: { userId, boardId },
+    });
+    return { success: true };
+  },
+
+  /**
+   * Save a JPEG thumbnail (base64) for a board card preview.
+   * Any user who has been on the board can update the thumbnail.
+   */
+  async saveThumbnail(boardId: string, thumbnail: string) {
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { thumbnail },
+    });
+    return { success: true };
   },
 
   // ============================================================

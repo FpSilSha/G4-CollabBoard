@@ -1,5 +1,5 @@
 import { BoardObject, Board } from './board.types';
-import { SubscriptionTier, SubscriptionStatus, User } from './user.types';
+import { SubscriptionStatus, User } from './user.types';
 
 // --- Auth ---
 
@@ -9,7 +9,6 @@ export interface AuthMeResponse {
   name: string;
   avatar: string;
   color: string;
-  subscriptionTier: SubscriptionTier;
   subscriptionStatus: SubscriptionStatus;
 }
 
@@ -20,12 +19,8 @@ export interface UpdateProfileRequest {
 // --- Boards ---
 
 export interface BoardListResponse {
-  boards: BoardSummary[];
-  slots: {
-    used: number;
-    total: number;
-    tier: SubscriptionTier;
-  };
+  ownedBoards: BoardSummary[];
+  linkedBoards: BoardSummary[];
 }
 
 export interface BoardSummary {
@@ -35,6 +30,9 @@ export interface BoardSummary {
   lastAccessedAt: Date;
   objectCount: number;
   isDeleted: boolean;
+  thumbnail: string | null;
+  isOwned: boolean;
+  ownerId: string;
 }
 
 export interface CreateBoardRequest {
@@ -77,26 +75,7 @@ export interface VersionSummary {
   objectCount: number;
 }
 
-// --- Subscriptions ---
-
-export interface SubscriptionStatusResponse {
-  tier: SubscriptionTier;
-  status: SubscriptionStatus;
-  currentPeriodEnd: Date;
-  limits: {
-    boardSlots: number;
-    aiCommands: number;
-    maxObjectsPerBoard: number;
-  };
-}
-
-export interface CheckoutRequest {
-  tier: 'team' | 'enterprise';
-}
-
-export interface CheckoutResponse {
-  checkoutUrl: string;
-}
+// --- Subscriptions (Phase 7 — deferred) ---
 
 // --- API Error ---
 

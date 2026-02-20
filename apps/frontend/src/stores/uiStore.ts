@@ -180,8 +180,8 @@ export const useUIStore = create<UIState>((set) => ({
   toastMessage: null,
   showToast: (message) => {
     set({ toastMessage: message });
-    // Auto-dismiss after 3 seconds
-    setTimeout(() => set({ toastMessage: null }), 3000);
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => set({ toastMessage: null }), 5000);
   },
   clearToast: () => set({ toastMessage: null }),
 
