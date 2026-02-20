@@ -125,6 +125,14 @@ export function getObjectFillColor(obj: fabric.Object): string {
     const { base } = getStickyChildren(obj);
     return (base.fill as string) ?? '#007AFF';
   }
+  if (obj.data?.type === 'frame' && obj instanceof fabric.Group) {
+    // Frame: use the border color from the child rect's stroke
+    const borderRect = obj.getObjects()[0] as fabric.Rect;
+    return (borderRect.stroke as string) ?? '#555555';
+  }
+  if (obj.data?.type === 'connector') {
+    return (obj.stroke as string) ?? '#FFFFFF';
+  }
   if (obj.fill && typeof obj.fill === 'string') {
     return obj.fill;
   }
@@ -156,6 +164,18 @@ export function updateStickyColor(group: fabric.Group, newColor: string): void {
   const { base, fold } = getStickyChildren(group);
   base.set('fill', newColor);
   fold.set('fill', darkenColor(newColor, 15));
+}
+
+/**
+ * Update the color of a frame group.
+ * Updates both the border rectangle's stroke and the title label's fill.
+ */
+export function updateFrameColor(group: fabric.Group, newColor: string): void {
+  const objects = group.getObjects();
+  const borderRect = objects[0] as fabric.Rect;
+  const label = objects[1] as fabric.Text;
+  borderRect.set('stroke', newColor);
+  label.set('fill', newColor);
 }
 
 // ============================================================
@@ -217,6 +237,303 @@ export function createCircle(options: {
       shapeType: 'circle',
     },
   });
+}
+
+// ============================================================
+// Text Element Factory
+// ============================================================
+
+/**
+ * Creates a Fabric.js IText for a standalone text element.
+ * IText supports inline editing (double-click to enter edit mode).
+ */
+export function createTextElement(options: {
+  x: number;
+  y: number;
+  text?: string;
+  fontSize?: number;
+  color?: string;
+  id?: string;
+}): fabric.IText {
+  const id = options.id ?? generateLocalId();
+  return new fabric.IText(options.text ?? 'Text', {
+    left: options.x,
+    top: options.y,
+    fontSize: options.fontSize ?? 24,
+    fill: options.color ?? '#FFFFFF',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    data: {
+      id,
+      type: 'text',
+    },
+  });
+}
+
+// ============================================================
+// Frame Factory
+// ============================================================
+
+/**
+ * Creates a Fabric.js Group representing a frame (grouping container).
+ *
+ * The frame is a dashed-border rectangle with a title label at the top-left.
+ * Frames are visual containers — they don't actually Fabric-group children.
+ * Objects can be placed inside the frame area visually, but the frame itself
+ * is just a labeled rectangle.
+ */
+export function createFrame(options: {
+  x: number;
+  y: number;
+  title?: string;
+  width?: number;
+  height?: number;
+  color?: string;
+  id?: string;
+}): fabric.Group {
+  const id = options.id ?? generateLocalId();
+  const w = options.width ?? 400;
+  const h = options.height ?? 300;
+  const color = options.color ?? '#555555';
+
+  // Dashed-border rectangle background
+  const border = new fabric.Rect({
+    width: w,
+    height: h,
+    fill: 'rgba(255, 255, 255, 0.03)',
+    stroke: color,
+    strokeWidth: 2,
+    strokeDashArray: [8, 4],
+    rx: 4,
+    ry: 4,
+  });
+
+  // Title label at top-left inside the frame
+  const label = new fabric.Text(options.title ?? 'Frame', {
+    left: 8,
+    top: -20,
+    fontSize: 13,
+    fill: color,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    selectable: false,
+    evented: false,
+  });
+
+  const group = new fabric.Group([border, label], {
+    left: options.x,
+    top: options.y,
+    subTargetCheck: false,
+    data: {
+      id,
+      type: 'frame',
+      title: options.title ?? 'Frame',
+    },
+  });
+
+  return group;
+}
+
+// ============================================================
+// Connector Factory
+// ============================================================
+
+/**
+ * Creates a Fabric.js Line representing a connector.
+ *
+ * Accepts start (x, y) and end (x2, y2) coordinates.
+ * If x2/y2 are not provided, defaults to a 200px horizontal line.
+ */
+export function createConnector(options: {
+  x: number;
+  y: number;
+  x2?: number;
+  y2?: number;
+  color?: string;
+  style?: 'line' | 'arrow';
+  fromObjectId?: string;
+  toObjectId?: string;
+  id?: string;
+}): fabric.Line {
+  const id = options.id ?? generateLocalId();
+  const color = options.color ?? '#FFFFFF';
+
+  const x1 = options.x;
+  const y1 = options.y;
+  const x2 = options.x2 ?? (options.x + 200);
+  const y2 = options.y2 ?? options.y;
+
+  const line = new fabric.Line(
+    [x1, y1, x2, y2],
+    {
+      stroke: color,
+      strokeWidth: 2,
+      fill: '',
+      // Disable default resize/rotate controls — we use custom endpoint controls
+      hasBorders: false,
+      lockScalingX: true,
+      lockScalingY: true,
+      data: {
+        id,
+        type: 'connector',
+        style: options.style ?? 'line',
+        fromObjectId: options.fromObjectId ?? '',
+        toObjectId: options.toObjectId ?? '',
+      },
+    }
+  );
+
+  // Add custom endpoint controls for dragging each end independently
+  setupConnectorEndpointControls(line);
+
+  return line;
+}
+
+/**
+ * After a connector line is moved (dragged by body), x1/y1/x2/y2 become
+ * stale because Fabric.js only updates left/top on move. We must sync
+ * the endpoint coordinates so custom controls and serialization stay correct.
+ *
+ * Called from useCanvasSync / useCanvas on `object:modified` for connectors.
+ */
+export function syncConnectorCoordsAfterMove(line: fabric.Line): void {
+  // Fabric.js Line: left = min(x1,x2), top = min(y1,y2) at creation.
+  // After a move, left/top changed but x1/y1/x2/y2 are still the original values.
+  // Compute the delta between the stale computed-left and the actual left.
+  const staleLeft = Math.min(line.x1 ?? 0, line.x2 ?? 0);
+  const staleTop = Math.min(line.y1 ?? 0, line.y2 ?? 0);
+  const dx = (line.left ?? 0) - staleLeft;
+  const dy = (line.top ?? 0) - staleTop;
+
+  if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
+
+  // Update x1/y1/x2/y2 to match the new position.
+  // Use direct property assignment to avoid _setWidthHeight recalculation loop.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lineAny = line as any;
+  lineAny.x1 = (line.x1 ?? 0) + dx;
+  lineAny.y1 = (line.y1 ?? 0) + dy;
+  lineAny.x2 = (line.x2 ?? 0) + dx;
+  lineAny.y2 = (line.y2 ?? 0) + dy;
+  line.setCoords();
+}
+
+/**
+ * Adds custom Fabric.js controls to a connector line so the user can
+ * grab either endpoint and drag it independently while the other stays fixed.
+ *
+ * Two controls are created:
+ *   p1 — positioned at the start point (x1, y1)
+ *   p2 — positioned at the end point (x2, y2)
+ *
+ * positionHandler uses calcLinePoints() to get center-relative coords, then
+ * transforms through calcTransformMatrix() * viewportTransform to get the
+ * correct screen position. This is robust across pans, zooms, and moves.
+ *
+ * actionHandler receives (x, y) in canvas coordinates and sets x1/y1 or
+ * x2/y2 directly. Fabric's Line._set automatically recalculates left/top.
+ */
+function setupConnectorEndpointControls(line: fabric.Line): void {
+  const endpointRadius = 7;
+
+  // Renderer: white-filled circle with dark border (endpoint handle)
+  const renderEndpoint = (
+    ctx: CanvasRenderingContext2D,
+    left: number,
+    top: number
+  ) => {
+    ctx.save();
+    ctx.translate(left, top);
+    ctx.beginPath();
+    ctx.arc(0, 0, endpointRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#222222';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // Position handler: uses calcLinePoints() for center-relative local coords,
+  // then transforms to screen space via calcTransformMatrix + viewportTransform.
+  // This is the recommended approach from Fabric.js docs and avoids relying
+  // on the finalMatrix parameter which doesn't account for Line internals.
+  const makePositionHandler = (endpoint: 'p1' | 'p2') => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return function (_dim: any, finalMatrix: any, fabricObj: any) {
+      const lineObj = fabricObj as fabric.Line;
+
+      // Guard: if this control is rendered on a non-Line object (e.g. during
+      // multi-select ActiveSelection), fall back to the finalMatrix center.
+      if (typeof lineObj.calcLinePoints !== 'function') {
+        return fabric.util.transformPoint(
+          new fabric.Point(0, 0),
+          finalMatrix
+        );
+      }
+
+      // calcLinePoints() returns center-relative coords:
+      // {x1: +/-width/2, y1: +/-height/2, x2: -/+width/2, y2: -/+height/2}
+      const pts = lineObj.calcLinePoints();
+      const pt = endpoint === 'p1'
+        ? new fabric.Point(pts.x1, pts.y1)
+        : new fabric.Point(pts.x2, pts.y2);
+
+      // Transform from object-local space → canvas space → screen space
+      const objectMatrix = lineObj.calcTransformMatrix();
+      const viewportMatrix = lineObj.canvas!.viewportTransform!;
+      const totalMatrix = fabric.util.multiplyTransformMatrices(
+        viewportMatrix, objectMatrix
+      );
+      return fabric.util.transformPoint(pt, totalMatrix);
+    };
+  };
+
+  // Action handler: x, y are in canvas coordinates (from Fabric.js).
+  // Set the endpoint directly. Fabric's Line._set override will
+  // recalculate left/top/width/height automatically.
+  const makeActionHandler = (endpoint: 'p1' | 'p2') => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return function (_eventData: any, transform: any, x: number, y: number) {
+      const lineObj = transform.target as fabric.Line;
+      // Guard: only modify if this is actually a Line (not an ActiveSelection)
+      if (typeof lineObj.calcLinePoints !== 'function') return false;
+      if (endpoint === 'p1') {
+        lineObj.set({ x1: x, y1: y });
+      } else {
+        lineObj.set({ x2: x, y2: y });
+      }
+      return true;
+    };
+  };
+
+  // P1 control (start point)
+  line.controls.p1 = new fabric.Control({
+    positionHandler: makePositionHandler('p1'),
+    actionHandler: makeActionHandler('p1'),
+    cursorStyle: 'crosshair',
+    render: renderEndpoint,
+    sizeX: endpointRadius * 2,
+    sizeY: endpointRadius * 2,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'modifyLine' as any,
+  });
+
+  // P2 control (end point)
+  line.controls.p2 = new fabric.Control({
+    positionHandler: makePositionHandler('p2'),
+    actionHandler: makeActionHandler('p2'),
+    cursorStyle: 'crosshair',
+    render: renderEndpoint,
+    sizeX: endpointRadius * 2,
+    sizeY: endpointRadius * 2,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'modifyLine' as any,
+  });
+
+  // Hide all default controls — only show our custom endpoint controls
+  const defaultControls = ['tl', 'tr', 'bl', 'br', 'ml', 'mr', 'mt', 'mb', 'mtr'];
+  for (const key of defaultControls) {
+    line.setControlVisible(key, false);
+  }
 }
 
 // ============================================================
@@ -296,6 +613,51 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
     };
   }
 
+  if (data.type === 'text') {
+    const itext = fabricObj as fabric.IText;
+    return {
+      ...base,
+      type: 'text' as const,
+      text: itext.text ?? '',
+      fontSize: itext.fontSize ?? 24,
+      color: (itext.fill as string) ?? '#FFFFFF',
+    };
+  }
+
+  if (data.type === 'frame') {
+    // Frame color is stored as the child rect's stroke color
+    let frameColor = '#555555';
+    if (fabricObj instanceof fabric.Group) {
+      const borderRect = fabricObj.getObjects()[0];
+      frameColor = (borderRect.stroke as string) ?? '#555555';
+    }
+    return {
+      ...base,
+      type: 'frame' as const,
+      title: data.title ?? 'Frame',
+      width: (fabricObj.width ?? 400) * scaleX,
+      height: (fabricObj.height ?? 300) * scaleY,
+      color: frameColor,
+    };
+  }
+
+  if (data.type === 'connector') {
+    const line = fabricObj as fabric.Line;
+    // After syncConnectorCoordsAfterMove, x1/y1/x2/y2 are absolute canvas
+    // coordinates. For freshly created connectors, they're also absolute.
+    // base.x/base.y already use fabricObj.left/top which equals min(x1,x2)/min(y1,y2).
+    return {
+      ...base,
+      type: 'connector' as const,
+      fromObjectId: data.fromObjectId ?? '',
+      toObjectId: data.toObjectId ?? '',
+      style: data.style ?? 'line',
+      color: (line.stroke as string) ?? '#FFFFFF',
+      x2: line.x2 ?? 0,
+      y2: line.y2 ?? 0,
+    };
+  }
+
   // Default: rectangle shape
   return {
     ...base,
@@ -307,10 +669,6 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
     rotation: fabricObj.angle ?? 0,
   };
 }
-
-// ============================================================
-// Color Utility
-// ============================================================
 
 // ============================================================
 // Conversion: BoardObject -> Fabric Object (for rendering server state)
@@ -334,13 +692,15 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
 
     case 'shape':
       if (obj.shapeType === 'circle') {
-        return createCircle({
+        const circle = createCircle({
           x: obj.x,
           y: obj.y,
           color: obj.color,
           radius: obj.width / 2,
           id: obj.id,
         });
+        if (obj.rotation) circle.set('angle', obj.rotation);
+        return circle;
       }
       if (obj.shapeType === 'rectangle') {
         const rect = createRectangle({
@@ -356,7 +716,40 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
       }
       return null;
 
-    // frame, connector, text — not yet supported in Phase 3/4 canvas
+    case 'text':
+      return createTextElement({
+        x: obj.x,
+        y: obj.y,
+        text: obj.text,
+        fontSize: obj.fontSize,
+        color: obj.color,
+        id: obj.id,
+      });
+
+    case 'frame':
+      return createFrame({
+        x: obj.x,
+        y: obj.y,
+        title: obj.title,
+        width: obj.width,
+        height: obj.height,
+        color: obj.color,
+        id: obj.id,
+      });
+
+    case 'connector':
+      return createConnector({
+        x: obj.x,
+        y: obj.y,
+        x2: obj.x2,
+        y2: obj.y2,
+        color: obj.color,
+        style: obj.style,
+        fromObjectId: obj.fromObjectId,
+        toObjectId: obj.toObjectId,
+        id: obj.id,
+      });
+
     default:
       return null;
   }

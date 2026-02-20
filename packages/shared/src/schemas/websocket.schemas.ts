@@ -70,11 +70,15 @@ export const ObjectUpdatePayloadSchema = z.object({
 export const ObjectUpdateFieldsSchema = z.object({
   x: coordinate.optional(),
   y: coordinate.optional(),
+  x2: coordinate.optional(),
+  y2: coordinate.optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   text: z.string().max(10000).optional(),
   width: z.number().min(10).max(5000).optional(),
   height: z.number().min(10).max(5000).optional(),
   rotation: z.number().min(-360).max(360).optional(),
+  fontSize: z.number().min(8).max(200).optional(),
+  title: z.string().max(255).optional(),
   lastEditedBy: z.string().optional(),
   updatedAt: z.any().optional(),
 }).passthrough();

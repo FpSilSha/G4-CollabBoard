@@ -9,6 +9,9 @@ import {
   createStickyNote,
   createRectangle,
   createCircle,
+  createTextElement,
+  createFrame,
+  createConnector,
   fabricToBoardObject,
   getStickyChildren,
 } from '../utils/fabricHelpers';
@@ -40,7 +43,7 @@ export function useObjectCreation(
       const color = useUIStore.getState().activeColor;
 
       // Only create if a creation tool is active
-      if (tool === 'select' || tool === 'dropper') return;
+      if (tool === 'select' || tool === 'dropper' || tool === 'connector') return;
       // Only create if clicking on empty canvas (not on existing object)
       if (opt.target) return;
 
@@ -190,6 +193,49 @@ export function useObjectCreation(
   }, [fabricRef]);
 
   // ========================================
+  // IText editing: sync text changes for standalone text elements
+  // Fabric.js IText enters edit mode automatically on double-click.
+  // We listen for text:editing:exited to emit the final text to server.
+  // ========================================
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleTextEditingExited = (opt: any) => {
+      const target = opt.target as fabric.IText | undefined;
+      if (!target || target.data?.type !== 'text') return;
+      if (!target.data?.id) return;
+
+      const boardId = useBoardStore.getState().boardId;
+      const socket = socketRef.current;
+      const userId = usePresenceStore.getState().localUserId;
+
+      // Update local store
+      const textValue = target.text ?? '';
+      useBoardStore.getState().updateObject(target.data.id, {
+        text: textValue,
+      } as Partial<import('shared').BoardObject>);
+
+      // Emit to server
+      if (boardId && socket?.connected) {
+        socket.emit(WebSocketEvent.OBJECT_UPDATE, {
+          boardId,
+          objectId: target.data.id,
+          updates: { text: textValue, lastEditedBy: userId },
+          timestamp: Date.now(),
+        });
+      }
+    };
+
+    canvas.on('text:editing:exited', handleTextEditingExited);
+    return () => {
+      canvas.off('text:editing:exited', handleTextEditingExited);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricRef]);
+
+  // ========================================
   // Dropper tool: sample color from object
   // ========================================
   useEffect(() => {
@@ -213,6 +259,13 @@ export function useObjectCreation(
         // For sticky groups, sample the base polygon color
         const { base } = getStickyChildren(target);
         fill = base.fill as string;
+      } else if (target.data?.type === 'frame' && target instanceof fabric.Group) {
+        // For frames, sample the border color (stroke of child rect)
+        const borderRect = target.getObjects()[0];
+        fill = borderRect.stroke as string;
+      } else if (target.data?.type === 'connector') {
+        // For connectors, sample the stroke color
+        fill = target.stroke as string;
       } else {
         fill = target.fill as string | undefined;
       }
@@ -232,6 +285,152 @@ export function useObjectCreation(
     canvas.on('mouse:down', handleDropperClick);
     return () => {
       canvas.off('mouse:down', handleDropperClick);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricRef]);
+
+  // ========================================
+  // Connector tool: click-and-drag to create
+  //
+  // Disables canvas.selection while the connector tool is active so
+  // Fabric.js doesn't create a rubber-band selection zone during drag.
+  // Uses mouse:down (not mouse:down:before) to avoid interfering with
+  // other tools' click-to-create handlers.
+  // ========================================
+
+  // Disable rubber-band selection when connector tool is active.
+  // Uses plain subscribe (no selector) since we don't have subscribeWithSelector.
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    let prevTool = useUIStore.getState().activeTool;
+    canvas.selection = (prevTool !== 'connector');
+
+    const unsub = useUIStore.subscribe((state) => {
+      const tool = state.activeTool;
+      if (tool !== prevTool) {
+        prevTool = tool;
+        canvas.selection = (tool !== 'connector');
+      }
+    });
+
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricRef]);
+
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    // State for the connector drag operation
+    let isDragging = false;
+    let previewLine: fabric.Line | null = null;
+    let startX = 0;
+    let startY = 0;
+
+    const handleConnectorMouseDown = (opt: fabric.IEvent) => {
+      if (useUIStore.getState().activeTool !== 'connector') return;
+      // Only start on empty canvas (not on existing objects)
+      if (opt.target) return;
+
+      const pointer = canvas.getPointer(opt.e);
+      startX = pointer.x;
+      startY = pointer.y;
+      isDragging = true;
+
+      // Create a dashed preview line
+      previewLine = new fabric.Line([startX, startY, startX, startY], {
+        stroke: useUIStore.getState().activeColor,
+        strokeWidth: 2,
+        strokeDashArray: [6, 4],
+        selectable: false,
+        evented: false,
+        opacity: 0.6,
+      });
+      canvas.add(previewLine);
+      canvas.requestRenderAll();
+    };
+
+    const handleConnectorMouseMove = (opt: fabric.IEvent) => {
+      if (!isDragging || !previewLine) return;
+      const pointer = canvas.getPointer(opt.e);
+      previewLine.set({ x2: pointer.x, y2: pointer.y });
+      canvas.requestRenderAll();
+    };
+
+    const finishConnectorDrag = (endX: number, endY: number) => {
+      isDragging = false;
+
+      // Remove the preview line
+      if (previewLine) {
+        canvas.remove(previewLine);
+        previewLine = null;
+      }
+
+      // Only create if the user dragged a minimum distance (> 10px)
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 10) {
+        canvas.requestRenderAll();
+        return;
+      }
+
+      // Create the real connector
+      const color = useUIStore.getState().activeColor;
+      const connector = createConnector({
+        x: startX,
+        y: startY,
+        x2: endX,
+        y2: endY,
+        color,
+      });
+
+      canvas.add(connector);
+      canvas.setActiveObject(connector);
+      canvas.requestRenderAll();
+
+      const userId = usePresenceStore.getState().localUserId;
+      const boardObj = fabricToBoardObject(connector, userId ?? undefined);
+      addObject(boardObj);
+
+      // Emit to server
+      emitObjectCreate(socketRef.current, boardObj);
+
+      // Reset to select tool (this also re-enables canvas.selection via subscriber)
+      useUIStore.getState().setActiveTool('select');
+    };
+
+    const handleConnectorMouseUp = (opt: fabric.IEvent) => {
+      if (!isDragging || !previewLine) return;
+      const pointer = canvas.getPointer(opt.e);
+      finishConnectorDrag(pointer.x, pointer.y);
+    };
+
+    // Cancel connector creation on Escape
+    const handleConnectorEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isDragging && previewLine) {
+        isDragging = false;
+        canvas.remove(previewLine);
+        previewLine = null;
+        canvas.requestRenderAll();
+      }
+    };
+
+    canvas.on('mouse:down', handleConnectorMouseDown);
+    canvas.on('mouse:move', handleConnectorMouseMove);
+    canvas.on('mouse:up', handleConnectorMouseUp);
+    document.addEventListener('keydown', handleConnectorEscape);
+    return () => {
+      canvas.off('mouse:down', handleConnectorMouseDown);
+      canvas.off('mouse:move', handleConnectorMouseMove);
+      canvas.off('mouse:up', handleConnectorMouseUp);
+      document.removeEventListener('keydown', handleConnectorEscape);
+      // Clean up any lingering preview
+      if (previewLine) {
+        canvas.remove(previewLine);
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fabricRef]);
@@ -309,6 +508,12 @@ function createFabricObject(
       return createRectangle({ x, y, color });
     case 'circle':
       return createCircle({ x, y, color });
+    case 'text':
+      return createTextElement({ x, y, color });
+    case 'frame':
+      return createFrame({ x, y, color });
+    case 'connector':
+      return createConnector({ x, y, color });
     default:
       return null;
   }

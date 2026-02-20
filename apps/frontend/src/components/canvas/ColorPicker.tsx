@@ -3,7 +3,7 @@ import { fabric } from 'fabric';
 import { useUIStore } from '../../stores/uiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import { SHAPE_COLORS } from 'shared';
-import { updateStickyColor } from '../../utils/fabricHelpers';
+import { updateStickyColor, updateFrameColor } from '../../utils/fabricHelpers';
 import styles from './ColorPicker.module.css';
 
 /**
@@ -69,6 +69,23 @@ export function ColorPicker() {
     if (objType === 'sticky' && activeObj instanceof fabric.Group) {
       // Sticky notes are Groups — update base + fold via helper
       updateStickyColor(activeObj, color);
+    } else if (objType === 'text' && activeObj instanceof fabric.IText) {
+      // Text elements: if currently in editing mode, exit first so
+      // Fabric.js re-renders with the new fill color immediately.
+      const wasEditing = activeObj.isEditing;
+      if (wasEditing) {
+        activeObj.exitEditing();
+      }
+      activeObj.set('fill', color);
+      if (wasEditing) {
+        activeObj.enterEditing();
+      }
+    } else if (objType === 'frame' && activeObj instanceof fabric.Group) {
+      // Frames: update the border rect's stroke and label color
+      updateFrameColor(activeObj, color);
+    } else if (objType === 'connector') {
+      // Connectors: update stroke color (not fill)
+      activeObj.set('stroke', color);
     } else {
       // Shapes (rect, circle) — update fill directly
       activeObj.set('fill', color);

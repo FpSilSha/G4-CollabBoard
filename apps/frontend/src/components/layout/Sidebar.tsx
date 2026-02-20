@@ -90,6 +90,30 @@ export function Sidebar() {
               onClick={setActiveTool}
               onDragStart={(e) => handleDragStart(e, 'circle')}
             />
+            <DraggableToolButton
+              icon={<TextIcon />}
+              label="Text (T)"
+              tool="text"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+              onDragStart={(e) => handleDragStart(e, 'text')}
+            />
+            <DraggableToolButton
+              icon={<FrameIcon />}
+              label="Frame (F)"
+              tool="frame"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+              onDragStart={(e) => handleDragStart(e, 'frame')}
+            />
+            <DraggableToolButton
+              icon={<ConnectorIcon />}
+              label="Connector (L)"
+              tool="connector"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+              onDragStart={(e) => handleDragStart(e, 'connector')}
+            />
           </div>
 
           {/* --- Color Picker --- */}
@@ -229,6 +253,55 @@ function CircleIcon() {
       strokeWidth="2"
     >
       <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+function TextIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M4 7V4h16v3" />
+      <path d="M12 4v16" />
+      <path d="M8 20h8" />
+    </svg>
+  );
+}
+
+function FrameIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 2" />
+      <text x="6" y="10" fontSize="6" fill="currentColor" stroke="none">F</text>
+    </svg>
+  );
+}
+
+function ConnectorIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <line x1="5" y1="19" x2="19" y2="5" />
+      <polyline points="14 5 19 5 19 10" />
     </svg>
   );
 }

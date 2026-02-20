@@ -52,10 +52,12 @@ export const FrameCreateSchema = z.object({
 export const ConnectorCreateSchema = z.object({
   ...BaseObjectFields,
   type: z.literal('connector'),
-  fromObjectId: z.string().uuid(),
-  toObjectId: z.string().uuid(),
-  style: z.enum(['line', 'arrow']),
+  fromObjectId: z.string().default(''),
+  toObjectId: z.string().default(''),
+  style: z.enum(['line', 'arrow']).default('line'),
   color: hexColor,
+  x2: coordinate,
+  y2: coordinate,
 });
 
 export const TextElementCreateSchema = z.object({
@@ -78,6 +80,8 @@ export const BoardObjectCreateSchema = z.discriminatedUnion('type', [
 export const ObjectUpdateSchema = z.object({
   x: coordinate.optional(),
   y: coordinate.optional(),
+  x2: coordinate.optional(),
+  y2: coordinate.optional(),
   text: z.string().max(10000).optional(),
   color: hexColor.optional(),
   width: dimension.optional(),
@@ -87,6 +91,6 @@ export const ObjectUpdateSchema = z.object({
   title: z.string().max(255).optional(),
   shapeType: z.enum(['rectangle', 'circle', 'line']).optional(),
   style: z.enum(['line', 'arrow']).optional(),
-  fromObjectId: z.string().uuid().optional(),
-  toObjectId: z.string().uuid().optional(),
+  fromObjectId: z.string().optional(),
+  toObjectId: z.string().optional(),
 });

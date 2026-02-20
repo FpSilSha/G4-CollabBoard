@@ -24,6 +24,7 @@ import {
   boardObjectToFabric,
   updateStickyColor,
   getStickyChildren,
+  syncConnectorCoordsAfterMove,
 } from '../utils/fabricHelpers';
 import { throttle } from '../utils/throttle';
 
@@ -200,6 +201,14 @@ export function useCanvasSync(
       throttledObjectMove.cancel();
       throttledBatchMove.cancel();
 
+      // Sync connector coords BEFORE serialization. Fabric.js Line only
+      // updates left/top on move but leaves x1/y1/x2/y2 stale. This must
+      // happen before emitFinalState so the correct endpoint coordinates
+      // are sent to the server.
+      if (target.data?.type === 'connector' && target instanceof fabric.Line) {
+        syncConnectorCoordsAfterMove(target);
+      }
+
       if (target.type === 'activeSelection') {
         // Multi-select: emit final state for each child object.
         // Use calcTransformMatrix() to get absolute positions, then
@@ -207,6 +216,12 @@ export function useCanvasSync(
         // the correct absolute coords.
         for (const child of (target as fabric.ActiveSelection).getObjects()) {
           if (!child.data?.id) continue;
+
+          // Sync connector children too
+          if (child.data?.type === 'connector' && child instanceof fabric.Line) {
+            syncConnectorCoordsAfterMove(child);
+          }
+
           const pos = getChildAbsolutePosition(child);
           const origLeft = child.left ?? 0;
           const origTop = child.top ?? 0;
@@ -391,7 +406,9 @@ export function useCanvasSync(
       if (u.rotation !== undefined) fabricObj.set('angle', u.rotation as number);
 
       // Apply type-specific updates
-      if (fabricObj.data?.type === 'sticky' && fabricObj instanceof fabric.Group) {
+      const objType = fabricObj.data?.type;
+
+      if (objType === 'sticky' && fabricObj instanceof fabric.Group) {
         if (u.color) {
           updateStickyColor(fabricObj, u.color as string);
         }
@@ -407,8 +424,37 @@ export function useCanvasSync(
           fabricObj.set('scaleX', 1);
           fabricObj.set('scaleY', 1);
         }
+      } else if (objType === 'text') {
+        // Standalone text element (IText)
+        if (u.text !== undefined) (fabricObj as fabric.IText).set('text', u.text as string);
+        if (u.color) fabricObj.set('fill', u.color as string);
+        if (u.fontSize !== undefined) (fabricObj as fabric.IText).set('fontSize', u.fontSize as number);
+      } else if (objType === 'frame' && fabricObj instanceof fabric.Group) {
+        // Frame: update border color on the child rect, title on the child text
+        if (u.color) {
+          const borderRect = fabricObj.getObjects()[0];
+          borderRect.set('stroke', u.color as string);
+        }
+        if (u.title !== undefined) {
+          fabricObj.data.title = u.title as string;
+          const labelText = fabricObj.getObjects()[1] as fabric.Text;
+          labelText.set('text', u.title as string);
+        }
+        if (u.width !== undefined || u.height !== undefined) {
+          if (u.width !== undefined) fabricObj.set('width', u.width as number);
+          if (u.height !== undefined) fabricObj.set('height', u.height as number);
+          fabricObj.set('scaleX', 1);
+          fabricObj.set('scaleY', 1);
+        }
+      } else if (objType === 'connector') {
+        // Connector line
+        if (u.color) fabricObj.set('stroke', u.color as string);
+        // Update endpoint coordinates
+        const connLine = fabricObj as fabric.Line;
+        if (u.x2 !== undefined) connLine.set('x2', u.x2 as number);
+        if (u.y2 !== undefined) connLine.set('y2', u.y2 as number);
       } else {
-        // Shape updates
+        // Shape updates (rectangle, circle)
         if (u.color) fabricObj.set('fill', u.color as string);
         // Apply size updates — reset scale to 1 since we set actual dimensions
         if (u.width !== undefined || u.height !== undefined) {

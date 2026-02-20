@@ -71,6 +71,10 @@ export interface Connector extends BaseObject {
   toObjectId: string;
   style: ConnectorStyle;
   color: string;
+  /** Endpoint x-coordinate (start point is BaseObject.x/y) */
+  x2: number;
+  /** Endpoint y-coordinate */
+  y2: number;
 }
 
 export interface TextElement extends BaseObject {

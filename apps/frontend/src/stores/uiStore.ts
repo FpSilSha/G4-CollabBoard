@@ -8,9 +8,12 @@ import type { BoardObject } from 'shared';
  * - 'sticky': click canvas to place a sticky note
  * - 'rectangle': click canvas to place a rectangle
  * - 'circle': click canvas to place a circle
+ * - 'text': click canvas to place a standalone text element
+ * - 'frame': click canvas to place a frame (visual grouping container)
+ * - 'connector': click canvas to place a connector line
  * - 'dropper': click an object to sample its fill color
  */
-export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'dropper';
+export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'connector' | 'dropper';
 
 /** Maximum number of custom color slots (2 rows of 5) */
 const MAX_CUSTOM_COLORS = 10;

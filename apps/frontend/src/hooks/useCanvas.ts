@@ -4,6 +4,7 @@ import { CANVAS_CONFIG, UI_COLORS, WebSocketEvent } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { useUIStore } from '../stores/uiStore';
 import { getObjectFillColor } from '../utils/fabricHelpers';
+import { setupRotationModeListeners } from './useKeyboardShortcuts';
 import type { Socket } from 'socket.io-client';
 
 /**
@@ -71,6 +72,9 @@ export function useCanvas(
     // --- Edge scroll: auto-pan when dragging objects near viewport edges ---
     const cleanupEdgeScroll = setupEdgeScroll(canvas);
 
+    // --- Rotation mode: exit on deselect/selection change ---
+    const cleanupRotationMode = setupRotationModeListeners(canvas);
+
     // --- Resize observer ---
     // Debounced so sidebar collapse/expand CSS transitions (250ms) don't
     // cause rapid re-renders that flash objects. Only the final size matters.
@@ -97,6 +101,7 @@ export function useCanvas(
       cleanupGlow();
       cleanupDragState();
       cleanupEdgeScroll();
+      cleanupRotationMode();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       canvas.dispose();
@@ -119,18 +124,199 @@ export function useCanvas(
 /**
  * Configure the default selection appearance for all Fabric.js objects.
  * Per user spec: 2px solid Focus Blue (#007AFF) outline and handles.
+ *
+ * Corner controls render as black directional arrows indicating the
+ * resize direction. The rotation control (mtr) renders as two curved
+ * arrows forming a rotation symbol.
  */
 function setupSelectionStyle(): void {
   fabric.Object.prototype.set({
     borderColor: UI_COLORS.FOCUS_BLUE,
-    cornerColor: UI_COLORS.FOCUS_BLUE,
+    cornerColor: '#222222',
     cornerStrokeColor: '#FFFFFF',
     borderScaleFactor: 2,     // 2px border
-    cornerSize: 8,
+    cornerSize: 16,           // Increased from 10 for visibility
     cornerStyle: 'circle',
     transparentCorners: false,
     padding: 4,
   });
+
+  // Custom rotation handle: two curved arrows
+  const mtrControl = fabric.Object.prototype.controls.mtr;
+  mtrControl.sizeX = 24;
+  mtrControl.sizeY = 24;
+  mtrControl.render = function (ctx, left, top, _styleOverride, fabricObj) {
+    const radius = 11;
+    ctx.save();
+    ctx.translate(left, top);
+
+    // Background circle
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#222222';
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Draw two curved arrows (rotation symbol)
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+
+    const arcR = 6;
+
+    // Top arc
+    ctx.beginPath();
+    ctx.arc(0, 0, arcR, -Math.PI * 0.8, Math.PI * 0.2);
+    ctx.stroke();
+
+    // Arrow head on top arc
+    const ax1 = arcR * Math.cos(Math.PI * 0.2);
+    const ay1 = arcR * Math.sin(Math.PI * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(ax1 - 3, ay1 - 4);
+    ctx.lineTo(ax1, ay1);
+    ctx.lineTo(ax1 + 4, ay1 - 1);
+    ctx.stroke();
+
+    // Bottom arc
+    ctx.beginPath();
+    ctx.arc(0, 0, arcR, Math.PI * 0.2, Math.PI * 1.2);
+    ctx.stroke();
+
+    // Arrow head on bottom arc
+    const ax2 = arcR * Math.cos(-Math.PI * 0.8);
+    const ay2 = arcR * Math.sin(-Math.PI * 0.8);
+    ctx.beginPath();
+    ctx.moveTo(ax2 + 3, ay2 + 4);
+    ctx.lineTo(ax2, ay2);
+    ctx.lineTo(ax2 - 4, ay2 + 1);
+    ctx.stroke();
+
+    ctx.restore();
+  };
+
+  // Custom corner controls: single arrow pointing outward from the corner.
+  // The arrow direction matches the diagonal away from the center of the
+  // bounding box so the user intuitively knows which way to drag.
+  //
+  // angle param: the outward diagonal angle in degrees
+  //   tl → -135 (up-left), tr → -45 (up-right),
+  //   bl →  135 (down-left), br →  45 (down-right)
+  const cornerArrowRender = (angle: number) => {
+    return function (
+      ctx: CanvasRenderingContext2D,
+      left: number,
+      top: number
+    ) {
+      const radius = 8;
+      ctx.save();
+      ctx.translate(left, top);
+
+      // Background circle
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#222222';
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Single outward-pointing arrow
+      ctx.rotate((angle * Math.PI) / 180);
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // Arrow shaft (from center toward outward direction)
+      ctx.beginPath();
+      ctx.moveTo(-2, 0);
+      ctx.lineTo(5, 0);
+      ctx.stroke();
+
+      // Arrow head (chevron at the tip)
+      ctx.beginPath();
+      ctx.moveTo(2, -3);
+      ctx.lineTo(5, 0);
+      ctx.lineTo(2, 3);
+      ctx.stroke();
+
+      ctx.restore();
+    };
+  };
+
+  // Assign outward-pointing arrows to each corner
+  fabric.Object.prototype.controls.tl.render = cornerArrowRender(-135);
+  fabric.Object.prototype.controls.tr.render = cornerArrowRender(-45);
+  fabric.Object.prototype.controls.bl.render = cornerArrowRender(135);
+  fabric.Object.prototype.controls.br.render = cornerArrowRender(45);
+
+  // Update corner control hit area to match new visual size
+  for (const key of ['tl', 'tr', 'bl', 'br']) {
+    fabric.Object.prototype.controls[key].sizeX = 16;
+    fabric.Object.prototype.controls[key].sizeY = 16;
+  }
+
+  // Edge midpoint controls: double-headed horizontal or vertical arrows
+  const edgeArrowRender = (angle: number) => {
+    return function (
+      ctx: CanvasRenderingContext2D,
+      left: number,
+      top: number
+    ) {
+      const radius = 7;
+      ctx.save();
+      ctx.translate(left, top);
+      ctx.rotate((angle * Math.PI) / 180);
+
+      // Background circle
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#222222';
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Horizontal double-headed arrow
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(-4, 0);
+      ctx.lineTo(4, 0);
+      ctx.stroke();
+
+      // Right arrow head
+      ctx.beginPath();
+      ctx.moveTo(2, -2.5);
+      ctx.lineTo(4, 0);
+      ctx.lineTo(2, 2.5);
+      ctx.stroke();
+
+      // Left arrow head
+      ctx.beginPath();
+      ctx.moveTo(-2, -2.5);
+      ctx.lineTo(-4, 0);
+      ctx.lineTo(-2, 2.5);
+      ctx.stroke();
+
+      ctx.restore();
+    };
+  };
+
+  for (const key of ['ml', 'mr', 'mt', 'mb']) {
+    fabric.Object.prototype.controls[key].sizeX = 14;
+    fabric.Object.prototype.controls[key].sizeY = 14;
+  }
+
+  fabric.Object.prototype.controls.ml.render = edgeArrowRender(0);
+  fabric.Object.prototype.controls.mr.render = edgeArrowRender(0);
+  fabric.Object.prototype.controls.mt.render = edgeArrowRender(90);
+  fabric.Object.prototype.controls.mb.render = edgeArrowRender(90);
 }
 
 // ============================================================
@@ -314,6 +500,11 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
   function applyGlow(obj: fabric.Object): void {
     // Don't re-apply if already glowing
     if (originalShadows.has(obj)) return;
+
+    // Skip glow for text elements — it visually clutters the text
+    // Skip glow for connectors — the endpoint controls provide sufficient
+    // selection feedback, and the blur-60 glow makes the line look bloated
+    if (obj.data?.type === 'text' || obj.data?.type === 'connector') return;
 
     // Save original shadow and stroke
     originalShadows.set(obj, obj.shadow ?? null);
