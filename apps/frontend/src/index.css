@@ -3,16 +3,27 @@
    ============================ */
 :root {
   /* Canvas */
-  --canvas-bg: #2A2A2E;
+  --canvas-bg: #F0F2F5;
   --dot-grid-spacing: 20px;
-  --dot-grid-opacity: 0.12;
+  --dot-grid-color: #9AA3B2;
 
   /* Chrome (sidebar, header) */
-  --sidebar-bg: #70726F;
-  --sidebar-border: #333333;
+  --sidebar-bg: #E5E8EE;
+  --sidebar-border: #D5D9E2;
   --sidebar-width: 200px;
   --right-sidebar-width: 220px;
   --header-height: 48px;
+
+  /* Text colors */
+  --text-primary: #1A1A2E;
+  --text-secondary: rgba(0, 0, 0, 0.55);
+  --text-tertiary: rgba(0, 0, 0, 0.45);
+  --text-placeholder: rgba(0, 0, 0, 0.3);
+
+  /* Interactive surfaces */
+  --btn-bg: rgba(0, 0, 0, 0.05);
+  --btn-hover: rgba(0, 0, 0, 0.1);
+  --divider: rgba(0, 0, 0, 0.08);
 
   /* Accent */
   --focus-blue: #007AFF;

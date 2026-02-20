@@ -13,8 +13,8 @@
   height: 30px;
   padding: 0;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  background: var(--btn-bg);
   transition:
     background var(--transition-speed) var(--transition-ease),
     color var(--transition-speed) var(--transition-ease);
@@ -22,8 +22,8 @@
 }
 
 .placeButton:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+  background: var(--btn-hover);
+  color: var(--text-primary);
 }
 
 .placeButton.placing {
@@ -34,7 +34,7 @@
 /* Empty state */
 .empty {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-placeholder);
   font-style: italic;
 }
 
@@ -60,14 +60,14 @@
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   cursor: pointer;
   flex-shrink: 0;
   transition: border-color var(--transition-speed) var(--transition-ease);
 }
 
 .colorSwatch:hover {
-  border-color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(0, 0, 0, 0.5);
 }
 
 /* Flag label (click to teleport) */
@@ -76,7 +76,7 @@
   min-width: 0;
   text-align: left;
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -86,7 +86,7 @@
 }
 
 .flagLabel:hover {
-  color: #ffffff;
+  color: var(--text-primary);
   text-decoration: underline;
 }
 
@@ -98,7 +98,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-tertiary);
   cursor: pointer;
   flex-shrink: 0;
   transition:
@@ -107,8 +107,8 @@
 }
 
 .iconBtn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  background: var(--btn-hover);
 }
 
 /* Color picker dropdown */
@@ -130,9 +130,9 @@
 }
 
 .colorOption:hover {
-  border-color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 0, 0, 0.4);
 }
 
 .colorOption.colorSelected {
-  border-color: #ffffff;
+  border-color: var(--text-primary);
 }

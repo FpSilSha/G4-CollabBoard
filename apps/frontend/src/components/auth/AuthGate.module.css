@@ -4,7 +4,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1a1a2e;
+  background: var(--canvas-bg);
 }
 
 .content {
@@ -18,14 +18,14 @@
 .title {
   font-size: 32px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.5px;
 }
 
 .subtitle {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   margin: 0;
 }
 
@@ -34,8 +34,8 @@
   padding: 12px 32px;
   font-size: 15px;
   font-weight: 600;
-  color: #1a1a2e;
-  background: #ffffff;
+  color: #ffffff;
+  background: var(--focus-blue);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -44,7 +44,7 @@
 
 .loginButton:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
 }
 
 .loginButton:active {
@@ -54,8 +54,8 @@
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
-  border-top-color: #ffffff;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--focus-blue);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -75,7 +75,7 @@
 
 .errorDetail {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-tertiary);
   margin: 0;
   max-width: 360px;
   word-break: break-word;

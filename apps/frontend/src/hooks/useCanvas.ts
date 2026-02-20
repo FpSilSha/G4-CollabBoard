@@ -375,7 +375,7 @@ function setupDotGrid(canvas: fabric.Canvas): void {
     const firstRow = Math.floor(startY / spacing) * spacing;
 
     ctx.save();
-    ctx.fillStyle = `rgba(255, 255, 255, ${UI_COLORS.DOT_GRID_OPACITY})`;
+    ctx.fillStyle = UI_COLORS.DOT_GRID_COLOR;
 
     for (let x = firstCol; x <= endX; x += spacing) {
       for (let y = firstRow; y <= endY; y += spacing) {

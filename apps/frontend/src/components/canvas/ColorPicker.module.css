@@ -4,7 +4,7 @@
 
 .label {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -12,7 +12,7 @@
 
 .customLabel {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   margin-top: 12px;
   margin-bottom: 8px;
   text-transform: uppercase;
@@ -46,13 +46,13 @@
 }
 
 .activeSwatch {
-  border-color: #ffffff;
+  border-color: var(--text-primary);
   box-shadow: 0 0 0 2px var(--focus-blue);
 }
 
 /* Custom color slots */
 .customSwatch {
-  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border: 2px dashed rgba(0, 0, 0, 0.15);
 }
 
 .customSwatch:not(.emptySwatch) {
@@ -61,7 +61,7 @@
 
 /* Empty custom color slots */
 .emptySwatch {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.04);
   cursor: default;
   opacity: 0.5;
 }

@@ -1,7 +1,7 @@
 .container {
   min-height: 100vh;
-  background: #1a1a2e;
-  color: #ffffff;
+  background: var(--canvas-bg);
+  color: var(--text-primary);
   display: flex;
   flex-direction: column;
 }
@@ -15,14 +15,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 32px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--sidebar-border);
 }
 
 .logo {
   font-size: 20px;
   font-weight: 700;
   margin: 0;
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .headerRight {
@@ -33,14 +33,14 @@
 
 .userName {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
 }
 
 .signOutButton {
   padding: 6px 14px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
   border: none;
@@ -49,8 +49,8 @@
 }
 
 .signOutButton:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
+  background: var(--btn-hover);
+  color: var(--text-primary);
 }
 
 /* ============================
@@ -82,14 +82,14 @@
 
 .slotInfo {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   white-space: nowrap;
 }
 
 .createButton {
   padding: 8px 20px;
   border-radius: 8px;
-  background: #6c63ff;
+  background: var(--focus-blue);
   color: #ffffff;
   font-size: 14px;
   font-weight: 600;
@@ -100,7 +100,7 @@
 }
 
 .createButton:hover:not(:disabled) {
-  background: #5a52e0;
+  background: #0066dd;
   transform: translateY(-1px);
 }
 
@@ -114,8 +114,8 @@
 }
 
 .error {
-  background: rgba(244, 67, 54, 0.15);
-  color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+  color: #c62828;
   padding: 10px 16px;
   border-radius: 8px;
   font-size: 14px;
@@ -138,18 +138,19 @@
   justify-content: space-between;
   padding: 20px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
   color: inherit;
   min-height: 120px;
   position: relative;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .boardCard:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--focus-blue);
   transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .boardCardLink {
@@ -173,9 +174,9 @@
 .boardCardTitleInput {
   font-size: 16px;
   font-weight: 600;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--sidebar-border);
   border-radius: 4px;
   padding: 2px 6px;
   width: 100%;
@@ -185,13 +186,13 @@
 }
 
 .boardCardTitleInput::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-placeholder);
   font-style: italic;
 }
 
 .boardCardTitleInput:focus {
-  border-color: #6c63ff;
-  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.3);
+  border-color: var(--focus-blue);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
 }
 
 /* Action buttons container (rename + delete) */
@@ -218,7 +219,7 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-placeholder);
   cursor: pointer;
   border: none;
   padding: 0;
@@ -226,13 +227,13 @@
 }
 
 .boardCardRenameButton:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  background: var(--btn-hover);
 }
 
 .boardCardDeleteButton:hover {
   color: #f44336;
-  background: rgba(244, 67, 54, 0.15);
+  background: rgba(244, 67, 54, 0.1);
 }
 
 /* Delete confirmation overlay */
@@ -240,7 +241,7 @@
   position: absolute;
   inset: 0;
   border-radius: 12px;
-  background: rgba(20, 20, 35, 0.95);
+  background: rgba(255, 255, 255, 0.97);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -252,7 +253,7 @@
 .deleteConfirmText {
   font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -280,8 +281,8 @@
 .deleteConfirmNo {
   padding: 5px 16px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
   border: none;
@@ -290,12 +291,12 @@
 }
 
 .deleteConfirmNo:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--btn-hover);
 }
 
 .boardCardMeta {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   margin: 0;
 }
 
@@ -315,7 +316,7 @@
 
 .emptyState p {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   margin: 0;
 }
 
@@ -334,15 +335,15 @@
 
 .loading p {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   margin: 0;
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
-  border-top-color: #6c63ff;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--focus-blue);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

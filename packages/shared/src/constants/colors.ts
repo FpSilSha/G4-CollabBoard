@@ -44,13 +44,12 @@ export const SHAPE_COLORS = [
 
 // UI chrome colors (sidebar, header, canvas)
 export const UI_COLORS = {
-  CANVAS_BG: '#2A2A2E',
-  SIDEBAR_BG: '#70726F',
-  SIDEBAR_BORDER: '#333333',
+  CANVAS_BG: '#F0F2F5',
+  SIDEBAR_BG: '#E5E8EE',
+  SIDEBAR_BORDER: '#D5D9E2',
   FOCUS_BLUE: '#007AFF',
-  DOT_GRID_COLOR: '#FFFFFF',
+  DOT_GRID_COLOR: '#9AA3B2',
   DOT_GRID_SPACING: 20,
-  DOT_GRID_OPACITY: 0.12,
 } as const;
 
 // Default dimensions for new objects

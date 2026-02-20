@@ -45,7 +45,7 @@
   border: 1px solid var(--sidebar-border);
   border-left: none;
   border-radius: 0 8px 8px 0;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -58,8 +58,8 @@
 }
 
 .edgeToggle:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  background: var(--btn-hover);
 }
 
 /* When collapsed, slide the toggle to the left edge of the viewport */
@@ -77,7 +77,7 @@
   align-items: center;
   gap: 8px;
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--divider);
 }
 
 .toolGroup:last-child {
@@ -94,8 +94,8 @@
   height: 44px;
   border-radius: var(--border-radius);
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -108,8 +108,8 @@
 .toolButton:hover,
 .draggableItem:hover {
   transform: scale(var(--hover-scale));
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: var(--btn-hover);
+  color: var(--text-primary);
 }
 
 .toolButton:active,
@@ -136,7 +136,7 @@
 
 .zOrderLabel {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 2px;
@@ -152,8 +152,8 @@
   height: 36px;
   border-radius: var(--border-radius);
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -165,8 +165,8 @@
 
 .zOrderButton:hover:not(:disabled) {
   transform: scale(var(--hover-scale));
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: var(--btn-hover);
+  color: var(--text-primary);
 }
 
 .zOrderButton:active:not(:disabled) {
@@ -193,9 +193,9 @@
   height: 44px;
   align-self: center;
   margin-bottom: 12px;
-  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border: 2px dashed rgba(0, 0, 0, 0.15);
   border-radius: var(--border-radius);
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-tertiary);
   transition:
     border-color 200ms ease,
     background 200ms ease,

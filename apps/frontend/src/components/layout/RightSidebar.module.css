@@ -41,7 +41,7 @@
   border: 1px solid var(--sidebar-border);
   border-right: none;
   border-radius: 8px 0 0 8px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -54,8 +54,8 @@
 }
 
 .edgeToggle:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  background: var(--btn-hover);
 }
 
 .sidebar.collapsed .edgeToggle {
@@ -71,7 +71,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--divider);
 }
 
 .section:last-child {
@@ -80,13 +80,13 @@
 
 .sectionLabel {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .placeholder {
   font-size: var(--font-size-sm);
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-placeholder);
   font-style: italic;
 }
