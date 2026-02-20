@@ -36,7 +36,7 @@ const corsOrigin = process.env.FRONTEND_URL
 app.use(cors({
   origin: corsOrigin,
   credentials: true,
-  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
