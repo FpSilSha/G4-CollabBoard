@@ -99,7 +99,7 @@ export function TeleportFlagList() {
         if (marker && marker.type === 'group') {
           const group = marker as fabric.Group;
           const children = group.getObjects();
-          const pennant = children.find((c) => c.type === 'triangle');
+          const pennant = children.find((c) => c.type === 'polygon');
           if (pennant) {
             pennant.set('fill', color);
             canvas.requestRenderAll();
@@ -121,7 +121,7 @@ export function TeleportFlagList() {
 
   return (
     <div className={styles.container}>
-      {/* Place Flag button — click to enter placement mode, or drag to canvas */}
+      {/* Place Flag icon — click to enter placement mode, or drag to canvas */}
       <button
         className={`${styles.placeButton} ${isPlacing ? styles.placing : ''}`}
         onClick={handlePlaceFlag}
@@ -132,11 +132,10 @@ export function TeleportFlagList() {
         }}
         title={isPlacing ? 'Click on canvas to place flag' : 'Place a teleport flag (click or drag)'}
       >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <line x1="2" y1="1" x2="2" y2="13" />
-          <polygon points="3,1 12,4 3,7" fill="currentColor" stroke="none" />
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <line x1="3" y1="1" x2="3" y2="15" />
+          <polygon points="4,1 4,8 13,4.5" fill="currentColor" stroke="none" />
         </svg>
-        {isPlacing ? 'Click canvas to place...' : 'Place Flag'}
       </button>
 
       {/* Flag list */}

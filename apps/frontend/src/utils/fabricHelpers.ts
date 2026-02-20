@@ -988,12 +988,14 @@ export function teleportTo(canvas: fabric.Canvas, x: number, y: number): void {
 
 /** Height of the flag pole (canvas units) */
 const FLAG_POLE_HEIGHT = 40;
-/** Size of the pennant triangle (canvas units) */
-const FLAG_PENNANT_SIZE = 14;
+/** Pennant dimensions */
+const PENNANT_HEIGHT = 12;
+const PENNANT_WIDTH = 16;
 
 /**
  * Create a Fabric.js Group representing a teleport flag marker on the canvas.
  * The flag looks like a golf-hole flag: grey vertical pole + colored triangle pennant.
+ * The pennant's long edge sits flush against the pole, with the point facing outward.
  *
  * The group's `data` property carries `{ flagId, type: 'teleportFlag' }`.
  * The group is selectable and moveable; on `object:modified` the caller
@@ -1017,17 +1019,20 @@ export function createFlagMarker(options: {
     },
   );
 
-  // Pennant — colored triangle at top-right of pole
-  const pennant = new fabric.Triangle({
-    left: 2,
-    top: 0,
-    width: FLAG_PENNANT_SIZE,
-    height: FLAG_PENNANT_SIZE * 0.75,
-    fill: options.color,
-    angle: 90,
-    selectable: false,
-    evented: false,
-  });
+  // Pennant — colored triangle, long side on pole, point outward
+  // Three vertices: top-left on pole, bottom-left on pole, right point
+  const pennant = new fabric.Polygon(
+    [
+      { x: 2, y: 0 },                          // top-left (on pole)
+      { x: 2, y: PENNANT_HEIGHT },              // bottom-left (on pole)
+      { x: 2 + PENNANT_WIDTH, y: PENNANT_HEIGHT / 2 }, // right point
+    ],
+    {
+      fill: options.color,
+      selectable: false,
+      evented: false,
+    },
+  );
 
   // Small circle at the base for a ground marker
   const base = new fabric.Circle({
@@ -1043,11 +1048,12 @@ export function createFlagMarker(options: {
     left: options.x,
     top: options.y,
     hasControls: false,
-    hasBorders: true,
+    hasBorders: false,
     borderColor: '#007AFF',
     lockScalingX: true,
     lockScalingY: true,
     lockRotation: true,
+    shadow: undefined,
     data: {
       flagId: options.flagId,
       label: options.label,
