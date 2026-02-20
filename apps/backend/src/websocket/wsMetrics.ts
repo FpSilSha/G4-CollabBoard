@@ -3,10 +3,7 @@ import { metricsService } from '../services/metricsService';
 
 /**
  * Socket.io per-socket middleware that counts inbound events.
- * Designed for socket.use() — same pattern as the existing rate limiter.
- *
- * Must be registered BEFORE the rate limit middleware so that
- * dropped (rate-limited) events still appear in metrics.
+ * Registered via socket.use() in server.ts.
  */
 export function wsMetricsMiddleware(
   event: [string, ...unknown[]],
