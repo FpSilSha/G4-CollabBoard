@@ -105,6 +105,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
           if (data.maxObjectsPerBoard != null) {
             setMaxObjectsPerBoard(data.maxObjectsPerBoard);
           }
+          if (data.version != null) {
+            useBoardStore.getState().setBoardVersion(data.version);
+          }
         }
       } catch (err) {
         console.error('Failed to validate board:', err);
@@ -132,44 +135,98 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   // Cleanup: leave board when truly unmounting (navigating away to dashboard
   // or another board). Deferred with setTimeout(0) so StrictMode's simulated
   // unmount→remount cycle can cancel it — prevents spurious board:leave.
-  // Also captures a thumbnail snapshot for the dashboard card.
+  // Also captures a "fit all objects" thumbnail snapshot for the dashboard card.
   useEffect(() => {
     return () => {
       mountedRef.current = false;
       const currentBoardId = useBoardStore.getState().boardId;
       const canvas = useBoardStore.getState().canvas;
+      const boardVersion = useBoardStore.getState().boardVersion;
 
-      // Capture thumbnail before leaving (fire-and-forget)
+      // Capture thumbnail before leaving (fire-and-forget).
+      // Fits the viewport to show ALL objects, captures, then restores.
       if (currentBoardId && canvas) {
         try {
-          const multiplier = 300 / Math.max(canvas.getWidth(), 1);
-          const thumbnail = canvas.toDataURL({
-            format: 'jpeg',
-            quality: 0.5,
-            multiplier,
-          });
-          // Fire-and-forget upload — don't block navigation
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-          getAccessTokenSilently({
-            authorizationParams: {
-              audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-            },
-          }).then((token) => {
-            fetch(`${apiUrl}/boards/${currentBoardId}/thumbnail`, {
-              method: 'PUT',
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ thumbnail }),
-            }).catch(() => {
-              // Non-critical — silently ignore thumbnail save errors
-            });
-          }).catch(() => {
-            // Token fetch failed — silently ignore
-          });
+          const objects = canvas.getObjects();
+          if (objects.length > 0) {
+            // Save current viewport state
+            const savedVpt = canvas.viewportTransform
+              ? [...canvas.viewportTransform]
+              : [1, 0, 0, 1, 0, 0];
+            const savedZoom = canvas.getZoom();
+
+            // Calculate bounding box of all objects (in canvas coordinates)
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const obj of objects) {
+              // Use absolute=true, calculate=true to get untransformed canvas coords
+              const rect = obj.getBoundingRect(true, false);
+              minX = Math.min(minX, rect.left);
+              minY = Math.min(minY, rect.top);
+              maxX = Math.max(maxX, rect.left + rect.width);
+              maxY = Math.max(maxY, rect.top + rect.height);
+            }
+
+            const contentWidth = maxX - minX;
+            const contentHeight = maxY - minY;
+
+            if (contentWidth > 0 && contentHeight > 0) {
+              const canvasW = canvas.getWidth();
+              const canvasH = canvas.getHeight();
+
+              // Fit zoom with 5% padding
+              const padding = 0.05;
+              const fitZoom = Math.min(
+                canvasW / (contentWidth * (1 + padding * 2)),
+                canvasH / (contentHeight * (1 + padding * 2)),
+              );
+
+              // Center the content
+              const centerX = (minX + maxX) / 2;
+              const centerY = (minY + maxY) / 2;
+              const offsetX = canvasW / 2 - centerX * fitZoom;
+              const offsetY = canvasH / 2 - centerY * fitZoom;
+
+              // Apply fitted viewport
+              canvas.setViewportTransform([fitZoom, 0, 0, fitZoom, offsetX, offsetY]);
+              canvas.renderAll();
+
+              // Capture at ~300px wide
+              const multiplier = 300 / Math.max(canvasW, 1);
+              const thumbnail = canvas.toDataURL({
+                format: 'jpeg',
+                quality: 0.5,
+                multiplier,
+              });
+
+              // Restore original viewport immediately
+              canvas.setViewportTransform(savedVpt as unknown as number[]);
+              canvas.setZoom(savedZoom);
+              canvas.renderAll();
+
+              // Fire-and-forget upload — don't block navigation
+              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+              getAccessTokenSilently({
+                authorizationParams: {
+                  audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
+                },
+              }).then((token) => {
+                fetch(`${apiUrl}/boards/${currentBoardId}/thumbnail`, {
+                  method: 'PUT',
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ thumbnail, version: boardVersion }),
+                }).catch(() => {
+                  // Non-critical — silently ignore thumbnail save errors
+                });
+              }).catch(() => {
+                // Token fetch failed — silently ignore
+              });
+            }
+          }
         } catch {
-          // Canvas toDataURL failed — silently ignore
+          // Canvas toDataURL or viewport manipulation failed — silently ignore
         }
       }
 

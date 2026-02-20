@@ -16,9 +16,11 @@ interface BoardState {
   boardId: string | null;
   boardTitle: string;
   boardOwnerId: string | null;
+  boardVersion: number;
   setBoardId: (id: string | null) => void;
   setBoardTitle: (title: string) => void;
   setBoardOwnerId: (ownerId: string | null) => void;
+  setBoardVersion: (version: number) => void;
 
   // Max objects allowed on this board (derived from owner's subscription tier)
   maxObjectsPerBoard: number;
@@ -68,9 +70,11 @@ export const useBoardStore = create<BoardState>((set) => ({
   boardId: null,
   boardTitle: 'Untitled Board',
   boardOwnerId: null,
+  boardVersion: 0,
   setBoardId: (id) => set({ boardId: id }),
   setBoardTitle: (title) => set({ boardTitle: title }),
   setBoardOwnerId: (ownerId) => set({ boardOwnerId: ownerId }),
+  setBoardVersion: (version) => set({ boardVersion: version }),
 
   maxObjectsPerBoard: 2000, // hard cap, overwritten on board load from API
   setMaxObjectsPerBoard: (max) => set({ maxObjectsPerBoard: max }),

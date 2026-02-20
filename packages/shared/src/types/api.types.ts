@@ -33,6 +33,8 @@ export interface BoardSummary {
   thumbnail: string | null;
   isOwned: boolean;
   ownerId: string;
+  version: number;
+  thumbnailVersion: number;
 }
 
 export interface CreateBoardRequest {

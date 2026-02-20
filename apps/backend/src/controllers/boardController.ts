@@ -140,7 +140,7 @@ export const boardController = {
   async saveThumbnail(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const { thumbnail } = req.body;
+      const { thumbnail, version } = req.body;
 
       if (!thumbnail || typeof thumbnail !== 'string') {
         res.status(400).json({ error: 'Missing thumbnail data' });
@@ -153,7 +153,11 @@ export const boardController = {
         return;
       }
 
-      const result = await boardService.saveThumbnail(id, thumbnail);
+      const result = await boardService.saveThumbnail(
+        id,
+        thumbnail,
+        typeof version === 'number' ? version : undefined,
+      );
       res.json(result);
     } catch (err) {
       next(err);

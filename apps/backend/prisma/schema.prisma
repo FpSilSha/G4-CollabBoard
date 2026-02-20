@@ -52,7 +52,8 @@ model Board {
   isDeleted      Boolean   @default(false)
   deletedAt      DateTime?
   slot           Int       @default(0)
-  thumbnail      String?          // Base64 JPEG thumbnail for dashboard card preview
+  thumbnail        String?          // Base64 JPEG thumbnail for dashboard card preview
+  thumbnailVersion Int       @default(-1) // Board version when thumbnail was last captured
 
   owner         User           @relation("BoardOwner", fields: [ownerId], references: [id])
   versions      BoardVersion[]

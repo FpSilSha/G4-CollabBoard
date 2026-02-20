@@ -30,6 +30,8 @@ export const boardService = {
         isDeleted: true,
         objects: true,
         thumbnail: true,
+        version: true,
+        thumbnailVersion: true,
       },
     });
 
@@ -47,6 +49,8 @@ export const boardService = {
             isDeleted: true,
             objects: true,
             thumbnail: true,
+            version: true,
+            thumbnailVersion: true,
           },
         },
       },
@@ -77,6 +81,8 @@ export const boardService = {
       thumbnail: b.thumbnail,
       isOwned,
       ownerId: b.ownerId,
+      version: b.version,
+      thumbnailVersion: b.thumbnailVersion,
     });
 
     return {
@@ -332,11 +338,16 @@ export const boardService = {
   /**
    * Save a JPEG thumbnail (base64) for a board card preview.
    * Any user who has been on the board can update the thumbnail.
+   * Stores the board version at capture time so clients can skip
+   * redundant updates when the board hasn't changed.
    */
-  async saveThumbnail(boardId: string, thumbnail: string) {
+  async saveThumbnail(boardId: string, thumbnail: string, version?: number) {
     await prisma.board.update({
       where: { id: boardId },
-      data: { thumbnail },
+      data: {
+        thumbnail,
+        ...(version != null ? { thumbnailVersion: version } : {}),
+      },
     });
     return { success: true };
   },

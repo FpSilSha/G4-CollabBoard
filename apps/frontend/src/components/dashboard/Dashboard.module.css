@@ -122,6 +122,67 @@
 }
 
 /* ============================
+   Link Input (Linked Boards tab)
+   ============================ */
+
+.linkInputRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.linkInput {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border);
+  background: #ffffff;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.linkInput::placeholder {
+  color: var(--text-placeholder);
+}
+
+.linkInput:focus {
+  border-color: var(--focus-blue);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
+}
+
+.linkInputButton {
+  padding: 8px 20px;
+  border-radius: 8px;
+  background: var(--focus-blue);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.linkInputButton:hover:not(:disabled) {
+  background: #0062cc;
+}
+
+.linkInputButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.linkError {
+  color: #c62828;
+  font-size: 13px;
+  margin: -8px 0 16px;
+  padding: 0;
+}
+
+/* ============================
    Board Grid
    ============================ */
 
@@ -164,6 +225,16 @@
   height: 100px;
   object-fit: cover;
   display: block;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.thumbnailPlaceholder {
+  width: 100%;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.02);
   border-bottom: 1px solid var(--sidebar-border);
 }
 

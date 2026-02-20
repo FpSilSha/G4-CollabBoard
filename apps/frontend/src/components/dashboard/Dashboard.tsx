@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from './Dashboard.module.css';
 
@@ -13,6 +13,8 @@ interface BoardSummary {
   thumbnail: string | null;
   isOwned: boolean;
   ownerId: string;
+  version: number;
+  thumbnailVersion: number;
 }
 
 interface BoardListResponse {
@@ -29,6 +31,24 @@ const AUTH_PARAMS = {
   },
 };
 
+/** Strict UUID v4 pattern */
+const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * Extract a board GUID from arbitrary user input.
+ * Accepts:
+ *   - Full URL like https://example.com/board/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+ *   - Just the UUID itself
+ *   - Any string containing a UUID (extracts the first match)
+ * Returns null if no valid UUID is found.
+ */
+function extractBoardId(input: string): string | null {
+  // Strip whitespace, control characters, angle brackets, quotes
+  const sanitized = input.trim().replace(/[<>"'`\x00-\x1f]/g, '');
+  const match = sanitized.match(UUID_REGEX);
+  return match ? match[0].toLowerCase() : null;
+}
+
 /**
  * Dashboard page at "/".
  *
@@ -41,6 +61,7 @@ const AUTH_PARAMS = {
  */
 export function Dashboard() {
   const { getAccessTokenSilently, logout, user } = useAuth0();
+  const navigate = useNavigate();
   const [ownedBoards, setOwnedBoards] = useState<BoardSummary[]>([]);
   const [linkedBoards, setLinkedBoards] = useState<BoardSummary[]>([]);
   const [tab, setTab] = useState<DashboardTab>('owned');
@@ -56,6 +77,11 @@ export function Dashboard() {
   // --- Board delete / unlink on dashboard ---
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
   const [unlinkingBoardId, setUnlinkingBoardId] = useState<string | null>(null);
+
+  // --- Link input (Linked Boards tab) ---
+  const [linkInput, setLinkInput] = useState('');
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
 
   // Fetch boards on mount.
   useEffect(() => {
@@ -122,6 +148,8 @@ export function Dashboard() {
         thumbnail: null,
         isOwned: true,
         ownerId: user?.sub ?? '',
+        version: 0,
+        thumbnailVersion: -1,
       };
       setOwnedBoards((prev) => [...prev, newBoard]);
 
@@ -205,6 +233,54 @@ export function Dashboard() {
     }
   };
 
+  /**
+   * Handle the "Add board link" input.
+   * Extracts a board GUID from the pasted URL/text, validates it exists
+   * via the API, and navigates to it (which auto-creates the linked board).
+   */
+  const handleAddLink = async () => {
+    setLinkError(null);
+
+    const boardId = extractBoardId(linkInput);
+    if (!boardId) {
+      setLinkError('No valid board ID found. Paste a board URL or UUID.');
+      return;
+    }
+
+    // Check if already linked or owned
+    if (linkedBoards.some((b) => b.id === boardId) || ownedBoards.some((b) => b.id === boardId)) {
+      setLinkInput('');
+      navigate(`/board/${boardId}`);
+      return;
+    }
+
+    setLinkLoading(true);
+    try {
+      const token = await getAccessTokenSilently(AUTH_PARAMS);
+      const res = await fetch(`${API_URL}/boards/${boardId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          setLinkError('Board not found. Check the link and try again.');
+        } else {
+          setLinkError(`Failed to load board (${res.status}).`);
+        }
+        return;
+      }
+
+      // Board exists — navigate to it (auto-links via getBoard)
+      setLinkInput('');
+      navigate(`/board/${boardId}`);
+    } catch (err) {
+      console.error('[Dashboard] Failed to add linked board:', err);
+      setLinkError('Network error. Try again.');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     logout({ logoutParams: { returnTo: window.location.origin } });
   };
@@ -254,6 +330,41 @@ export function Dashboard() {
           </button>
         </div>
 
+        {/* Link input — shown on Linked Boards tab */}
+        {tab === 'linked' && (
+          <div className={styles.linkInputRow}>
+            <input
+              className={styles.linkInput}
+              type="text"
+              placeholder="Paste a board link or ID to add it..."
+              value={linkInput}
+              onChange={(e) => {
+                setLinkInput(e.target.value);
+                setLinkError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && linkInput.trim()) {
+                  e.preventDefault();
+                  handleAddLink();
+                }
+              }}
+              maxLength={500}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              className={styles.linkInputButton}
+              onClick={handleAddLink}
+              disabled={!linkInput.trim() || linkLoading}
+            >
+              {linkLoading ? 'Loading...' : 'Go'}
+            </button>
+          </div>
+        )}
+        {linkError && tab === 'linked' && (
+          <p className={styles.linkError}>{linkError}</p>
+        )}
+
         {error && <p className={styles.error}>{error}</p>}
 
         {activeBoards.length === 0 && tab === 'linked' && !error ? (
@@ -262,7 +373,7 @@ export function Dashboard() {
               <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
             </svg>
-            <p>No linked boards yet. Visit a board shared by another user to see it here.</p>
+            <p>No linked boards yet. Paste a board link above to get started.</p>
           </div>
         ) : (
           <div className={styles.boardGrid}>
@@ -272,13 +383,20 @@ export function Dashboard() {
                   to={`/board/${board.id}`}
                   className={styles.boardCardLink}
                 >
-                  {board.thumbnail && (
+                  {board.thumbnail ? (
                     <img
                       src={board.thumbnail}
                       alt=""
                       className={styles.thumbnail}
                       draggable={false}
                     />
+                  ) : (
+                    <div className={styles.thumbnailPlaceholder}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.25">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="M12 8v8M8 12h8" />
+                      </svg>
+                    </div>
                   )}
                   <div className={styles.boardCardContent}>
                     {renamingBoardId === board.id ? (
