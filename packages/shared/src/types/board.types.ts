@@ -88,6 +88,20 @@ export interface TextElement extends BaseObject {
 
 export type BoardObject = StickyNote | Shape | Frame | Connector | TextElement;
 
+// --- Teleport Flags ---
+
+export interface TeleportFlag {
+  id: string;
+  boardId: string;
+  createdBy: string;
+  label: string;
+  x: number;
+  y: number;
+  color: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // --- Cached Board State (Redis) ---
 
 export interface CachedBoardState {

@@ -5,6 +5,8 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { CANVAS_CONFIG } from 'shared';
 import { useBoardStore } from '../../stores/boardStore';
 import { usePresenceStore, type ConnectionStatus } from '../../stores/presenceStore';
+import { useUIStore } from '../../stores/uiStore';
+import { teleportTo } from '../../utils/fabricHelpers';
 import styles from './Header.module.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -227,14 +229,28 @@ function PresenceAvatars({
   const visible = users.slice(0, maxVisible);
   const overflow = users.length - maxVisible;
 
+  const handleAvatarClick = (userId: string, userName: string) => {
+    const canvas = useBoardStore.getState().canvas;
+    if (!canvas) return;
+
+    const cursor = usePresenceStore.getState().remoteCursors.get(userId);
+    if (!cursor || Date.now() - cursor.lastUpdate > 5000) {
+      useUIStore.getState().showToast(`${userName} has no active cursor`);
+      return;
+    }
+
+    teleportTo(canvas, cursor.x, cursor.y);
+  };
+
   return (
     <div className={styles.presenceAvatars}>
       {visible.map((user) => (
-        <div
+        <button
           key={user.userId}
           className={styles.avatar}
           style={{ backgroundColor: user.color }}
-          title={user.name}
+          title={`Click to teleport to ${user.name}`}
+          onClick={() => handleAvatarClick(user.userId, user.name)}
         >
           {user.avatar && user.avatar.startsWith('http') ? (
             <img
@@ -247,7 +263,7 @@ function PresenceAvatars({
               {user.avatar || user.name.charAt(0).toUpperCase()}
             </span>
           )}
-        </div>
+        </button>
       ))}
       {overflow > 0 && (
         <div className={styles.avatarOverflow} title={`${overflow} more`}>

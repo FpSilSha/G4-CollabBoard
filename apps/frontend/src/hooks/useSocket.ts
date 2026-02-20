@@ -4,6 +4,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { WebSocketEvent, WEBSOCKET_CONFIG, type AuthSuccessPayload } from 'shared';
 import { usePresenceStore } from '../stores/presenceStore';
 import { useBoardStore } from '../stores/boardStore';
+import { setSocketRef } from '../stores/socketRef';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
 const AUTH_PARAMS = {
@@ -100,6 +101,7 @@ export function useSocket() {
         });
 
         socketRef.current = socket;
+        setSocketRef(socket);
         setConnectionStatus('connecting');
 
         socket.on('connect', () => {

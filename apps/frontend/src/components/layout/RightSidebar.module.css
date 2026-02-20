@@ -1,0 +1,92 @@
+.sidebar {
+  width: var(--right-sidebar-width);
+  min-width: var(--right-sidebar-width);
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 12px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  transition:
+    width 250ms ease,
+    min-width 250ms ease,
+    padding 250ms ease;
+}
+
+.sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-left-color: transparent;
+  overflow: visible;
+}
+
+/* ============================
+   Edge Toggle (collapse/expand)
+   Fixed positioning, vertically centered. Sits just outside
+   the sidebar's left edge. When collapsed, snaps to right: 0.
+   ============================ */
+
+.edgeToggle {
+  position: fixed;
+  top: 50%;
+  right: var(--right-sidebar-width);
+  transform: translateY(-50%);
+  width: 28px;
+  height: 48px;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition:
+    right 250ms ease,
+    color var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+}
+
+.edgeToggle:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.sidebar.collapsed .edgeToggle {
+  right: 0;
+}
+
+/* ============================
+   Sections
+   ============================ */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.placeholder {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.3);
+  font-style: italic;
+}

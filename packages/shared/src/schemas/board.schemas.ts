@@ -98,3 +98,24 @@ export const ObjectUpdateSchema = z.object({
   frameId: z.string().uuid().nullable().optional(),
   locked: z.boolean().optional(),
 });
+
+// --- Teleport Flag Schemas ---
+
+export const CreateTeleportFlagSchema = z.object({
+  label: z.string().min(1).max(100).trim(),
+  x: z.number().min(-1000000).max(1000000),
+  y: z.number().min(-1000000).max(1000000),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+});
+
+export const UpdateTeleportFlagSchema = z.object({
+  label: z.string().min(1).max(100).trim().optional(),
+  x: z.number().min(-1000000).max(1000000).optional(),
+  y: z.number().min(-1000000).max(1000000).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+});
+
+export const FlagIdParamSchema = z.object({
+  id: z.string().uuid(),
+  flagId: z.string().uuid(),
+});

@@ -13,7 +13,7 @@ import type { BoardObject } from 'shared';
  * - 'connector': click canvas to place a connector line
  * - 'dropper': click an object to sample its fill color
  */
-export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'connector' | 'dropper';
+export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'connector' | 'dropper' | 'placeFlag';
 
 /** Maximum number of custom color slots (2 rows of 5) */
 const MAX_CUSTOM_COLORS = 10;
@@ -42,6 +42,16 @@ interface UIState {
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
 
+  // Right sidebar visibility (Teleport Flags + Clipboard Indicator)
+  rightSidebarOpen: boolean;
+  setRightSidebarOpen: (open: boolean) => void;
+  toggleRightSidebar: () => void;
+
+  // Tracks whether the right sidebar was auto-opened (e.g., by a copy action).
+  // If true, selecting a different object will auto-close it. Manual toggles
+  // always clear this flag so the sidebar stays open.
+  rightSidebarAutoOpened: boolean;
+
   // Whether the user is currently dragging an object on the canvas.
   // When true, sidebars auto-close and edge-glow overlay is shown.
   isDraggingObject: boolean;
@@ -50,6 +60,7 @@ interface UIState {
   // Remembers the sidebar state before a drag auto-closed it, so we
   // can restore it when the drag ends.
   sidebarOpenBeforeDrag: boolean;
+  rightSidebarOpenBeforeDrag: boolean;
 
   // Toast notification (ephemeral, auto-dismisses)
   toastMessage: string | null;
@@ -66,6 +77,23 @@ interface UIState {
   selectedObjectTypes: string[];
   setSelection: (ids: string[], types: string[]) => void;
   clearSelection: () => void;
+
+  // Generic text-input modal (replaces window.prompt for flag labels, etc.)
+  textInputModal: {
+    title: string;
+    initialValue: string;
+    placeholder: string;
+    maxLength: number;
+    onConfirm: (value: string) => void;
+    onCancel: () => void;
+  } | null;
+  openTextInputModal: (opts: {
+    title: string;
+    initialValue?: string;
+    placeholder?: string;
+    maxLength?: number;
+  }) => Promise<string | null>;
+  closeTextInputModal: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -95,9 +123,15 @@ export const useUIStore = create<UIState>((set) => ({
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
 
+  rightSidebarOpen: false,
+  setRightSidebarOpen: (open) => set({ rightSidebarOpen: open, rightSidebarAutoOpened: false }),
+  toggleRightSidebar: () => set((s) => ({ rightSidebarOpen: !s.rightSidebarOpen, rightSidebarAutoOpened: false })),
+  rightSidebarAutoOpened: false,
+
   isDraggingObject: false,
   setIsDraggingObject: (dragging) => set({ isDraggingObject: dragging }),
   sidebarOpenBeforeDrag: true,
+  rightSidebarOpenBeforeDrag: false,
 
   toastMessage: null,
   showToast: (message) => {
@@ -114,4 +148,26 @@ export const useUIStore = create<UIState>((set) => ({
   selectedObjectTypes: [],
   setSelection: (ids, types) => set({ selectedObjectIds: ids, selectedObjectTypes: types }),
   clearSelection: () => set({ selectedObjectIds: [], selectedObjectTypes: [] }),
+
+  textInputModal: null,
+  openTextInputModal: (opts) =>
+    new Promise<string | null>((resolve) => {
+      set({
+        textInputModal: {
+          title: opts.title,
+          initialValue: opts.initialValue ?? '',
+          placeholder: opts.placeholder ?? '',
+          maxLength: opts.maxLength ?? 100,
+          onConfirm: (value: string) => {
+            set({ textInputModal: null });
+            resolve(value);
+          },
+          onCancel: () => {
+            set({ textInputModal: null });
+            resolve(null);
+          },
+        },
+      });
+    }),
+  closeTextInputModal: () => set({ textInputModal: null }),
 }));

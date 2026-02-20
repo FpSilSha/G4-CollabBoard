@@ -21,6 +21,7 @@ model User {
   boards        Board[]        @relation("BoardOwner")
   subscriptions Subscription[]
   boardVersions BoardVersion[]
+  teleportFlags TeleportFlag[]
 
   @@index([email])
 }
@@ -51,8 +52,9 @@ model Board {
   deletedAt      DateTime?
   slot           Int       @default(0)
 
-  owner    User           @relation("BoardOwner", fields: [ownerId], references: [id])
-  versions BoardVersion[]
+  owner         User           @relation("BoardOwner", fields: [ownerId], references: [id])
+  versions      BoardVersion[]
+  teleportFlags TeleportFlag[]
 
   @@unique([ownerId, slot])
   @@index([ownerId])
@@ -93,6 +95,23 @@ model BoardVersion {
 
   @@index([boardId])
   @@index([createdAt])
+}
+
+model TeleportFlag {
+  id        String   @id @default(uuid())
+  boardId   String
+  createdBy String
+  label     String
+  x         Float
+  y         Float
+  color     String   // Hex color for the flag pennant
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board   Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  creator User  @relation(fields: [createdBy], references: [id])
+
+  @@index([boardId])
 }
 
 model AuditLog {

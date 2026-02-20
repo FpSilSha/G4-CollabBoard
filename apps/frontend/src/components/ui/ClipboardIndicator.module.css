@@ -1,0 +1,21 @@
+.empty {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.3);
+  font-style: italic;
+}
+
+.singleObject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typeLabel {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.multiObject {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.75);
+}

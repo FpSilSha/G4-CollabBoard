@@ -1,4 +1,4 @@
-import { BoardObject } from './board.types';
+import { BoardObject, TeleportFlag } from './board.types';
 
 // WebSocket event names as enums (prevents typos)
 export enum WebSocketEvent {
@@ -61,6 +61,7 @@ export interface BoardStatePayload {
   boardId: string;
   objects: BoardObject[];
   users: BoardUserInfo[];
+  flags: TeleportFlag[];
 }
 
 export interface BoardUserInfo {
