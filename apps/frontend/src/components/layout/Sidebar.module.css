@@ -131,6 +131,54 @@
 }
 
 /* ============================
+   Z-Order Controls
+   ============================ */
+
+.zOrderLabel {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.zOrderGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.zOrderButton {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--border-radius);
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--transition-speed) var(--transition-ease),
+    background var(--transition-speed) var(--transition-ease);
+}
+
+.zOrderButton:hover:not(:disabled) {
+  transform: scale(var(--hover-scale));
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.zOrderButton:active:not(:disabled) {
+  transform: scale(var(--active-scale));
+}
+
+.zOrderButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ============================
    Trash Zone (drag-to-delete)
    Pushed to bottom of sidebar via margin-top: auto.
    Highlights red when an object is dragged over it.

@@ -52,6 +52,12 @@ export function useObjectCreation(
 
       if (fabricObj) {
         canvas.add(fabricObj);
+
+        // Frames always go behind non-frame objects
+        if (fabricObj.data?.type === 'frame') {
+          canvas.sendToBack(fabricObj);
+        }
+
         canvas.setActiveObject(fabricObj);
         canvas.requestRenderAll();
 
@@ -473,6 +479,12 @@ export function useObjectCreation(
 
       if (fabricObj) {
         canvas.add(fabricObj);
+
+        // Frames always go behind non-frame objects
+        if (fabricObj.data?.type === 'frame') {
+          canvas.sendToBack(fabricObj);
+        }
+
         canvas.setActiveObject(fabricObj);
         canvas.requestRenderAll();
 

@@ -59,6 +59,13 @@ interface UIState {
   // Copy/paste clipboard (client-side only, never synced to server)
   clipboard: BoardObject[];
   setClipboard: (entries: BoardObject[]) => void;
+
+  // Currently selected object IDs on the canvas (set by canvas selection events).
+  // Used by the sidebar to conditionally show z-order controls.
+  selectedObjectIds: string[];
+  selectedObjectTypes: string[];
+  setSelection: (ids: string[], types: string[]) => void;
+  clearSelection: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -102,4 +109,9 @@ export const useUIStore = create<UIState>((set) => ({
 
   clipboard: [],
   setClipboard: (entries) => set({ clipboard: entries }),
+
+  selectedObjectIds: [],
+  selectedObjectTypes: [],
+  setSelection: (ids, types) => set({ selectedObjectIds: ids, selectedObjectTypes: types }),
+  clearSelection: () => set({ selectedObjectIds: [], selectedObjectTypes: [] }),
 }));

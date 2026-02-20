@@ -288,12 +288,14 @@ export function createFrame(options: {
   width?: number;
   height?: number;
   color?: string;
+  locked?: boolean;
   id?: string;
 }): fabric.Group {
   const id = options.id ?? generateLocalId();
   const w = options.width ?? 400;
   const h = options.height ?? 300;
   const color = options.color ?? '#555555';
+  const locked = options.locked ?? false;
 
   // Dashed-border rectangle background
   const border = new fabric.Rect({
@@ -326,10 +328,181 @@ export function createFrame(options: {
       id,
       type: 'frame',
       title: options.title ?? 'Frame',
+      locked,
     },
   });
 
+  // Add lock and edit custom controls (visible only when selected)
+  setupFrameControls(group);
+
   return group;
+}
+
+/**
+ * Checks whether an object's bounding box is completely inside a frame's
+ * bounding box. Uses fast AABB comparison on the rendered (scaled) bounds.
+ */
+export function isObjectInsideFrame(
+  obj: fabric.Object,
+  frame: fabric.Group
+): boolean {
+  const objBounds = obj.getBoundingRect(true, true);
+  const frameBounds = frame.getBoundingRect(true, true);
+
+  return (
+    objBounds.left >= frameBounds.left &&
+    objBounds.top >= frameBounds.top &&
+    objBounds.left + objBounds.width <= frameBounds.left + frameBounds.width &&
+    objBounds.top + objBounds.height <= frameBounds.top + frameBounds.height
+  );
+}
+
+/**
+ * Find all objects inside a frame that qualify for anchoring:
+ * - Completely within frame bounds
+ * - Higher z-index than the frame (rendered in front)
+ * - Not a connector (connectors follow endpoint logic)
+ * - Not another frame (no nesting)
+ */
+export function getObjectsInsideFrame(
+  canvas: fabric.Canvas,
+  frame: fabric.Group
+): fabric.Object[] {
+  const allObjects = canvas.getObjects();
+  const frameIndex = allObjects.indexOf(frame);
+  if (frameIndex === -1) return [];
+
+  const result: fabric.Object[] = [];
+  for (let i = frameIndex + 1; i < allObjects.length; i++) {
+    const obj = allObjects[i];
+    if (!obj.data?.id) continue;
+    if (obj.data.type === 'connector') continue;
+    if (obj.data.type === 'frame') continue;
+    if (isObjectInsideFrame(obj, frame)) {
+      result.push(obj);
+    }
+  }
+  return result;
+}
+
+/**
+ * Sets up custom Fabric.js controls on a frame group:
+ * - Lock toggle (padlock icon) at the top-right corner
+ * - Edit title (pencil icon) next to the title label
+ *
+ * Controls are only rendered when the frame is selected (Fabric.js default).
+ */
+function setupFrameControls(group: fabric.Group): void {
+  const controlRadius = 10;
+
+  // Lock control — top-right, toggles anchoring
+  group.controls.lockToggle = new fabric.Control({
+    x: 0.5,
+    y: -0.5,
+    offsetX: -10,
+    offsetY: -10,
+    sizeX: controlRadius * 2,
+    sizeY: controlRadius * 2,
+    cursorStyle: 'pointer',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'lockToggle' as any,
+    render: (ctx, left, top, _styleOverride, fabricObj) => {
+      const isLocked = fabricObj.data?.locked ?? false;
+      ctx.save();
+      ctx.translate(left, top);
+
+      // Background circle
+      ctx.beginPath();
+      ctx.arc(0, 0, controlRadius, 0, Math.PI * 2);
+      ctx.fillStyle = isLocked ? '#4CAF50' : '#222222';
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Draw padlock icon
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+
+      // Lock body (rectangle)
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(-4, -1, 8, 6);
+
+      // Lock shackle (arc)
+      ctx.strokeStyle = isLocked ? '#4CAF50' : '#222222';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (isLocked) {
+        // Closed shackle
+        ctx.arc(0, -1, 3.5, Math.PI, 0);
+      } else {
+        // Open shackle (shifted right)
+        ctx.arc(0, -1, 3.5, Math.PI, -0.3);
+      }
+      ctx.stroke();
+
+      ctx.restore();
+    },
+    // Action handler is wired externally in useCanvas — the control click
+    // needs access to canvas + socket for emitting updates
+    actionHandler: () => false, // placeholder — overridden at setup time
+  });
+
+  // Edit title control — top-left area, next to the title
+  group.controls.editTitle = new fabric.Control({
+    x: -0.5,
+    y: -0.5,
+    offsetX: 10,
+    offsetY: -10,
+    sizeX: controlRadius * 2,
+    sizeY: controlRadius * 2,
+    cursorStyle: 'pointer',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'editTitle' as any,
+    render: (ctx, left, top) => {
+      ctx.save();
+      ctx.translate(left, top);
+
+      // Background circle
+      ctx.beginPath();
+      ctx.arc(0, 0, controlRadius, 0, Math.PI * 2);
+      ctx.fillStyle = '#222222';
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Pencil icon (simplified)
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+
+      // Pencil body (diagonal line)
+      ctx.beginPath();
+      ctx.moveTo(-4, 4);
+      ctx.lineTo(3, -3);
+      ctx.stroke();
+
+      // Pencil tip
+      ctx.beginPath();
+      ctx.moveTo(-4, 4);
+      ctx.lineTo(-5, 5);
+      ctx.stroke();
+
+      // Pencil top
+      ctx.beginPath();
+      ctx.moveTo(3, -3);
+      ctx.lineTo(5, -5);
+      ctx.stroke();
+
+      ctx.restore();
+    },
+    actionHandler: () => false, // placeholder — overridden at setup time
+  });
+
+  // Hide the rotation control for frames — not needed
+  group.setControlVisible('mtr', false);
 }
 
 // ============================================================
@@ -576,6 +749,7 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
     id: data.id,
     x: fabricObj.left ?? 0,
     y: fabricObj.top ?? 0,
+    frameId: (data.frameId as string | null) ?? null,
     createdBy: user,
     createdAt: now,
     updatedAt: now,
@@ -638,6 +812,7 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
       width: (fabricObj.width ?? 400) * scaleX,
       height: (fabricObj.height ?? 300) * scaleY,
       color: frameColor,
+      locked: data.locked ?? false,
     };
   }
 
@@ -680,15 +855,18 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
  * or applying object:created events from other users.
  */
 export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
+  let fabricObj: fabric.Object | null = null;
+
   switch (obj.type) {
     case 'sticky':
-      return createStickyNote({
+      fabricObj = createStickyNote({
         x: obj.x,
         y: obj.y,
         color: obj.color,
         text: obj.text,
         id: obj.id,
       });
+      break;
 
     case 'shape':
       if (obj.shapeType === 'circle') {
@@ -700,9 +878,8 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
           id: obj.id,
         });
         if (obj.rotation) circle.set('angle', obj.rotation);
-        return circle;
-      }
-      if (obj.shapeType === 'rectangle') {
+        fabricObj = circle;
+      } else if (obj.shapeType === 'rectangle') {
         const rect = createRectangle({
           x: obj.x,
           y: obj.y,
@@ -712,12 +889,12 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
           id: obj.id,
         });
         if (obj.rotation) rect.set('angle', obj.rotation);
-        return rect;
+        fabricObj = rect;
       }
-      return null;
+      break;
 
     case 'text':
-      return createTextElement({
+      fabricObj = createTextElement({
         x: obj.x,
         y: obj.y,
         text: obj.text,
@@ -725,20 +902,23 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         color: obj.color,
         id: obj.id,
       });
+      break;
 
     case 'frame':
-      return createFrame({
+      fabricObj = createFrame({
         x: obj.x,
         y: obj.y,
         title: obj.title,
         width: obj.width,
         height: obj.height,
         color: obj.color,
+        locked: obj.locked,
         id: obj.id,
       });
+      break;
 
     case 'connector':
-      return createConnector({
+      fabricObj = createConnector({
         x: obj.x,
         y: obj.y,
         x2: obj.x2,
@@ -749,10 +929,15 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         toObjectId: obj.toObjectId,
         id: obj.id,
       });
-
-    default:
-      return null;
+      break;
   }
+
+  // Attach frameId to fabric data for all object types
+  if (fabricObj && obj.frameId) {
+    fabricObj.data = { ...fabricObj.data, frameId: obj.frameId };
+  }
+
+  return fabricObj;
 }
 
 /**

@@ -30,6 +30,7 @@ export interface BaseObject {
   type: BoardObjectType;
   x: number;
   y: number;
+  frameId: string | null; // Parent frame ID (null = not anchored)
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -61,6 +62,7 @@ export interface Frame extends BaseObject {
   width: number;
   height: number;
   color: string; // Border color
+  locked: boolean; // Whether children are anchored
 }
 
 export type ConnectorStyle = 'line' | 'arrow';

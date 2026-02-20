@@ -3,7 +3,11 @@ import { fabric } from 'fabric';
 import { CANVAS_CONFIG, UI_COLORS, WebSocketEvent } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { useUIStore } from '../stores/uiStore';
-import { getObjectFillColor } from '../utils/fabricHelpers';
+import {
+  getObjectFillColor,
+  getObjectsInsideFrame,
+  fabricToBoardObject,
+} from '../utils/fabricHelpers';
 import { setupRotationModeListeners } from './useKeyboardShortcuts';
 import type { Socket } from 'socket.io-client';
 
@@ -72,6 +76,12 @@ export function useCanvas(
     // --- Edge scroll: auto-pan when dragging objects near viewport edges ---
     const cleanupEdgeScroll = setupEdgeScroll(canvas);
 
+    // --- Frame controls: lock/unlock + title editing ---
+    const cleanupFrameControls = setupFrameControlHandlers(canvas, socketRef ?? null);
+
+    // --- Selection tracking: update uiStore when selection changes ---
+    const cleanupSelectionTracking = setupSelectionTracking(canvas);
+
     // --- Rotation mode: exit on deselect/selection change ---
     const cleanupRotationMode = setupRotationModeListeners(canvas);
 
@@ -101,6 +111,8 @@ export function useCanvas(
       cleanupGlow();
       cleanupDragState();
       cleanupEdgeScroll();
+      cleanupFrameControls();
+      cleanupSelectionTracking();
       cleanupRotationMode();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
@@ -470,7 +482,22 @@ function setupZOrderHandler(canvas: fabric.Canvas): void {
     const activeTool = useUIStore.getState().activeTool;
     if (activeTool !== 'select') return;
 
-    canvas.bringToFront(opt.target);
+    // Frames stay behind non-frame objects — bring to front of other frames only
+    if (opt.target.data?.type === 'frame') {
+      // Find the highest non-frame object index and place frame just below it
+      const allObjects = canvas.getObjects();
+      let highestFrameIdx = -1;
+      for (let i = 0; i < allObjects.length; i++) {
+        if (allObjects[i].data?.type === 'frame') {
+          highestFrameIdx = i;
+        }
+      }
+      if (highestFrameIdx > -1) {
+        canvas.moveTo(opt.target, highestFrameIdx);
+      }
+    } else {
+      canvas.bringToFront(opt.target);
+    }
     canvas.requestRenderAll();
   });
 }
@@ -678,6 +705,17 @@ function setupDragState(
   function deleteObject(obj: fabric.Object): void {
     if (obj.data?.pinned) return;
     const objectId = obj.data?.id;
+
+    // Orphan children when deleting a frame via drag-to-trash
+    if (obj.data?.type === 'frame' && objectId) {
+      for (const child of canvas.getObjects()) {
+        if (child.data?.frameId === objectId) {
+          child.data = { ...child.data, frameId: null };
+          useBoardStore.getState().updateObject(child.data.id, { frameId: null });
+        }
+      }
+    }
+
     canvas.remove(obj);
 
     if (objectId) {
@@ -864,6 +902,302 @@ function setupEdgeScroll(canvas: fabric.Canvas): () => void {
     canvas.off('object:moving', onObjectMoving);
     canvas.off('object:modified', onDragEnd);
     canvas.off('mouse:up', onDragEnd);
+  };
+}
+
+// ============================================================
+// Frame Control Handlers (Lock/Unlock + Title Editing + Anchored Movement)
+// ============================================================
+
+/**
+ * Wires up the frame's custom control action handlers and anchored
+ * movement behavior.
+ *
+ * Lock toggle:
+ *   - Scans canvas for objects completely inside the frame + in front of it
+ *   - Sets/clears frameId on each qualifying object
+ *   - Emits object:update for the frame (locked state) and each child (frameId)
+ *
+ * Edit title:
+ *   - Opens a prompt() dialog for the new title
+ *   - Updates the frame's label text and emits object:update
+ *
+ * Anchored movement:
+ *   - When a locked frame is dragged, all children move by the same delta
+ *   - On mouse:up, final positions for frame + children are emitted
+ *   - When a child is dragged outside the frame bounds, it's unanchored
+ */
+function setupFrameControlHandlers(
+  canvas: fabric.Canvas,
+  socketRef: React.MutableRefObject<Socket | null> | null
+): () => void {
+  // Track the last known position of a frame being dragged, for delta computation
+  const frameDragStart = new Map<string, { left: number; top: number }>();
+
+  function emitObjectUpdate(objectId: string, updates: Record<string, unknown>): void {
+    const boardId = useBoardStore.getState().boardId;
+    const socket = socketRef?.current;
+    if (!boardId || !socket?.connected) return;
+    socket.emit(WebSocketEvent.OBJECT_UPDATE, {
+      boardId,
+      objectId,
+      updates,
+      timestamp: Date.now(),
+    });
+  }
+
+  // --- Lock Toggle Handler ---
+  // Overrides the lockToggle control's actionHandler on each frame that's
+  // selected. We listen for mouse:down on the canvas and check if the
+  // click hit the lockToggle control.
+  const onMouseDown = (opt: fabric.IEvent) => {
+    const target = opt.target;
+    if (!target || target.data?.type !== 'frame') return;
+    if (!(target instanceof fabric.Group)) return;
+
+    // Check if the click hit one of our custom controls
+    // Fabric.js sets __corner on the target when a control is clicked
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const corner = (target as any).__corner;
+
+    if (corner === 'lockToggle') {
+      const isLocked = target.data.locked ?? false;
+      const newLocked = !isLocked;
+      target.data.locked = newLocked;
+
+      if (newLocked) {
+        // Lock: find all qualifying objects and anchor them
+        const children = getObjectsInsideFrame(canvas, target);
+        for (const child of children) {
+          child.data = { ...child.data, frameId: target.data.id };
+          // Emit frameId update for each child
+          emitObjectUpdate(child.data.id, { frameId: target.data.id });
+          // Update in boardStore
+          useBoardStore.getState().updateObject(child.data.id, { frameId: target.data.id });
+        }
+      } else {
+        // Unlock: clear frameId from all children
+        const allObjects = canvas.getObjects();
+        for (const obj of allObjects) {
+          if (obj.data?.frameId === target.data.id) {
+            obj.data = { ...obj.data, frameId: null };
+            emitObjectUpdate(obj.data.id, { frameId: null });
+            useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          }
+        }
+      }
+
+      // Emit the frame's locked state change
+      emitObjectUpdate(target.data.id, { locked: newLocked });
+      useBoardStore.getState().updateObject(target.data.id, { locked: newLocked });
+
+      canvas.requestRenderAll();
+      return;
+    }
+
+    if (corner === 'editTitle') {
+      const currentTitle = target.data.title ?? 'Frame';
+      const newTitle = prompt('Frame title:', currentTitle);
+      if (newTitle !== null && newTitle !== currentTitle) {
+        const trimmed = newTitle.slice(0, 255);
+        target.data.title = trimmed;
+
+        // Update the label text inside the group
+        const label = target.getObjects()[1] as fabric.Text;
+        label.set('text', trimmed || 'Frame');
+
+        // Emit update
+        emitObjectUpdate(target.data.id, { title: trimmed });
+        useBoardStore.getState().updateObject(target.data.id, { title: trimmed });
+
+        canvas.requestRenderAll();
+      }
+      return;
+    }
+  };
+
+  // --- Anchored Movement: track frame drag start ---
+  const onObjectMoving = (opt: fabric.IEvent<Event>) => {
+    const target = opt.target;
+    if (!target || target.data?.type !== 'frame') return;
+    if (!target.data.locked) return;
+
+    const frameId = target.data.id;
+
+    // First move event: record starting position
+    if (!frameDragStart.has(frameId)) {
+      // We can't get "before move" position from this event, so we use
+      // the previous stored position. On first call, it's the current
+      // position (delta will be 0).
+      frameDragStart.set(frameId, {
+        left: target.left ?? 0,
+        top: target.top ?? 0,
+      });
+      return;
+    }
+
+    // Compute delta from last known position
+    const prev = frameDragStart.get(frameId)!;
+    const dx = (target.left ?? 0) - prev.left;
+    const dy = (target.top ?? 0) - prev.top;
+
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
+
+    // Move all anchored children by the same delta
+    const allObjects = canvas.getObjects();
+    for (const obj of allObjects) {
+      if (obj.data?.frameId === frameId) {
+        obj.set({
+          left: (obj.left ?? 0) + dx,
+          top: (obj.top ?? 0) + dy,
+        });
+        obj.setCoords();
+      }
+    }
+
+    // Update tracked position
+    frameDragStart.set(frameId, {
+      left: target.left ?? 0,
+      top: target.top ?? 0,
+    });
+  };
+
+  // --- Anchored Movement: emit final positions on mouse:up ---
+  const onMouseUp = () => {
+    if (frameDragStart.size === 0) return;
+
+    // Emit final positions for all moved frames and their children
+    for (const [frameId] of frameDragStart) {
+      const allObjects = canvas.getObjects();
+      for (const obj of allObjects) {
+        if (obj.data?.frameId === frameId) {
+          const x = obj.left ?? 0;
+          const y = obj.top ?? 0;
+          emitObjectUpdate(obj.data.id, { x, y });
+          useBoardStore.getState().updateObject(obj.data.id, { x, y });
+        }
+      }
+    }
+
+    frameDragStart.clear();
+  };
+
+  // --- Child un-anchoring: when a child is dragged out of its frame ---
+  // --- Frame resize un-anchoring: when a locked frame is resized ---
+  const onObjectModified = (opt: fabric.IEvent<Event>) => {
+    const target = opt.target;
+    if (!target) return;
+
+    // Case 1: A locked frame was resized — check if children fell outside
+    if (target.data?.type === 'frame' && target.data.locked && target instanceof fabric.Group) {
+      const frameId = target.data.id;
+      const frameBounds = target.getBoundingRect(true, true);
+
+      for (const obj of canvas.getObjects()) {
+        if (obj.data?.frameId !== frameId) continue;
+        const objBounds = obj.getBoundingRect(true, true);
+        const isInside = (
+          objBounds.left >= frameBounds.left &&
+          objBounds.top >= frameBounds.top &&
+          objBounds.left + objBounds.width <= frameBounds.left + frameBounds.width &&
+          objBounds.top + objBounds.height <= frameBounds.top + frameBounds.height
+        );
+        if (!isInside) {
+          obj.data = { ...obj.data, frameId: null };
+          emitObjectUpdate(obj.data.id, { frameId: null });
+          useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+        }
+      }
+      return;
+    }
+
+    // Case 2: An anchored child was moved/resized — check if it left the frame
+    if (!target.data?.frameId) return;
+
+    const parentFrameId = target.data.frameId;
+    const frame = canvas.getObjects().find(
+      (o) => o.data?.id === parentFrameId && o.data?.type === 'frame'
+    );
+
+    if (!frame || !(frame instanceof fabric.Group)) {
+      // Frame was deleted — clear the stale frameId
+      target.data = { ...target.data, frameId: null };
+      emitObjectUpdate(target.data.id, { frameId: null });
+      useBoardStore.getState().updateObject(target.data.id, { frameId: null });
+      return;
+    }
+
+    const objBounds = target.getBoundingRect(true, true);
+    const frameBounds = frame.getBoundingRect(true, true);
+    const isInside = (
+      objBounds.left >= frameBounds.left &&
+      objBounds.top >= frameBounds.top &&
+      objBounds.left + objBounds.width <= frameBounds.left + frameBounds.width &&
+      objBounds.top + objBounds.height <= frameBounds.top + frameBounds.height
+    );
+
+    if (!isInside) {
+      target.data = { ...target.data, frameId: null };
+      emitObjectUpdate(target.data.id, { frameId: null });
+      useBoardStore.getState().updateObject(target.data.id, { frameId: null });
+    }
+  };
+
+  canvas.on('mouse:down', onMouseDown);
+  canvas.on('object:moving', onObjectMoving);
+  canvas.on('mouse:up', onMouseUp);
+  canvas.on('object:modified', onObjectModified);
+
+  return () => {
+    canvas.off('mouse:down', onMouseDown);
+    canvas.off('object:moving', onObjectMoving);
+    canvas.off('mouse:up', onMouseUp);
+    canvas.off('object:modified', onObjectModified);
+    frameDragStart.clear();
+  };
+}
+
+// ============================================================
+// Selection Tracking (Sync canvas selection → uiStore)
+// ============================================================
+
+/**
+ * Keeps uiStore.selectedObjectIds / selectedObjectTypes in sync with
+ * the canvas selection state. The sidebar uses these to conditionally
+ * show the z-order control buttons.
+ */
+function setupSelectionTracking(canvas: fabric.Canvas): () => void {
+  function updateSelection(): void {
+    const active = canvas.getActiveObject();
+    if (!active) {
+      useUIStore.getState().clearSelection();
+      return;
+    }
+
+    let ids: string[];
+    let types: string[];
+
+    if (active.type === 'activeSelection') {
+      const objects = (active as fabric.ActiveSelection).getObjects();
+      ids = objects.map((o) => o.data?.id).filter(Boolean) as string[];
+      types = objects.map((o) => o.data?.type).filter(Boolean) as string[];
+    } else {
+      ids = active.data?.id ? [active.data.id] : [];
+      types = active.data?.type ? [active.data.type] : [];
+    }
+
+    useUIStore.getState().setSelection(ids, types);
+  }
+
+  canvas.on('selection:created', updateSelection);
+  canvas.on('selection:updated', updateSelection);
+  canvas.on('selection:cleared', updateSelection);
+
+  return () => {
+    canvas.off('selection:created', updateSelection);
+    canvas.off('selection:updated', updateSelection);
+    canvas.off('selection:cleared', updateSelection);
+    useUIStore.getState().clearSelection();
   };
 }
 

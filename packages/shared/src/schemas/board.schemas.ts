@@ -19,6 +19,7 @@ const BaseObjectFields = {
   type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
   x: coordinate,
   y: coordinate,
+  frameId: z.string().uuid().nullable().default(null),
 };
 
 export const StickyNoteCreateSchema = z.object({
@@ -47,6 +48,7 @@ export const FrameCreateSchema = z.object({
   width: dimension,
   height: dimension,
   color: hexColor,
+  locked: z.boolean().default(false),
 });
 
 export const ConnectorCreateSchema = z.object({
@@ -93,4 +95,6 @@ export const ObjectUpdateSchema = z.object({
   style: z.enum(['line', 'arrow']).optional(),
   fromObjectId: z.string().optional(),
   toObjectId: z.string().optional(),
+  frameId: z.string().uuid().nullable().optional(),
+  locked: z.boolean().optional(),
 });

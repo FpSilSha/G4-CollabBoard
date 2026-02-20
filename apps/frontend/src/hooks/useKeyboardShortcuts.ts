@@ -478,12 +478,14 @@ function handlePaste(socket: Socket | null): void {
   const updatedClipboard: BoardObject[] = [];
 
   for (const entry of clipboard) {
-    // Create new entry with fresh ID and offset position
+    // Create new entry with fresh ID and offset position.
+    // Clear frameId — pasted objects are always independent (not anchored).
     const newEntry: BoardObject = {
       ...entry,
       id: generateLocalId(),
       x: entry.x + PASTE_OFFSET,
       y: entry.y + PASTE_OFFSET,
+      frameId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -557,6 +559,24 @@ export function handleDeleteSelected(socket: Socket | null): void {
 
   const boardId = useBoardStore.getState().boardId;
 
+  // Helper: orphan children when a frame is deleted
+  const orphanFrameChildren = (frameId: string) => {
+    for (const obj of canvas.getObjects()) {
+      if (obj.data?.frameId === frameId) {
+        obj.data = { ...obj.data, frameId: null };
+        useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+        if (boardId && socket?.connected) {
+          socket.emit(WebSocketEvent.OBJECT_UPDATE, {
+            boardId,
+            objectId: obj.data.id,
+            updates: { frameId: null },
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+  };
+
   if (activeObj.type === 'activeSelection') {
     const objects = (activeObj as fabric.ActiveSelection).getObjects().slice();
     canvas.discardActiveObject();
@@ -565,6 +585,12 @@ export function handleDeleteSelected(socket: Socket | null): void {
       if (obj.data?.pinned) continue;
 
       const objectId = obj.data?.id;
+
+      // Orphan children before removing frame
+      if (obj.data?.type === 'frame' && objectId) {
+        orphanFrameChildren(objectId);
+      }
+
       canvas.remove(obj);
 
       if (objectId) {
@@ -583,6 +609,12 @@ export function handleDeleteSelected(socket: Socket | null): void {
     if (activeObj.data?.pinned) return;
 
     const objectId = activeObj.data?.id;
+
+    // Orphan children before removing frame
+    if (activeObj.data?.type === 'frame' && objectId) {
+      orphanFrameChildren(objectId);
+    }
+
     canvas.remove(activeObj);
 
     if (objectId) {

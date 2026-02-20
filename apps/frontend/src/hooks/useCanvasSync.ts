@@ -23,6 +23,7 @@ import {
   fabricToBoardObject,
   boardObjectToFabric,
   updateStickyColor,
+  updateFrameColor,
   getStickyChildren,
   syncConnectorCoordsAfterMove,
 } from '../utils/fabricHelpers';
@@ -276,6 +277,7 @@ export function useCanvasSync(
 
       // Render each object from server
       const boardObjects: BoardObject[] = [];
+      const frameObjects: fabric.Object[] = [];
       objects.forEach((obj: BoardObject) => {
         if (editingId && obj.id === editingId) {
           // Skip rebuilding the object we're editing — it's already preserved.
@@ -286,9 +288,17 @@ export function useCanvasSync(
         const fabricObj = boardObjectToFabric(obj);
         if (fabricObj) {
           canvas.add(fabricObj);
+          if (obj.type === 'frame') {
+            frameObjects.push(fabricObj);
+          }
           boardObjects.push(obj);
         }
       });
+
+      // Send all frames to back so they render behind non-frame objects
+      for (const frame of frameObjects) {
+        canvas.sendToBack(frame);
+      }
 
       // Bulk-set objects in store
       useBoardStore.getState().setObjects(boardObjects);
@@ -326,6 +336,10 @@ export function useCanvasSync(
       const fabricObj = boardObjectToFabric(object);
       if (fabricObj) {
         canvas.add(fabricObj);
+        // Frames always go behind non-frame objects
+        if (object.type === 'frame') {
+          canvas.sendToBack(fabricObj);
+        }
         canvas.requestRenderAll();
         useBoardStore.getState().addObject(object);
       }
@@ -430,15 +444,17 @@ export function useCanvasSync(
         if (u.color) fabricObj.set('fill', u.color as string);
         if (u.fontSize !== undefined) (fabricObj as fabric.IText).set('fontSize', u.fontSize as number);
       } else if (objType === 'frame' && fabricObj instanceof fabric.Group) {
-        // Frame: update border color on the child rect, title on the child text
+        // Frame: update border color + label color together
         if (u.color) {
-          const borderRect = fabricObj.getObjects()[0];
-          borderRect.set('stroke', u.color as string);
+          updateFrameColor(fabricObj, u.color as string);
         }
         if (u.title !== undefined) {
           fabricObj.data.title = u.title as string;
           const labelText = fabricObj.getObjects()[1] as fabric.Text;
           labelText.set('text', u.title as string);
+        }
+        if (u.locked !== undefined) {
+          fabricObj.data.locked = u.locked as boolean;
         }
         if (u.width !== undefined || u.height !== undefined) {
           if (u.width !== undefined) fabricObj.set('width', u.width as number);
@@ -469,6 +485,11 @@ export function useCanvasSync(
           fabricObj.set('scaleX', 1);
           fabricObj.set('scaleY', 1);
         }
+      }
+
+      // Apply frameId changes (applies to all object types)
+      if (u.frameId !== undefined) {
+        fabricObj.data = { ...fabricObj.data, frameId: u.frameId };
       }
 
       fabricObj.setCoords();
@@ -514,6 +535,16 @@ export function useCanvasSync(
 
       const fabricObj = findFabricObjectById(canvas, objectId);
       if (fabricObj) {
+        // If a frame is deleted, orphan all its anchored children
+        if (fabricObj.data?.type === 'frame') {
+          for (const obj of canvas.getObjects()) {
+            if (obj.data?.frameId === objectId) {
+              obj.data = { ...obj.data, frameId: null };
+              useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+            }
+          }
+        }
+
         canvas.remove(fabricObj);
         canvas.requestRenderAll();
       }

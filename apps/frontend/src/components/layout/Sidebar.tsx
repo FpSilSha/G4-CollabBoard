@@ -1,4 +1,6 @@
+import { fabric } from 'fabric';
 import { useUIStore, Tool } from '../../stores/uiStore';
+import { useBoardStore } from '../../stores/boardStore';
 import { ColorPicker } from '../canvas/ColorPicker';
 import styles from './Sidebar.module.css';
 
@@ -120,6 +122,9 @@ export function Sidebar() {
           <div className={styles.toolGroup}>
             <ColorPicker />
           </div>
+
+          {/* --- Z-Order Controls (visible only when objects are selected) --- */}
+          <ZOrderControls />
         </>
       )}
     </aside>
@@ -172,6 +177,190 @@ function DraggableToolButton(props: {
     >
       {props.icon}
     </div>
+  );
+}
+
+// ============================================================
+// Z-Order Controls (Send to Back / Down / Up / Bring to Front)
+// ============================================================
+
+/**
+ * Four z-order buttons that appear when one or more objects are selected.
+ * Frames are excluded from "bring to front" — they always stay behind
+ * non-frame objects.
+ */
+function ZOrderControls() {
+  const selectedIds = useUIStore((s) => s.selectedObjectIds);
+  const selectedTypes = useUIStore((s) => s.selectedObjectTypes);
+
+  if (selectedIds.length === 0) return null;
+
+  // Check if the selection is exclusively frames (disable bring-to-front)
+  const allFrames = selectedTypes.length > 0 && selectedTypes.every((t) => t === 'frame');
+
+  const handleZOrder = (action: 'sendToBack' | 'moveDown' | 'moveUp' | 'bringToFront') => {
+    const canvas = useBoardStore.getState().canvas;
+    if (!canvas) return;
+
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    // Collect all objects to operate on
+    const objects: fabric.Object[] = active.type === 'activeSelection'
+      ? (active as fabric.ActiveSelection).getObjects()
+      : [active];
+
+    // Find the lowest non-frame index (frames must stay below this)
+    const allCanvasObjects = canvas.getObjects();
+    let lowestNonFrameIndex = allCanvasObjects.length;
+    for (let i = 0; i < allCanvasObjects.length; i++) {
+      if (allCanvasObjects[i].data?.type !== 'frame') {
+        lowestNonFrameIndex = i;
+        break;
+      }
+    }
+
+    for (const obj of objects) {
+      const isFrame = obj.data?.type === 'frame';
+
+      switch (action) {
+        case 'sendToBack':
+          if (isFrame) {
+            canvas.sendToBack(obj);
+          } else {
+            // Send to back, but not behind frames
+            canvas.moveTo(obj, lowestNonFrameIndex);
+          }
+          break;
+
+        case 'moveDown': {
+          const idx = allCanvasObjects.indexOf(obj);
+          if (idx <= 0) break;
+          const targetIdx = idx - 1;
+          // Non-frames can't go behind frames
+          if (!isFrame && allCanvasObjects[targetIdx]?.data?.type === 'frame') break;
+          canvas.moveTo(obj, targetIdx);
+          break;
+        }
+
+        case 'moveUp': {
+          const idx = allCanvasObjects.indexOf(obj);
+          if (idx >= allCanvasObjects.length - 1) break;
+          const targetIdx = idx + 1;
+          // Frames can't go in front of non-frames
+          if (isFrame && allCanvasObjects[targetIdx]?.data?.type !== 'frame') break;
+          canvas.moveTo(obj, targetIdx);
+          break;
+        }
+
+        case 'bringToFront':
+          if (isFrame) {
+            // Frames: bring to front of other frames only
+            let highestFrameIdx = -1;
+            for (let i = 0; i < allCanvasObjects.length; i++) {
+              if (allCanvasObjects[i].data?.type === 'frame') {
+                highestFrameIdx = i;
+              }
+            }
+            if (highestFrameIdx > -1) {
+              canvas.moveTo(obj, highestFrameIdx);
+            }
+          } else {
+            canvas.bringToFront(obj);
+          }
+          break;
+      }
+    }
+
+    canvas.requestRenderAll();
+  };
+
+  return (
+    <div className={styles.toolGroup}>
+      <div className={styles.zOrderLabel}>Layer</div>
+      <div className={styles.zOrderGroup}>
+        <button
+          className={styles.zOrderButton}
+          onClick={() => handleZOrder('sendToBack')}
+          title="Send to back"
+          aria-label="Send to back"
+        >
+          <SendToBackIcon />
+        </button>
+        <button
+          className={styles.zOrderButton}
+          onClick={() => handleZOrder('moveDown')}
+          title="Move down"
+          aria-label="Move down one layer"
+        >
+          <MoveDownIcon />
+        </button>
+        <button
+          className={styles.zOrderButton}
+          onClick={() => handleZOrder('moveUp')}
+          title="Move up"
+          aria-label="Move up one layer"
+          disabled={allFrames}
+        >
+          <MoveUpIcon />
+        </button>
+        <button
+          className={styles.zOrderButton}
+          onClick={() => handleZOrder('bringToFront')}
+          title="Bring to front"
+          aria-label="Bring to front"
+          disabled={allFrames}
+        >
+          <BringToFrontIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Z-Order SVG Icons
+// ============================================================
+
+/** Down arrow with underline — "send to back" */
+function SendToBackIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M12 4v12" />
+      <path d="M7 11l5 5 5-5" />
+      <line x1="6" y1="20" x2="18" y2="20" />
+    </svg>
+  );
+}
+
+/** Down arrow — "move one layer down" */
+function MoveDownIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M12 4v14" />
+      <path d="M7 13l5 5 5-5" />
+    </svg>
+  );
+}
+
+/** Up arrow — "move one layer up" */
+function MoveUpIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M12 20V6" />
+      <path d="M7 11l5-5 5 5" />
+    </svg>
+  );
+}
+
+/** Up arrow with overline — "bring to front" */
+function BringToFrontIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <line x1="6" y1="4" x2="18" y2="4" />
+      <path d="M12 20V8" />
+      <path d="M7 13l5-5 5 5" />
+    </svg>
   );
 }
 

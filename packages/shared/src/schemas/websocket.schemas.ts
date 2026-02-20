@@ -81,6 +81,8 @@ export const ObjectUpdateFieldsSchema = z.object({
   title: z.string().max(255).optional(),
   lastEditedBy: z.string().optional(),
   updatedAt: z.any().optional(),
+  frameId: z.string().uuid().nullable().optional(),
+  locked: z.boolean().optional(),
 }).passthrough();
 
 // object:delete
