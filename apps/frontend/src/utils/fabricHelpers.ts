@@ -395,6 +395,10 @@ export function getObjectsInsideFrame(
 function setupFrameControls(group: fabric.Group): void {
   const controlRadius = 10;
 
+  // Clone the controls object so frame-specific controls don't leak to the
+  // prototype and appear on every fabric.Group instance (e.g. sticky notes).
+  group.controls = { ...group.controls };
+
   // Lock control — top-right, toggles anchoring
   group.controls.lockToggle = new fabric.Control({
     x: 0.5,

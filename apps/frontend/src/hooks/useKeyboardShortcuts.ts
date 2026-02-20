@@ -271,14 +271,17 @@ function restoreLockedObjects(canvas: fabric.Canvas): void {
     // Sticky notes keep lockScaling and hasControls=false
     const isSticky = obj.data?.type === 'sticky';
 
+    // If this object is anchored to a locked frame, keep it unselectable
+    const isLockedChild = !!obj.data?.frameId;
+
     obj.set({
       lockMovementX: false,
       lockMovementY: false,
       lockScalingX: isSticky,
       lockScalingY: isSticky,
       lockRotation: false,
-      selectable: true,
-      evented: true,
+      selectable: !isLockedChild,
+      evented: !isLockedChild,
     });
   }
 
@@ -559,11 +562,12 @@ export function handleDeleteSelected(socket: Socket | null): void {
 
   const boardId = useBoardStore.getState().boardId;
 
-  // Helper: orphan children when a frame is deleted
+  // Helper: orphan children when a frame is deleted — restore selectability
   const orphanFrameChildren = (frameId: string) => {
     for (const obj of canvas.getObjects()) {
       if (obj.data?.frameId === frameId) {
         obj.data = { ...obj.data, frameId: null };
+        obj.set({ selectable: true, evented: true });
         useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
         if (boardId && socket?.connected) {
           socket.emit(WebSocketEvent.OBJECT_UPDATE, {

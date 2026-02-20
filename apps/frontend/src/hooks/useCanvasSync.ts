@@ -300,6 +300,18 @@ export function useCanvasSync(
         canvas.sendToBack(frame);
       }
 
+      // Make children of locked frames unselectable
+      for (const obj of canvas.getObjects()) {
+        if (!obj.data?.frameId) continue;
+        // Check if the parent frame is locked
+        const parentFrame = canvas.getObjects().find(
+          (o) => o.data?.id === obj.data.frameId && o.data?.type === 'frame'
+        );
+        if (parentFrame?.data?.locked) {
+          obj.set({ selectable: false, evented: false });
+        }
+      }
+
       // Bulk-set objects in store
       useBoardStore.getState().setObjects(boardObjects);
       canvas.requestRenderAll();
@@ -339,6 +351,15 @@ export function useCanvasSync(
         // Frames always go behind non-frame objects
         if (object.type === 'frame') {
           canvas.sendToBack(fabricObj);
+        }
+        // If anchored to a locked frame, make unselectable
+        if (object.frameId) {
+          const parentFrame = canvas.getObjects().find(
+            (o) => o.data?.id === object.frameId && o.data?.type === 'frame'
+          );
+          if (parentFrame?.data?.locked) {
+            fabricObj.set({ selectable: false, evented: false });
+          }
         }
         canvas.requestRenderAll();
         useBoardStore.getState().addObject(object);
@@ -490,6 +511,29 @@ export function useCanvasSync(
       // Apply frameId changes (applies to all object types)
       if (u.frameId !== undefined) {
         fabricObj.data = { ...fabricObj.data, frameId: u.frameId };
+        if (u.frameId) {
+          // Check if parent frame is locked — if so, make unselectable
+          const parentFrame = canvas.getObjects().find(
+            (o) => o.data?.id === u.frameId && o.data?.type === 'frame'
+          );
+          if (parentFrame?.data?.locked) {
+            fabricObj.set({ selectable: false, evented: false });
+          }
+        } else {
+          // Unanchored — restore selectability
+          fabricObj.set({ selectable: true, evented: true });
+        }
+      }
+
+      // When a frame's locked state changes, update children selectability
+      if (objType === 'frame' && u.locked !== undefined) {
+        const frameId = fabricObj.data?.id;
+        const isNowLocked = u.locked as boolean;
+        for (const child of canvas.getObjects()) {
+          if (child.data?.frameId === frameId) {
+            child.set({ selectable: !isNowLocked, evented: !isNowLocked });
+          }
+        }
       }
 
       fabricObj.setCoords();
@@ -535,11 +579,12 @@ export function useCanvasSync(
 
       const fabricObj = findFabricObjectById(canvas, objectId);
       if (fabricObj) {
-        // If a frame is deleted, orphan all its anchored children
+        // If a frame is deleted, orphan all its anchored children + restore selectability
         if (fabricObj.data?.type === 'frame') {
           for (const obj of canvas.getObjects()) {
             if (obj.data?.frameId === objectId) {
               obj.data = { ...obj.data, frameId: null };
+              obj.set({ selectable: true, evented: true });
               useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
             }
           }

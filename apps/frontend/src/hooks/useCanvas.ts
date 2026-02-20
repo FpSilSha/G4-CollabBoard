@@ -711,6 +711,7 @@ function setupDragState(
       for (const child of canvas.getObjects()) {
         if (child.data?.frameId === objectId) {
           child.data = { ...child.data, frameId: null };
+          child.set({ selectable: true, evented: true });
           useBoardStore.getState().updateObject(child.data.id, { frameId: null });
         }
       }
@@ -970,17 +971,20 @@ function setupFrameControlHandlers(
         const children = getObjectsInsideFrame(canvas, target);
         for (const child of children) {
           child.data = { ...child.data, frameId: target.data.id };
+          // Make children unselectable while locked inside the frame
+          child.set({ selectable: false, evented: false });
           // Emit frameId update for each child
           emitObjectUpdate(child.data.id, { frameId: target.data.id });
           // Update in boardStore
           useBoardStore.getState().updateObject(child.data.id, { frameId: target.data.id });
         }
       } else {
-        // Unlock: clear frameId from all children
+        // Unlock: clear frameId from all children and restore selectability
         const allObjects = canvas.getObjects();
         for (const obj of allObjects) {
           if (obj.data?.frameId === target.data.id) {
             obj.data = { ...obj.data, frameId: null };
+            obj.set({ selectable: true, evented: true });
             emitObjectUpdate(obj.data.id, { frameId: null });
             useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
           }
@@ -1104,6 +1108,7 @@ function setupFrameControlHandlers(
         );
         if (!isInside) {
           obj.data = { ...obj.data, frameId: null };
+          obj.set({ selectable: true, evented: true });
           emitObjectUpdate(obj.data.id, { frameId: null });
           useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
         }
@@ -1112,6 +1117,8 @@ function setupFrameControlHandlers(
     }
 
     // Case 2: An anchored child was moved/resized — check if it left the frame
+    // (This case is now rare since locked children are unselectable, but can
+    // still occur via programmatic moves or if the object was re-enabled.)
     if (!target.data?.frameId) return;
 
     const parentFrameId = target.data.frameId;
@@ -1120,8 +1127,9 @@ function setupFrameControlHandlers(
     );
 
     if (!frame || !(frame instanceof fabric.Group)) {
-      // Frame was deleted — clear the stale frameId
+      // Frame was deleted — clear the stale frameId and restore selectability
       target.data = { ...target.data, frameId: null };
+      target.set({ selectable: true, evented: true });
       emitObjectUpdate(target.data.id, { frameId: null });
       useBoardStore.getState().updateObject(target.data.id, { frameId: null });
       return;
@@ -1138,6 +1146,7 @@ function setupFrameControlHandlers(
 
     if (!isInside) {
       target.data = { ...target.data, frameId: null };
+      target.set({ selectable: true, evented: true });
       emitObjectUpdate(target.data.id, { frameId: null });
       useBoardStore.getState().updateObject(target.data.id, { frameId: null });
     }
