@@ -77,6 +77,23 @@ interface UIState {
   selectedObjectTypes: string[];
   setSelection: (ids: string[], types: string[]) => void;
   clearSelection: () => void;
+
+  // Generic text-input modal (replaces window.prompt for flag labels, etc.)
+  textInputModal: {
+    title: string;
+    initialValue: string;
+    placeholder: string;
+    maxLength: number;
+    onConfirm: (value: string) => void;
+    onCancel: () => void;
+  } | null;
+  openTextInputModal: (opts: {
+    title: string;
+    initialValue?: string;
+    placeholder?: string;
+    maxLength?: number;
+  }) => Promise<string | null>;
+  closeTextInputModal: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -131,4 +148,26 @@ export const useUIStore = create<UIState>((set) => ({
   selectedObjectTypes: [],
   setSelection: (ids, types) => set({ selectedObjectIds: ids, selectedObjectTypes: types }),
   clearSelection: () => set({ selectedObjectIds: [], selectedObjectTypes: [] }),
+
+  textInputModal: null,
+  openTextInputModal: (opts) =>
+    new Promise<string | null>((resolve) => {
+      set({
+        textInputModal: {
+          title: opts.title,
+          initialValue: opts.initialValue ?? '',
+          placeholder: opts.placeholder ?? '',
+          maxLength: opts.maxLength ?? 100,
+          onConfirm: (value: string) => {
+            set({ textInputModal: null });
+            resolve(value);
+          },
+          onCancel: () => {
+            set({ textInputModal: null });
+            resolve(null);
+          },
+        },
+      });
+    }),
+  closeTextInputModal: () => set({ textInputModal: null }),
 }));

@@ -489,22 +489,26 @@ export function useObjectCreation(
       if (objectType === 'placeFlag') {
         const x = pointer.x;
         const y = pointer.y;
-        const label = window.prompt('Flag label:');
-        if (!label?.trim()) return;
-
-        const currentBoardId = useBoardStore.getState().boardId;
-        if (!currentBoardId) return;
-
-        const flagColor = FLAG_COLORS[
-          useFlagStore.getState().flags.length % FLAG_COLORS.length
-        ];
 
         (async () => {
+          const label = await useUIStore.getState().openTextInputModal({
+            title: 'Flag Label',
+            placeholder: 'Enter a name for this flag',
+          });
+          if (!label) return;
+
+          const currentBoardId = useBoardStore.getState().boardId;
+          if (!currentBoardId) return;
+
+          const flagColor = FLAG_COLORS[
+            useFlagStore.getState().flags.length % FLAG_COLORS.length
+          ];
+
           try {
             const token = await getAccessTokenSilently(AUTH_PARAMS);
             const flag = await useFlagStore.getState().createFlag(
               currentBoardId,
-              { label: label.trim(), x, y, color: flagColor },
+              { label, x, y, color: flagColor },
               token,
             );
             const marker = createFlagMarker({

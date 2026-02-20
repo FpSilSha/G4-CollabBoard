@@ -531,7 +531,7 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     // Skip glow for text elements — it visually clutters the text
     // Skip glow for connectors — the endpoint controls provide sufficient
     // selection feedback, and the blur-60 glow makes the line look bloated
-    if (obj.data?.type === 'text' || obj.data?.type === 'connector') return;
+    if (obj.data?.type === 'text' || obj.data?.type === 'connector' || obj.data?.type === 'teleportFlag') return;
 
     // Save original shadow and stroke
     originalShadows.set(obj, obj.shadow ?? null);

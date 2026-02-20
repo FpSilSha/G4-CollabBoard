@@ -10,6 +10,7 @@ import { StickyEditModal } from '../canvas/StickyEditModal';
 import { Toast } from '../ui/Toast';
 import { DragEdgeOverlay } from '../ui/DragEdgeOverlay';
 import { FloatingTrash } from '../ui/FloatingTrash';
+import { TextInputModal } from '../ui/TextInputModal';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useTeleportFlags } from '../../hooks/useTeleportFlags';
 import { usePresenceStore } from '../../stores/presenceStore';
@@ -168,6 +169,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
       {/* Floating trash button at bottom-center during drag */}
       <FloatingTrash />
+
+      {/* Generic text-input modal (flag labels, etc.) */}
+      <TextInputModal />
 
       {/* Offline overlay — blocks interaction when socket loses connection.
           Only show AFTER we've connected at least once (not on initial load). */}

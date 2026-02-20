@@ -182,8 +182,10 @@ export function StickyEditModal() {
     [handleConfirm, handleCancel, text],
   );
 
-  // Don't render when not editing
-  if (!editingObjectId) return null;
+  // Don't render when not editing a sticky note.
+  // editingObjectId is shared with other edit flows (e.g. flag labels),
+  // so also require an active edit session (only set for stickies).
+  if (!editingObjectId || !getEditSession()) return null;
 
   return (
     <>

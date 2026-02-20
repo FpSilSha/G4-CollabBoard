@@ -42,9 +42,12 @@ export function useTeleportFlags() {
       // Reset tool immediately so further clicks don't double-place
       useUIStore.getState().setActiveTool('select');
 
-      // Prompt for label
-      const label = window.prompt('Flag label:');
-      if (!label?.trim()) return;
+      // Prompt for label via modal
+      const label = await useUIStore.getState().openTextInputModal({
+        title: 'Flag Label',
+        placeholder: 'Enter a name for this flag',
+      });
+      if (!label) return;
 
       const currentBoardId = useBoardStore.getState().boardId;
       if (!currentBoardId) return;
@@ -55,7 +58,7 @@ export function useTeleportFlags() {
         const token = await getAccessTokenSilently(AUTH_PARAMS);
         const flag = await useFlagStore.getState().createFlag(
           currentBoardId,
-          { label: label.trim(), x, y, color },
+          { label, x, y, color },
           token,
         );
 

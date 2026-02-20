@@ -988,14 +988,11 @@ export function teleportTo(canvas: fabric.Canvas, x: number, y: number): void {
 
 /** Height of the flag pole (canvas units) */
 const FLAG_POLE_HEIGHT = 40;
-/** Pennant dimensions */
-const PENNANT_HEIGHT = 12;
-const PENNANT_WIDTH = 16;
 
 /**
  * Create a Fabric.js Group representing a teleport flag marker on the canvas.
- * The flag looks like a golf-hole flag: grey vertical pole + colored triangle pennant.
- * The pennant's long edge sits flush against the pole, with the point facing outward.
+ * The flag resembles a golf-course pin: thin dark pole, wavy pennant blowing
+ * in the wind, and a 3D-looking hole at the base.
  *
  * The group's `data` property carries `{ flagId, type: 'teleportFlag' }`.
  * The group is selectable and moveable; on `object:modified` the caller
@@ -1008,25 +1005,21 @@ export function createFlagMarker(options: {
   flagId: string;
   label: string;
 }): fabric.Group {
-  // Pole — grey vertical line
+  // Pole — thin dark vertical line
   const pole = new fabric.Line(
     [0, 0, 0, FLAG_POLE_HEIGHT],
     {
-      stroke: '#888888',
-      strokeWidth: 2,
+      stroke: '#555555',
+      strokeWidth: 1.5,
       selectable: false,
       evented: false,
     },
   );
 
-  // Pennant — colored triangle, long side on pole, point outward
-  // Three vertices: top-left on pole, bottom-left on pole, right point
-  const pennant = new fabric.Polygon(
-    [
-      { x: 2, y: 0 },                          // top-left (on pole)
-      { x: 2, y: PENNANT_HEIGHT },              // bottom-left (on pole)
-      { x: 2 + PENNANT_WIDTH, y: PENNANT_HEIGHT / 2 }, // right point
-    ],
+  // Wavy pennant — bezier path that gives a wind-blown ripple effect.
+  // The left edge sits on the pole; the shape billows outward to the right.
+  const pennant = new fabric.Path(
+    'M 1.5 0 C 7 1, 14 -1, 18 1 C 16 4, 14 6, 18 10 C 12 9, 6 11, 1.5 10 Z',
     {
       fill: options.color,
       selectable: false,
@@ -1034,17 +1027,18 @@ export function createFlagMarker(options: {
     },
   );
 
-  // Small circle at the base for a ground marker
-  const base = new fabric.Circle({
-    left: -3,
+  // Base hole — dark ellipse so the flag looks planted in the ground
+  const hole = new fabric.Ellipse({
+    left: -4,
     top: FLAG_POLE_HEIGHT - 2,
-    radius: 4,
-    fill: '#888888',
+    rx: 5,
+    ry: 2.5,
+    fill: '#111111',
     selectable: false,
     evented: false,
   });
 
-  const group = new fabric.Group([pole, pennant, base], {
+  const group = new fabric.Group([hole, pole, pennant], {
     left: options.x,
     top: options.y,
     hasControls: false,
