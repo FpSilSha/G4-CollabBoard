@@ -132,6 +132,21 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
     }
   }, [connectionStatus, storeBoardId, boardId, joinBoard]);
 
+  // Pre-fetch an auth token while the component is still mounted so the
+  // unmount cleanup (thumbnail upload) can use it without relying on the
+  // Auth0 React hook after the component tree has been torn down.
+  const cachedTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    getAccessTokenSilently({
+      authorizationParams: {
+        audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
+      },
+    }).then((token) => {
+      cachedTokenRef.current = token;
+    }).catch(() => { /* non-critical */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Cleanup: leave board when truly unmounting (navigating away to dashboard
   // or another board). Deferred with setTimeout(0) so StrictMode's simulated
   // unmount→remount cycle can cancel it — prevents spurious board:leave.
@@ -144,7 +159,8 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
       const boardVersion = useBoardStore.getState().boardVersion;
 
       // Capture thumbnail before leaving (fire-and-forget).
-      // Fits the viewport to show ALL objects, captures, then restores.
+      // Computes the bounding box of all objects in *logical* (world) coordinates,
+      // sets the viewport to frame them with padding, captures, then restores.
       if (currentBoardId && canvas) {
         try {
           const objects = canvas.getObjects();
@@ -155,11 +171,14 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
               : [1, 0, 0, 1, 0, 0];
             const savedZoom = canvas.getZoom();
 
-            // Calculate bounding box of all objects (in canvas coordinates)
+            // Reset viewport to identity so getBoundingRect returns logical
+            // (world) coordinates rather than screen-pixel coordinates.
+            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+
+            // Calculate bounding box of all objects in world coordinates
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             for (const obj of objects) {
-              // Use absolute=true, calculate=true to get untransformed canvas coords
-              const rect = obj.getBoundingRect(true, false);
+              const rect = obj.getBoundingRect(true, true);
               minX = Math.min(minX, rect.left);
               minY = Math.min(minY, rect.top);
               maxX = Math.max(maxX, rect.left + rect.width);
@@ -186,7 +205,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
               const offsetX = canvasW / 2 - centerX * fitZoom;
               const offsetY = canvasH / 2 - centerY * fitZoom;
 
-              // Apply fitted viewport
+              // Apply fitted viewport and render
               canvas.setViewportTransform([fitZoom, 0, 0, fitZoom, offsetX, offsetY]);
               canvas.renderAll();
 
@@ -203,13 +222,10 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
               canvas.setZoom(savedZoom);
               canvas.renderAll();
 
-              // Fire-and-forget upload — don't block navigation
-              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-              getAccessTokenSilently({
-                authorizationParams: {
-                  audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-                },
-              }).then((token) => {
+              // Fire-and-forget upload using the pre-cached token
+              const token = cachedTokenRef.current;
+              if (token) {
+                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
                 fetch(`${apiUrl}/boards/${currentBoardId}/thumbnail`, {
                   method: 'PUT',
                   headers: {
@@ -217,16 +233,16 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({ thumbnail, version: boardVersion }),
-                }).catch(() => {
-                  // Non-critical — silently ignore thumbnail save errors
+                }).catch((err) => {
+                  console.warn('[BoardView] Thumbnail upload failed:', err);
                 });
-              }).catch(() => {
-                // Token fetch failed — silently ignore
-              });
+              } else {
+                console.warn('[BoardView] No cached token — skipping thumbnail upload');
+              }
             }
           }
-        } catch {
-          // Canvas toDataURL or viewport manipulation failed — silently ignore
+        } catch (err) {
+          console.warn('[BoardView] Thumbnail capture failed:', err);
         }
       }
 
