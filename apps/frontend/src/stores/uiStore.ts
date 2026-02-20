@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { STICKY_NOTE_COLORS } from 'shared';
-import type { BoardObject } from 'shared';
+import type { BoardObject, ColorPaletteKey } from 'shared';
 
 /**
  * Tool modes available in the toolbar.
@@ -27,11 +27,19 @@ interface UIState {
   activeColor: string;
   setActiveColor: (color: string) => void;
 
+  // Active color palette tab (persists across sidebar open/close)
+  colorPaletteTab: ColorPaletteKey;
+  setColorPaletteTab: (tab: ColorPaletteKey) => void;
+
   // Custom colors sampled by the dropper tool (max 10, newest first).
   // When a new color is sampled, it pushes to the front. If the array
   // exceeds MAX_CUSTOM_COLORS, the oldest (last) entry is removed.
   customColors: string[];
   addCustomColor: (color: string) => void;
+
+  // Floating custom color picker panel (rendered as fixed overlay next to sidebar)
+  colorPickerOpen: boolean;
+  setColorPickerOpen: (open: boolean) => void;
 
   // Panning state
   isPanning: boolean;
@@ -98,10 +106,13 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   activeTool: 'select',
-  setActiveTool: (tool) => set({ activeTool: tool }),
+  setActiveTool: (tool) => set({ activeTool: tool, colorPickerOpen: false }),
 
   activeColor: STICKY_NOTE_COLORS[0], // default yellow
   setActiveColor: (color) => set({ activeColor: color }),
+
+  colorPaletteTab: 'pastel' as ColorPaletteKey,
+  setColorPaletteTab: (tab) => set({ colorPaletteTab: tab }),
 
   customColors: [],
   addCustomColor: (color) =>
@@ -116,12 +127,18 @@ export const useUIStore = create<UIState>((set) => ({
       return { customColors: next, activeColor: color };
     }),
 
+  colorPickerOpen: false,
+  setColorPickerOpen: (open) => set({ colorPickerOpen: open }),
+
   isPanning: false,
   setIsPanning: (panning) => set({ isPanning: panning }),
 
   sidebarOpen: true,
-  setSidebarOpen: (open) => set({ sidebarOpen: open }),
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setSidebarOpen: (open) => set((s) => ({ sidebarOpen: open, ...(open ? {} : { colorPickerOpen: false }) })),
+  toggleSidebar: () => set((s) => {
+    const nextOpen = !s.sidebarOpen;
+    return { sidebarOpen: nextOpen, ...(nextOpen ? {} : { colorPickerOpen: false }) };
+  }),
 
   rightSidebarOpen: false,
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open, rightSidebarAutoOpened: false }),

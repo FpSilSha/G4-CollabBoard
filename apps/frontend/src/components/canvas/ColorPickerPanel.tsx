@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback, type RefObject } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useUIStore } from '../../stores/uiStore';
 import { HSL_CONSTRAINTS, type HslConstraintKey } from 'shared';
-import styles from './ColorPickerPopover.module.css';
+import styles from './ColorPickerPanel.module.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -63,18 +64,28 @@ const CONSTRAINT_TABS: { key: HslConstraintKey; label: string }[] = [
 
 // ── Component ─────────────────────────────────────────────────────────
 
-interface ColorPickerPopoverProps {
-  anchorRef: RefObject<HTMLButtonElement | null>;
-  onAdd: (hex: string) => void;
-  onClose: () => void;
-}
+/**
+ * Floating custom color picker panel.
+ *
+ * Rendered at BoardView level with fixed positioning, anchored to the
+ * right edge of the left sidebar. Contains HSL sliders with constraint
+ * tabs (PST/NEO/ERT/None), live preview, hex input, "Add Color" button,
+ * and "Done" button. Users can add multiple custom colors before closing.
+ *
+ * Closes when:
+ * - User clicks "Done"
+ * - User clicks the canvas (mousedown outside panel)
+ * - User changes tool (handled by uiStore.setActiveTool)
+ * - Sidebar closes (handled by uiStore.setSidebarOpen)
+ * - User presses Escape
+ */
+export function ColorPickerPanel() {
+  const isOpen = useUIStore((s) => s.colorPickerOpen);
+  const setOpen = useUIStore((s) => s.setColorPickerOpen);
+  const addCustomColor = useUIStore((s) => s.addCustomColor);
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
 
-export function ColorPickerPopover({
-  anchorRef,
-  onAdd,
-  onClose,
-}: ColorPickerPopoverProps) {
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Internal constraint tab
   const [constraintTab, setConstraintTab] = useState<HslConstraintKey>('pastel');
@@ -87,14 +98,13 @@ export function ColorPickerPopover({
 
   // Hex input state (for bidirectional sync)
   const [hexInput, setHexInput] = useState(() => hslToHex(hue, sat, lit));
-  const hexInputRef = useRef<HTMLInputElement>(null);
 
   // Sync hex input when sliders change
   useEffect(() => {
     setHexInput(hslToHex(hue, sat, lit));
   }, [hue, sat, lit]);
 
-  // When constraint tab changes, re-clamp sliders (or reset to midpoint if out of range)
+  // When constraint tab changes, re-clamp sliders
   const handleConstraintTabChange = useCallback(
     (key: HslConstraintKey) => {
       setConstraintTab(key);
@@ -119,9 +129,7 @@ export function ColorPickerPopover({
   // Handle hex input change (user typing)
   const handleHexInputChange = useCallback(
     (value: string) => {
-      // Allow partial typing — only sync when valid 7-char hex
       setHexInput(value);
-
       const trimmed = value.trim();
       if (/^#[0-9A-Fa-f]{6}$/.test(trimmed)) {
         const [h, s, l] = hexToHsl(trimmed);
@@ -133,48 +141,69 @@ export function ColorPickerPopover({
     [constraints],
   );
 
-  // Close on Escape or click outside
+  // Close on Escape
   useEffect(() => {
+    if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') setOpen(false);
     };
-    const handleClick = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        anchorRef.current &&
-        !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    };
-
     document.addEventListener('keydown', handleKey);
-    document.addEventListener('mousedown', handleClick);
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-      document.removeEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, setOpen]);
+
+  // Close on click outside panel (e.g., clicking on canvas)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // Don't close if clicking inside the panel itself
+      if (panelRef.current?.contains(target)) return;
+      // Don't close if clicking the sidebar's "+" button (it toggles via its own handler)
+      const addBtn = document.querySelector('[aria-label="Add a custom color"]');
+      if (addBtn?.contains(target)) return;
+      // Don't close if clicking inside the sidebar (let users pick preset swatches while panel is open)
+      const sidebar = (target as Element)?.closest?.('aside');
+      if (sidebar) return;
+      // Clicking anywhere else (canvas, header, right sidebar, etc.) closes
+      setOpen(false);
     };
-  }, [onClose, anchorRef]);
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [isOpen, setOpen]);
+
+  // Also close when sidebar closes
+  useEffect(() => {
+    if (!sidebarOpen && isOpen) {
+      setOpen(false);
+    }
+  }, [sidebarOpen, isOpen, setOpen]);
+
+  if (!isOpen) return null;
 
   const previewColor = hslToHex(hue, sat, lit);
 
-  // Build hue gradient for the hue slider track
+  // Gradients for slider tracks
   const hueGradient = `linear-gradient(to right, ${
     Array.from({ length: 13 }, (_, i) => {
       const h = (i / 12) * 360;
       return `hsl(${h}, 100%, 50%)`;
     }).join(', ')
   })`;
-
-  // Build saturation gradient
   const satGradient = `linear-gradient(to right, hsl(${hue}, ${constraints.sMin}%, ${lit}%), hsl(${hue}, ${constraints.sMax}%, ${lit}%))`;
-
-  // Build lightness gradient
   const litGradient = `linear-gradient(to right, hsl(${hue}, ${sat}%, ${constraints.lMin}%), hsl(${hue}, ${sat}%, ${constraints.lMax}%))`;
 
   return (
-    <div className={styles.popover} ref={popoverRef}>
+    <div className={styles.panel} ref={panelRef}>
+      <div className={styles.panelHeader}>
+        <span className={styles.panelTitle}>Custom Color</span>
+        <button
+          className={styles.doneButton}
+          onClick={() => setOpen(false)}
+        >
+          Done
+        </button>
+      </div>
+
       {/* Constraint tabs */}
       <div className={styles.constraintTabs}>
         {CONSTRAINT_TABS.map((tab) => (
@@ -249,7 +278,6 @@ export function ColorPickerPopover({
       <div className={styles.hexRow}>
         <span className={styles.hexLabel}>Hex:</span>
         <input
-          ref={hexInputRef}
           type="text"
           className={styles.hexInput}
           value={hexInput}
@@ -259,10 +287,10 @@ export function ColorPickerPopover({
         />
       </div>
 
-      {/* Add button */}
+      {/* Add Color button */}
       <button
         className={styles.addColorBtn}
-        onClick={() => onAdd(previewColor)}
+        onClick={() => addCustomColor(previewColor)}
       >
         Add Color
       </button>

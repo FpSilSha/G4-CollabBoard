@@ -7,6 +7,7 @@ import { RightSidebar } from '../layout/RightSidebar';
 import { Header } from '../layout/Header';
 import { Canvas } from '../canvas/Canvas';
 import { StickyEditModal } from '../canvas/StickyEditModal';
+import { ColorPickerPanel } from '../canvas/ColorPickerPanel';
 import { Toast } from '../ui/Toast';
 import { DragEdgeOverlay } from '../ui/DragEdgeOverlay';
 import { FloatingTrash } from '../ui/FloatingTrash';
@@ -33,13 +34,13 @@ interface BoardViewProps {
  * so the socket connection survives route changes. This component
  * does NOT own the socket lifecycle — it only joins/leaves boards.
  *
- * +----------+-----------------------------+
- * |          |         Header              |
- * | Sidebar  +-----------------------------+
- * |          |                             |
- * |          |         Canvas              |
- * |          |                             |
- * +----------+-----------------------------+
+ * +------------------------------------------+
+ * |              Header (full width)         |
+ * +----------+--------------------+----------+
+ * |          |                    |          |
+ * | Sidebar  |      Canvas       | RightSB  |
+ * |          |                    |          |
+ * +----------+--------------------+----------+
  *
  * Offline overlay only shows when authenticated but socket is disconnected
  * (per .clauderules: offline = read-only canvas).
@@ -151,12 +152,15 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
   return (
     <div className={styles.appLayout}>
-      <Sidebar />
+      <Header />
       <div className={styles.mainArea}>
-        <Header />
+        <Sidebar />
         <Canvas socketRef={socketRef} />
+        <RightSidebar />
       </div>
-      <RightSidebar />
+
+      {/* Floating custom color picker — positioned next to the sidebar */}
+      <ColorPickerPanel />
 
       {/* Sticky note text editing modal — driven by editingObjectId in boardStore */}
       <StickyEditModal />

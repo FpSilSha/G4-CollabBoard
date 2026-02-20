@@ -63,13 +63,13 @@
 
 .swatchGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, 32px);
   gap: 6px;
 }
 
 .swatch {
-  width: 100%;
-  aspect-ratio: 1;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
   border: 2px solid transparent;
   cursor: pointer;
@@ -136,13 +136,31 @@
   border-color: var(--text-secondary);
 }
 
+.addButtonActive {
+  background: var(--focus-blue);
+  color: #ffffff;
+  border-color: var(--focus-blue);
+  border-style: solid;
+}
+
+.addButtonActive:hover {
+  background: var(--focus-blue);
+  color: #ffffff;
+  border-color: var(--focus-blue);
+}
+
 /* ============================
    Custom Color Slots (5×2 grid)
    ============================ */
 
 /* Override grid to 5 columns for saved colors */
 .savedHeader + .swatchGrid {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, 28px);
+}
+
+.savedHeader + .swatchGrid .swatch {
+  width: 28px;
+  height: 28px;
 }
 
 .customSwatch {

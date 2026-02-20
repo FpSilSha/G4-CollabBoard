@@ -35,8 +35,8 @@
 
 .edgeToggle {
   position: fixed;
-  top: 50%;
-  /* Sidebar width = 200px, so place at the sidebar's right edge */
+  /* Center vertically in the sidebar area (below the header) */
+  top: calc(var(--header-height) + (100vh - var(--header-height)) / 2);
   left: var(--sidebar-width);
   transform: translateY(-50%);
   width: 28px;

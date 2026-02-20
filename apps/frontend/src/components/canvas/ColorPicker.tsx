@@ -8,7 +8,6 @@ import {
   type ColorPaletteKey,
 } from 'shared';
 import { updateStickyColor, updateFrameColor } from '../../utils/fabricHelpers';
-import { ColorPickerPopover } from './ColorPickerPopover';
 import styles from './ColorPicker.module.css';
 
 /**
@@ -16,24 +15,22 @@ import styles from './ColorPicker.module.css';
  *
  * Shows four palette tabs (Pastel / Neon / Earth Tones / WCAG-Accessible),
  * each with 8 preset swatches. Below the palette, a "Saved Colors" section
- * displays up to 10 custom color slots (2 rows × 5). A "+" button opens a
- * popover with HSL sliders for creating custom colors.
+ * displays up to 10 custom color slots (2 rows × 5). A "+" button toggles
+ * the floating ColorPickerPanel (rendered at BoardView level, outside the
+ * sidebar DOM) for creating custom colors via HSL sliders.
  */
 export function ColorPicker() {
   const activeColor = useUIStore((s) => s.activeColor);
   const setActiveColor = useUIStore((s) => s.setActiveColor);
   const customColors = useUIStore((s) => s.customColors);
-  const addCustomColor = useUIStore((s) => s.addCustomColor);
-
-  const [activeTab, setActiveTab] = useState<ColorPaletteKey>('pastel');
-  const [popoverOpen, setPopoverOpen] = useState(false);
+  const activeTab = useUIStore((s) => s.colorPaletteTab);
+  const setActiveTab = useUIStore((s) => s.setColorPaletteTab);
+  const colorPickerOpen = useUIStore((s) => s.colorPickerOpen);
+  const setColorPickerOpen = useUIStore((s) => s.setColorPickerOpen);
 
   // Track which custom slot should play the bounce animation.
   const [bouncingSlot, setBouncingSlot] = useState<number | null>(null);
   const prevCustomColorsRef = useRef<string[]>(customColors);
-
-  // Ref for the "+" button — anchor for popover positioning
-  const addBtnRef = useRef<HTMLButtonElement>(null);
 
   // Detect when a new custom color is added and trigger bounce
   useEffect(() => {
@@ -93,18 +90,9 @@ export function ColorPicker() {
     [setActiveColor],
   );
 
-  /** Handle adding a custom color from the popover */
-  const handleAddCustomColor = useCallback(
-    (hex: string) => {
-      addCustomColor(hex);
-      setPopoverOpen(false);
-    },
-    [addCustomColor],
-  );
-
   return (
     <div className={styles.colorPicker}>
-      {/* Dynamic label — "Colors - {Full Tab Name}" */}
+      {/* Dynamic label — "Colors – {Full Tab Name}" */}
       <div className={styles.label}>
         Colors &ndash; {currentTab.fullLabel}
       </div>
@@ -146,9 +134,8 @@ export function ColorPicker() {
       <div className={styles.savedHeader}>
         <span className={styles.savedLabel}>Saved Colors</span>
         <button
-          ref={addBtnRef}
-          className={styles.addButton}
-          onClick={() => setPopoverOpen((prev) => !prev)}
+          className={`${styles.addButton} ${colorPickerOpen ? styles.addButtonActive : ''}`}
+          onClick={() => setColorPickerOpen(!colorPickerOpen)}
           title="Add a custom color"
           aria-label="Add a custom color"
         >
@@ -181,15 +168,6 @@ export function ColorPicker() {
           />
         ))}
       </div>
-
-      {/* Custom color popover (HSL picker) */}
-      {popoverOpen && (
-        <ColorPickerPopover
-          anchorRef={addBtnRef}
-          onAdd={handleAddCustomColor}
-          onClose={() => setPopoverOpen(false)}
-        />
-      )}
     </div>
   );
 }
