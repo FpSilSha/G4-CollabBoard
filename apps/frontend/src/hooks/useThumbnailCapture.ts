@@ -164,13 +164,17 @@ export function useThumbnailCapture(
   function capture() {
     // Cooldown check (frontend)
     const now = Date.now();
-    if (now - lastCaptureRef.current < COOLDOWN_MS) {
+    const elapsed = now - lastCaptureRef.current;
+    if (elapsed < COOLDOWN_MS) {
+      console.debug(`[Thumbnail] Cooldown active (${Math.round(elapsed / 1000)}s / ${COOLDOWN_MS / 1000}s)`);
       return;
     }
 
     const { canvas, boardId, boardVersion, objects } = useBoardStore.getState();
 
-    if (!canvas || !boardId || objects.size === 0) return;
+    if (!canvas) { console.debug('[Thumbnail] No canvas'); return; }
+    if (!boardId) { console.debug('[Thumbnail] No boardId'); return; }
+    if (objects.size === 0) { console.debug('[Thumbnail] No objects in store'); return; }
 
     const token = cachedTokenRef.current;
     if (!token) {
@@ -183,7 +187,9 @@ export function useThumbnailCapture(
 
     // Find the densest content area
     const region = findDensestRegion(objects, canvasW, canvasH);
-    if (!region) return;
+    if (!region) { console.debug('[Thumbnail] No dense region found'); return; }
+
+    console.debug(`[Thumbnail] Capturing: boardId=${boardId}, objects=${objects.size}, center=(${Math.round(region.cx)}, ${Math.round(region.cy)})`);
 
     try {
       // Save current viewport
@@ -211,6 +217,8 @@ export function useThumbnailCapture(
       canvas.setZoom(savedZoom);
       canvas.renderAll();
 
+      console.debug(`[Thumbnail] Captured: ${thumbnail.length} chars`);
+
       // Size guard
       if (thumbnail.length > MAX_THUMBNAIL_LENGTH) {
         console.warn('[Thumbnail] Captured data exceeds 200KB, skipping upload');
@@ -229,6 +237,8 @@ export function useThumbnailCapture(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ thumbnail, version: boardVersion }),
+      }).then((res) => {
+        console.debug(`[Thumbnail] Upload response: ${res.status}`);
       }).catch((err) => {
         console.warn('[Thumbnail] Upload failed:', err);
       });
@@ -245,8 +255,11 @@ export function useThumbnailCapture(
   useEffect(() => {
     if (!boardStateLoaded) return;
 
+    console.debug('[Thumbnail] boardStateLoaded=true, scheduling capture...');
+
     // Wait one animation frame so the canvas has actually painted
     const rafId = requestAnimationFrame(() => {
+      console.debug('[Thumbnail] RAF fired, calling capture()');
       capture();
       useBoardStore.getState().setBoardStateLoaded(false);
     });
