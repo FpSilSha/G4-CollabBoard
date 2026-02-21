@@ -47,27 +47,43 @@
   -moz-appearance: textfield;
 }
 
-/* Horizontally scrollable font selector row */
+/* Horizontally scrollable font selector — pill-shaped scrollbar */
 .fontScroll {
   display: flex;
   gap: 4px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
+
+  /* Firefox */
   scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) rgba(0, 0, 0, 0.04);
 }
 
 .fontScroll::-webkit-scrollbar {
-  height: 4px;
+  height: 6px;
 }
 
 .fontScroll::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  margin: 0 2px;
 }
 
 .fontScroll::-webkit-scrollbar-thumb {
-  background: var(--divider);
-  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+}
+
+.fontScroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Hide scrollbar arrows — clean pill shape */
+.fontScroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .fontBtn {

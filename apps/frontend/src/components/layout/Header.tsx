@@ -6,6 +6,7 @@ import { CANVAS_CONFIG } from 'shared';
 import { useBoardStore } from '../../stores/boardStore';
 import { usePresenceStore, type ConnectionStatus } from '../../stores/presenceStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useAIStore } from '../../stores/aiStore';
 import { teleportTo } from '../../utils/fabricHelpers';
 import styles from './Header.module.css';
 
@@ -238,6 +239,8 @@ function PresenceAvatars({
   remoteUsers: Map<string, import('shared').BoardUserInfo>;
 }) {
   const users = Array.from(remoteUsers.values());
+  const remoteAIActivity = useAIStore((s) => s.remoteAIActivity);
+
   if (users.length === 0) return null;
 
   // Show up to 5 avatars; if more, show a "+N" overflow badge
@@ -260,27 +263,35 @@ function PresenceAvatars({
 
   return (
     <div className={styles.presenceAvatars}>
-      {visible.map((user) => (
-        <button
-          key={user.userId}
-          className={styles.avatar}
-          style={{ backgroundColor: user.color }}
-          title={`Click to teleport to ${user.name}`}
-          onClick={() => handleAvatarClick(user.userId, user.name)}
-        >
-          {user.avatar && user.avatar.startsWith('http') ? (
-            <img
-              src={user.avatar}
-              alt={user.name}
-              className={styles.avatarImg}
-            />
-          ) : (
-            <span className={styles.avatarInitial}>
-              {user.avatar || user.name.charAt(0).toUpperCase()}
-            </span>
-          )}
-        </button>
-      ))}
+      {visible.map((user) => {
+        const aiActivity = remoteAIActivity.get(user.userId);
+        const isUsingAI = !!aiActivity;
+
+        return (
+          <button
+            key={user.userId}
+            className={`${styles.avatar} ${isUsingAI ? styles.avatarAI : ''}`}
+            style={{ backgroundColor: user.color }}
+            title={isUsingAI
+              ? `${user.name} is using Tacky: "${aiActivity.command}"`
+              : `Click to teleport to ${user.name}`
+            }
+            onClick={() => handleAvatarClick(user.userId, user.name)}
+          >
+            {user.avatar && user.avatar.startsWith('http') ? (
+              <img
+                src={user.avatar}
+                alt={user.name}
+                className={styles.avatarImg}
+              />
+            ) : (
+              <span className={styles.avatarInitial}>
+                {user.avatar || user.name.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </button>
+        );
+      })}
       {overflow > 0 && (
         <div className={styles.avatarOverflow} title={`${overflow} more`}>
           +{overflow}

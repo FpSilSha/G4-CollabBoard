@@ -275,6 +275,42 @@ export function createCircle(options: {
 }
 
 /**
+ * Creates a Fabric.js Polygon representing an equilateral-ish triangle.
+ */
+export function createTriangle(options: {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  id?: string;
+}): fabric.Polygon {
+  const id = options.id ?? generateLocalId();
+  const w = options.width ?? OBJECT_DEFAULTS.SHAPE_WIDTH;
+  const h = options.height ?? OBJECT_DEFAULTS.SHAPE_HEIGHT;
+
+  const points = [
+    { x: w / 2, y: 0 },
+    { x: w, y: h },
+    { x: 0, y: h },
+  ];
+
+  return new fabric.Polygon(points, {
+    left: options.x,
+    top: options.y,
+    fill: options.color ?? SHAPE_COLORS[0],
+    stroke: '#000000',
+    strokeWidth: 1,
+    strokeLineJoin: 'round',
+    data: {
+      id,
+      type: 'shape',
+      shapeType: 'triangle',
+    },
+  });
+}
+
+/**
  * Creates a Fabric.js Polygon representing a thick directional arrow shape.
  * This is a shape (not a connector) — a filled polygon with shaft + arrowhead.
  */
@@ -1530,12 +1566,12 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
     };
   }
 
-  // Default: rectangle or polygon shape (arrow, star)
-  if (data.type === 'shape' && (data.shapeType === 'arrow' || data.shapeType === 'star')) {
+  // Default: rectangle or polygon shape (arrow, star, triangle)
+  if (data.type === 'shape' && (data.shapeType === 'arrow' || data.shapeType === 'star' || data.shapeType === 'triangle')) {
     return {
       ...base,
       type: 'shape' as const,
-      shapeType: data.shapeType as 'arrow' | 'star',
+      shapeType: data.shapeType as 'arrow' | 'star' | 'triangle',
       width: (fabricObj.width ?? 150) * scaleX,
       height: (fabricObj.height ?? 150) * scaleY,
       color: (fabricObj.fill as string) ?? SHAPE_COLORS[0],
@@ -1610,6 +1646,17 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         });
         if (obj.rotation) starShape.set('angle', obj.rotation);
         fabricObj = starShape;
+      } else if (obj.shapeType === 'triangle') {
+        const triShape = createTriangle({
+          x: obj.x,
+          y: obj.y,
+          width: obj.width,
+          height: obj.height,
+          color: obj.color,
+          id: obj.id,
+        });
+        if (obj.rotation) triShape.set('angle', obj.rotation);
+        fabricObj = triShape;
       } else if (obj.shapeType === 'rectangle') {
         const rect = createRectangle({
           x: obj.x,

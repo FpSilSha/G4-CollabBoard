@@ -69,27 +69,26 @@ export function useKeyboardShortcuts(
           break;
 
         case 'r':
-          // If an object is selected, toggle rotation mode; otherwise rectangle tool
+          // If an object is selected, toggle rotation mode; otherwise shape tool
           if (canvas) {
             const activeForRotation = canvas.getActiveObject();
             if (activeForRotation && activeForRotation.type !== 'activeSelection') {
               e.preventDefault();
               toggleRotationMode(canvas, activeForRotation);
             } else {
-              useUIStore.getState().setActiveTool('rectangle');
+              // Activate whichever shape sub-tool is currently selected
+              useUIStore.getState().setActiveTool(useUIStore.getState().activeShapeTool);
             }
           } else {
-            useUIStore.getState().setActiveTool('rectangle');
+            useUIStore.getState().setActiveTool(useUIStore.getState().activeShapeTool);
           }
           break;
 
         case 'c':
-          // Ctrl+C = copy, plain C = circle tool
+          // Ctrl+C = copy, plain C = no longer a tool shortcut (circle is in shape panel)
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             handleCopy();
-          } else {
-            useUIStore.getState().setActiveTool('circle');
           }
           break;
 
@@ -103,14 +102,6 @@ export function useKeyboardShortcuts(
 
         case 'f':
           useUIStore.getState().setActiveTool('frame');
-          break;
-
-        case 'a':
-          useUIStore.getState().setActiveTool('arrow');
-          break;
-
-        case 'g':
-          useUIStore.getState().setActiveTool('star');
           break;
 
         case 'n':

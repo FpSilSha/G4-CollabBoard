@@ -15,7 +15,10 @@ import { useBoardStore } from './boardStore';
  * - 'connector': click-and-drag to create a connector (snaps to objects)
  * - 'dropper': click an object to sample its fill color
  */
-export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'line' | 'connector' | 'dropper' | 'placeFlag' | 'arrow' | 'star';
+export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'line' | 'connector' | 'dropper' | 'placeFlag' | 'arrow' | 'star' | 'triangle';
+
+/** Shape sub-tools available in the shape options panel. */
+export type ShapeTool = 'rectangle' | 'circle' | 'triangle' | 'star' | 'arrow';
 
 /** Maximum number of custom color slots (2 rows of 5) */
 const MAX_CUSTOM_COLORS = 10;
@@ -110,6 +113,10 @@ interface UIState {
   setLineStrokePattern: (pattern: LineStrokePattern) => void;
   lineStrokeWeight: LineStrokeWeight;
   setLineStrokeWeight: (weight: LineStrokeWeight) => void;
+
+  // Shape sub-tool (which shape is selected in the shape options panel)
+  activeShapeTool: ShapeTool;
+  setActiveShapeTool: (shape: ShapeTool) => void;
 
   // Text tool styling defaults (persist between creates)
   textFontSize: number;
@@ -247,6 +254,9 @@ export const useUIStore = create<UIState>((set) => ({
   setLineStrokePattern: (pattern) => set({ lineStrokePattern: pattern }),
   lineStrokeWeight: 'normal' as LineStrokeWeight,
   setLineStrokeWeight: (weight) => set({ lineStrokeWeight: weight }),
+
+  activeShapeTool: 'rectangle' as ShapeTool,
+  setActiveShapeTool: (shape) => set({ activeShapeTool: shape, activeTool: shape }),
 
   textFontSize: 24,
   setTextFontSize: (size) => set({ textFontSize: size }),

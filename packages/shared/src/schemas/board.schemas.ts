@@ -40,7 +40,7 @@ export const StickyNoteCreateSchema = z.object({
 export const ShapeCreateSchema = z.object({
   ...BaseObjectFields,
   type: z.literal('shape'),
-  shapeType: z.enum(['rectangle', 'circle', 'line', 'arrow', 'star']),
+  shapeType: z.enum(['rectangle', 'circle', 'line', 'arrow', 'star', 'triangle']),
   width: dimension,
   height: dimension,
   color: hexColor,
@@ -112,7 +112,7 @@ export const ObjectUpdateSchema = z.object({
   rotation: rotation.optional(),
   fontSize: z.number().min(8).max(200).optional(),
   title: z.string().max(255).optional(),
-  shapeType: z.enum(['rectangle', 'circle', 'line', 'arrow', 'star']).optional(),
+  shapeType: z.enum(['rectangle', 'circle', 'line', 'arrow', 'star', 'triangle']).optional(),
   style: z.enum(['line', 'arrow']).optional(),
   fromObjectId: z.string().optional(),
   toObjectId: z.string().optional(),

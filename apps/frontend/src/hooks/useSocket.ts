@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth0 } from '@auth0/auth0-react';
-import { WebSocketEvent, WEBSOCKET_CONFIG, type AuthSuccessPayload } from 'shared';
+import { WebSocketEvent, WEBSOCKET_CONFIG, type AuthSuccessPayload, type AIThinkingPayload, type AICompletePayload } from 'shared';
 import { usePresenceStore } from '../stores/presenceStore';
 import { useBoardStore } from '../stores/boardStore';
+import { useAIStore } from '../stores/aiStore';
 import { setSocketRef } from '../stores/socketRef';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
@@ -135,6 +136,20 @@ export function useSocket() {
           setConnectionStatus('displaced');
           stopHeartbeat();
           displacedRef.current = true;
+        });
+
+        // --- AI activity broadcasts (other users using Tacky) ---
+        socket.on(WebSocketEvent.AI_THINKING, (payload: AIThinkingPayload) => {
+          // Skip our own AI activity — we already show it locally
+          const localUserId = usePresenceStore.getState().localUserId;
+          if (payload.userId === localUserId) return;
+          useAIStore.getState().setRemoteAIThinking(payload.userId, payload.command, payload.timestamp);
+        });
+
+        socket.on(WebSocketEvent.AI_COMPLETE, (payload: AICompletePayload) => {
+          const localUserId = usePresenceStore.getState().localUserId;
+          if (payload.userId === localUserId) return;
+          useAIStore.getState().clearRemoteAIActivity(payload.userId);
         });
 
         socket.on('disconnect', () => {

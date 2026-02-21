@@ -1,5 +1,5 @@
 import { fabric } from 'fabric';
-import { useUIStore, Tool } from '../../stores/uiStore';
+import { useUIStore, Tool, type ShapeTool } from '../../stores/uiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import { ColorPicker } from '../canvas/ColorPicker';
 import { ToolOptionsPanel } from '../toolbar/ToolOptionsPanel';
@@ -19,9 +19,13 @@ import styles from './Sidebar.module.css';
  * The sidebar can be collapsed to free up canvas space. When collapsed,
  * a small "lip" tab sticks out from the left edge for re-opening.
  */
+/** Shape tool names used to highlight the Shape button when any shape sub-tool is active. */
+const SHAPE_TOOLS = new Set<Tool>(['rectangle', 'circle', 'triangle', 'star', 'arrow']);
+
 export function Sidebar() {
   const activeTool = useUIStore((s) => s.activeTool);
   const setActiveTool = useUIStore((s) => s.setActiveTool);
+  const activeShapeTool = useUIStore((s) => s.activeShapeTool);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
 
@@ -83,39 +87,13 @@ export function Sidebar() {
               />
               <DraggableToolButton
                 icon={<RectangleIcon />}
-                label="Rectangle (R)"
+                label="Shape (R)"
                 shortcut="R"
-                tool="rectangle"
+                tool={activeShapeTool}
                 activeTool={activeTool}
-                onClick={setActiveTool}
-                onDragStart={(e) => handleDragStart(e, 'rectangle')}
-              />
-              <DraggableToolButton
-                icon={<CircleIcon />}
-                label="Circle (C)"
-                shortcut="C"
-                tool="circle"
-                activeTool={activeTool}
-                onClick={setActiveTool}
-                onDragStart={(e) => handleDragStart(e, 'circle')}
-              />
-              <DraggableToolButton
-                icon={<ArrowShapeIcon />}
-                label="Arrow Shape (A)"
-                shortcut="A"
-                tool="arrow"
-                activeTool={activeTool}
-                onClick={setActiveTool}
-                onDragStart={(e) => handleDragStart(e, 'arrow')}
-              />
-              <DraggableToolButton
-                icon={<StarIcon />}
-                label="Star (G)"
-                shortcut="G"
-                tool="star"
-                activeTool={activeTool}
-                onClick={setActiveTool}
-                onDragStart={(e) => handleDragStart(e, 'star')}
+                isActive={SHAPE_TOOLS.has(activeTool)}
+                onClick={() => setActiveTool(activeShapeTool)}
+                onDragStart={(e) => handleDragStart(e, activeShapeTool)}
               />
               <DraggableToolButton
                 icon={<TextIcon />}
@@ -206,10 +184,11 @@ function DraggableToolButton(props: {
   shortcut?: string;
   tool: Tool;
   activeTool: Tool;
-  onClick: (tool: Tool) => void;
+  isActive?: boolean;
+  onClick: ((tool: Tool) => void) | (() => void);
   onDragStart: (e: React.DragEvent) => void;
 }) {
-  const isActive = props.tool === props.activeTool;
+  const isActive = props.isActive ?? (props.tool === props.activeTool);
   return (
     <div
       className={`${styles.draggableItem} ${isActive ? styles.active : ''}`}

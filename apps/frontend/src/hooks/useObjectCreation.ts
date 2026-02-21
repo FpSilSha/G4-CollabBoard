@@ -17,6 +17,7 @@ import {
   createLine,
   createArrow,
   createStar,
+  createTriangle,
   createFlagMarker,
   fabricToBoardObject,
   getStickyChildren,
@@ -805,6 +806,8 @@ function createFabricObject(
       return createArrow({ x, y, color });
     case 'star':
       return createStar({ x, y, color });
+    case 'triangle':
+      return createTriangle({ x, y, color });
     case 'text': {
       const uiState = useUIStore.getState();
       return createTextElement({
