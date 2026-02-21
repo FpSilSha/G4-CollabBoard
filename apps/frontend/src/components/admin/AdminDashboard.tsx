@@ -764,18 +764,9 @@ function LatencyTable({
     <div className={styles.tableCard}>
       <h3 className={styles.tableTitle}>{title}</h3>
       <table className={styles.table}>
-        <colgroup>
-          <col />
-          <col style={{ width: 72 }} />
-          <col style={{ width: 72 }} />
-          <col style={{ width: 72 }} />
-          <col style={{ width: 72 }} />
-          <col style={{ width: 72 }} />
-          <col style={{ width: 72 }} />
-        </colgroup>
         <thead>
           <tr>
-            <th className={styles.nameCell}>Endpoint</th>
+            <th>Endpoint</th>
             <th className={styles.numCell}>Count</th>
             <th className={styles.numCell}>Avg</th>
             <th className={styles.numCell}>p50</th>
@@ -787,7 +778,7 @@ function LatencyTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.label}>
-              <td className={styles.nameCell}>{row.label}</td>
+              <td>{row.label}</td>
               <td className={styles.numCell}>{formatNumber(row.count)}</td>
               <td className={styles.numCell}>{row.latency ? formatMs(row.latency.avg) : '—'}</td>
               <td className={styles.numCell}>{row.latency ? formatMs(row.latency.p50) : '—'}</td>
@@ -829,20 +820,16 @@ function CounterTable({
     <div className={styles.tableCard}>
       <h3 className={styles.tableTitle}>{title}</h3>
       <table className={styles.table}>
-        <colgroup>
-          <col />
-          <col style={{ width: 80 }} />
-        </colgroup>
         <thead>
           <tr>
-            <th className={styles.nameCell}>Event</th>
+            <th>Event</th>
             <th className={styles.numCell}>Count</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(([event, count]) => (
             <tr key={event}>
-              <td className={styles.nameCell}>{event}</td>
+              <td>{event}</td>
               <td className={styles.numCell}>{formatNumber(count)}</td>
             </tr>
           ))}

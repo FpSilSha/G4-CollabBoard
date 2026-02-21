@@ -261,6 +261,17 @@ export const metricsService = {
     success: boolean;
     errorCode?: string;
     model?: string;
+    /**
+     * When model escalation occurs, pass per-model token/cost splits here.
+     * Each entry gets its own per-model counters. The aggregate counters
+     * (total, success, failure, latency) are recorded once for the command.
+     */
+    modelSplits?: Array<{
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      costCents: number;
+    }>;
   }): void {
     const totalTokens = stats.inputTokens + stats.outputTokens;
     hincrby(KEYS.AI, 'total');
@@ -275,7 +286,24 @@ export const metricsService = {
     recordLatency('ai:command', stats.latencyMs);
 
     // Per-model tracking (keyed by short name: "haiku" or "sonnet")
-    if (stats.model) {
+    if (stats.modelSplits && stats.modelSplits.length > 0) {
+      // Escalated command — record each model's portion separately.
+      // The "total" and "success/failure" count goes to each model that
+      // participated, so the per-model totals sum to more than aggregate.
+      // This is intentional — each model "handled" part of the command.
+      for (const split of stats.modelSplits) {
+        if (split.inputTokens === 0 && split.outputTokens === 0) continue;
+        const shortModel = split.model.includes('haiku') ? 'haiku' : 'sonnet';
+        const modelKey = `metrics:ai:model:${shortModel}`;
+        hincrby(modelKey, 'total');
+        hincrby(modelKey, stats.success ? 'success' : 'failure');
+        hincrby(modelKey, 'cost_cents', split.costCents);
+        hincrby(modelKey, 'input_tokens', split.inputTokens);
+        hincrby(modelKey, 'output_tokens', split.outputTokens);
+        recordLatency(`ai:model:${shortModel}`, stats.latencyMs);
+      }
+    } else if (stats.model) {
+      // Single-model command (no escalation)
       const shortModel = stats.model.includes('haiku') ? 'haiku' : 'sonnet';
       const modelKey = `metrics:ai:model:${shortModel}`;
       hincrby(modelKey, 'total');

@@ -253,7 +253,7 @@ export const aiService = {
         toolCallCount: allOperations.length,
       });
 
-      // Record failure in metrics
+      // Record failure in metrics (with per-model splits when escalated)
       metricsService.recordAICommand({
         latencyMs: Date.now() - startTime,
         costCents,
@@ -262,6 +262,12 @@ export const aiService = {
         success: false,
         errorCode: 'AI_EXECUTION_FAILED',
         model,
+        ...(escalated ? {
+          modelSplits: [
+            { model: haikuModel, inputTokens: haikuInputTokens, outputTokens: haikuOutputTokens, costCents: calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel) },
+            { model: sonnetModel, inputTokens: sonnetInputTokens, outputTokens: sonnetOutputTokens, costCents: calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel) },
+          ],
+        } : {}),
       });
 
       // Audit log
@@ -361,7 +367,7 @@ export const aiService = {
       },
     });
 
-    // 9. Record metrics
+    // 9. Record metrics (with per-model splits when escalated)
     metricsService.recordAICommand({
       latencyMs: Date.now() - startTime,
       costCents,
@@ -369,6 +375,12 @@ export const aiService = {
       outputTokens: totalOutputTokens,
       success: true,
       model,
+      ...(escalated ? {
+        modelSplits: [
+          { model: haikuModel, inputTokens: haikuInputTokens, outputTokens: haikuOutputTokens, costCents: calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel) },
+          { model: sonnetModel, inputTokens: sonnetInputTokens, outputTokens: sonnetOutputTokens, costCents: calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel) },
+        ],
+      } : {}),
     });
 
     // 10. Broadcast ai:complete
