@@ -788,6 +788,14 @@ export function useCanvasSync(
       const currentLocalUserId = usePresenceStore.getState().localUserId;
       if (userId === currentLocalUserId) return;
 
+      // Deduplicate — skip if flag already exists (e.g. board:state race)
+      const existingFlags = useFlagStore.getState().flags;
+      if (existingFlags.some((f) => f.id === flag.id)) return;
+
+      // Skip if marker already on canvas
+      const existingMarker = canvas.getObjects().find((o) => o.data?.flagId === flag.id);
+      if (existingMarker) return;
+
       // Add marker to canvas
       const marker = createFlagMarker({
         x: flag.x,
