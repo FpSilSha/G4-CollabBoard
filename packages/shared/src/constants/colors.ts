@@ -84,14 +84,14 @@ export const EARTH_TONE_COLORS = [
 
 /** WCAG-accessible colors — high contrast, colorblind-safe */
 export const WCAG_COLORS = [
-  '#FDD835', // Accessible Yellow
-  '#66BB6A', // Accessible Green
-  '#42A5F5', // Accessible Blue
-  '#EF9A9A', // Accessible Red
-  '#FFCC80', // Accessible Orange
-  '#CE93D8', // Accessible Purple
-  '#80DEEA', // Accessible Teal
-  '#000000', // Black
+  '#052861', // Deep Navy
+  '#C37C09', // Amber
+  '#771FAD', // Vivid Purple
+  '#17191C', // Near Black
+  '#6B7280', // Slate Gray
+  '#9EC1FA', // Soft Blue
+  '#773B22', // Sienna
+  '#8AAD1F', // Olive Green
 ] as const;
 
 /** All tabbed palettes in display order */

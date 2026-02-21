@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { teleportFlagService } from '../services/teleportFlagService';
+import { WebSocketEvent } from 'shared';
+import { getIO } from '../websocket/server';
+import { trackedEmit } from '../websocket/wsMetrics';
 
 export const teleportFlagController = {
   /**
@@ -49,8 +52,21 @@ export const teleportFlagController = {
    */
   async deleteFlag(req: Request, res: Response, next: NextFunction) {
     try {
+      const { sub } = (req as AuthenticatedRequest).user;
       const { id: boardId, flagId } = req.params;
       const result = await teleportFlagService.deleteFlag(boardId, flagId);
+
+      // Broadcast to all clients in the board room (including sender).
+      // Uses io.to() because this is a REST controller — no socket context.
+      // Frontend skips the event if userId matches local user (already removed optimistically).
+      const io = getIO();
+      trackedEmit(io.to(boardId), WebSocketEvent.FLAG_DELETED, {
+        boardId,
+        flagId,
+        userId: sub,
+        timestamp: Date.now(),
+      });
+
       res.json(result);
     } catch (err) {
       next(err);

@@ -48,6 +48,8 @@ export function useCanvas(
       preserveObjectStacking: true,
       stopContextMenu: true,
       fireRightClick: true,
+      renderOnAddRemove: false,  // Batch adds during board:state — render once after all objects added
+      skipOffscreen: true,       // Skip rendering objects entirely outside viewport
     });
 
     fabricRef.current = canvas;
@@ -355,10 +357,14 @@ function setupDotGrid(canvas: fabric.Canvas): void {
     const vpt = canvas.viewportTransform!;
     const zoom = canvas.getZoom();
 
-    // Hide dots at zoom <= 0.3 to prevent lag
-    if (zoom <= 0.3) return;
+    // Hide dots at zoom <= 0.3 (too sparse to be useful)
+    // Hide dots at zoom >= 3.0 (too dense, performance waste)
+    if (zoom <= 0.3 || zoom >= 3.0) return;
 
     const spacing = UI_COLORS.DOT_GRID_SPACING;
+    // At low zoom, double spacing to halve dot count
+    const effectiveSpacing = zoom <= 0.5 ? spacing * 2 : spacing;
+
     const canvasWidth = canvas.getWidth();
     const canvasHeight = canvas.getHeight();
 
@@ -369,22 +375,24 @@ function setupDotGrid(canvas: fabric.Canvas): void {
     const endY = startY + canvasHeight / zoom;
 
     // Round to nearest grid line
-    const firstCol = Math.floor(startX / spacing) * spacing;
-    const firstRow = Math.floor(startY / spacing) * spacing;
+    const firstCol = Math.floor(startX / effectiveSpacing) * effectiveSpacing;
+    const firstRow = Math.floor(startY / effectiveSpacing) * effectiveSpacing;
 
     ctx.save();
     ctx.fillStyle = UI_COLORS.DOT_GRID_COLOR;
 
-    for (let x = firstCol; x <= endX; x += spacing) {
-      for (let y = firstRow; y <= endY; y += spacing) {
+    // Batch all dots into a single path — one beginPath + one fill
+    // instead of 3 API calls per dot (~9,720 → 2 calls total)
+    ctx.beginPath();
+    for (let x = firstCol; x <= endX; x += effectiveSpacing) {
+      for (let y = firstRow; y <= endY; y += effectiveSpacing) {
         const screenX = x * zoom + vpt[4];
         const screenY = y * zoom + vpt[5];
-
-        ctx.beginPath();
+        ctx.moveTo(screenX + 1, screenY);
         ctx.arc(screenX, screenY, 1, 0, Math.PI * 2);
-        ctx.fill();
       }
     }
+    ctx.fill();
 
     ctx.restore();
   };
@@ -498,7 +506,7 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     // Apply a very aggressive shadow glow: full color, huge blur, full opacity
     obj.set('shadow', new fabric.Shadow({
       color: hex,
-      blur: 60,
+      blur: 20,
       offsetX: 0,
       offsetY: 0,
     }));
@@ -531,7 +539,7 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     const hex = getObjectFillColor(obj);
     obj.set('shadow', new fabric.Shadow({
       color: hex,
-      blur: 60,
+      blur: 20,
       offsetX: 0,
       offsetY: 0,
     }));

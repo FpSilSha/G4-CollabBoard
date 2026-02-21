@@ -16,6 +16,7 @@ import {
   type ObjectsBatchCreatedPayload,
   type ObjectsBatchDeletedPayload,
   type BoardObject,
+  type FlagDeletedPayload,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { usePresenceStore } from '../stores/presenceStore';
@@ -777,6 +778,28 @@ export function useCanvasSync(
     };
     socket.on(WebSocketEvent.BOARD_RENAMED, handleBoardRenamed);
 
+    // --- flag:deleted (another user deleted a teleport flag via REST) ---
+    const handleFlagDeleted = (payload: FlagDeletedPayload) => {
+      const { flagId, userId } = payload;
+
+      // Skip if we initiated the deletion (already removed locally)
+      const localUserId = usePresenceStore.getState().localUserId;
+      if (userId === localUserId) return;
+
+      // Remove flag marker from canvas (flags use data.flagId, not data.id)
+      const marker = canvas.getObjects().find((o) => o.data?.flagId === flagId);
+      if (marker) {
+        canvas.remove(marker);
+        canvas.requestRenderAll();
+      }
+
+      // Remove from flag store
+      useFlagStore.setState((s) => ({
+        flags: s.flags.filter((f) => f.id !== flagId),
+      }));
+    };
+    socket.on(WebSocketEvent.FLAG_DELETED, handleFlagDeleted);
+
     // =========================================================
     // Cleanup
     // =========================================================
@@ -800,6 +823,7 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.EDIT_START, handleEditStartBroadcast);
       socket.off(WebSocketEvent.EDIT_END, handleEditEndBroadcast);
       socket.off(WebSocketEvent.BOARD_RENAMED, handleBoardRenamed);
+      socket.off(WebSocketEvent.FLAG_DELETED, handleFlagDeleted);
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();

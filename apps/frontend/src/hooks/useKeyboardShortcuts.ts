@@ -162,6 +162,13 @@ const marchingAntsIds = new Set<string>();
 let marchingAntsActive = false;
 let marchingAntsRafId: number | null = null;
 
+/**
+ * Cached Fabric object references for the marching ants animation.
+ * Populated once in startMarchingAnts(), iterated per frame in renderMarchingAnts().
+ * Avoids scanning all canvas objects (~500+) every frame to find the 1-10 matches.
+ */
+const marchingAntsObjects: fabric.Object[] = [];
+
 /** Handler ref so we can remove it on cleanup. */
 let marchingAntsClickHandler: (() => void) | null = null;
 
@@ -309,10 +316,12 @@ function startMarchingAnts(canvas: fabric.Canvas, objects: fabric.Object[]): voi
 
   marchingAntsActive = true;
 
-  // Track which object IDs should show the animation
+  // Track which object IDs should show the animation + cache references
+  marchingAntsObjects.length = 0;
   for (const obj of objects) {
     if (obj.data?.id) {
       marchingAntsIds.add(obj.data.id);
+      marchingAntsObjects.push(obj);
     }
   }
 
@@ -351,6 +360,7 @@ function dismissMarchingAnts(canvas: fabric.Canvas): void {
  */
 function stopMarchingAnts(canvas: fabric.Canvas): void {
   marchingAntsIds.clear();
+  marchingAntsObjects.length = 0;
   marchingAntsActive = false;
 
   if (marchingAntsRafId !== null) {
@@ -395,9 +405,9 @@ function renderMarchingAnts(): void {
   // Reset transform to pixel coordinates so we can draw in screen space
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  for (const obj of canvas.getObjects()) {
-    if (!obj.data?.id || !marchingAntsIds.has(obj.data.id)) continue;
-
+  // Iterate only cached objects (populated in startMarchingAnts),
+  // not all canvas objects — avoids O(N) scan on every frame.
+  for (const obj of marchingAntsObjects) {
     // Ensure coordinates are fresh
     obj.setCoords();
 
