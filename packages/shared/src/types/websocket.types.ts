@@ -51,6 +51,10 @@ export enum WebSocketEvent {
   // Heartbeat
   HEARTBEAT = 'heartbeat',
 
+  // AI
+  AI_THINKING = 'ai:thinking',
+  AI_COMPLETE = 'ai:complete',
+
   // Error
   ERROR = 'error',
 }
@@ -276,5 +280,21 @@ export interface FlagDeletedPayload {
   boardId: string;
   flagId: string;
   userId: string;
+  timestamp: number;
+}
+
+// --- AI Activity Payloads ---
+
+export interface AIThinkingPayload {
+  boardId: string;
+  userId: string;
+  command: string;
+  timestamp: number;
+}
+
+export interface AICompletePayload {
+  boardId: string;
+  userId: string;
+  operationCount: number;
   timestamp: number;
 }
