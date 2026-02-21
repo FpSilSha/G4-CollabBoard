@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { traceable } from 'langsmith/traceable';
-import type { ViewportBounds } from 'shared';
+import type { ViewportBounds, AICommandResponse } from 'shared';
 import { logger } from '../utils/logger';
 
 // ============================================================
@@ -11,7 +11,7 @@ import { logger } from '../utils/logger';
 // Not full LangChain — just the tracing primitives.
 //
 // Trace tree structure:
-//   collabboard-ai-agent (chain)
+//   collabboard-ai-command (chain) — top-level, shows user command as input
 //   ├── anthropic-tool-use (llm) — Turn 1
 //   ├── tool-execution: createFrame (tool)
 //   ├── anthropic-tool-use (llm) — Turn 2
@@ -71,6 +71,25 @@ export const tracedToolExecution = traceable(
     return await executeFn(toolName, input, boardId, userId, viewport);
   },
   { name: 'tool-execution', run_type: 'tool' }
+);
+
+/**
+ * Top-level trace wrapper for the entire AI command execution.
+ * This creates the parent "chain" in LangSmith that shows the user's
+ * command as its Input. All nested tracedAnthropicCall / tracedToolExecution
+ * calls become children of this trace.
+ *
+ * The first argument is the trace input — LangSmith displays it as the
+ * run's Input in the UI. The function return value becomes the Output.
+ */
+export const tracedCommandExecution = traceable(
+  async (
+    input: { command: string; boardId: string; userId: string; model: string },
+    executeFn: () => Promise<AICommandResponse>
+  ): Promise<AICommandResponse> => {
+    return await executeFn();
+  },
+  { name: 'collabboard-ai-command', run_type: 'chain' }
 );
 
 /**

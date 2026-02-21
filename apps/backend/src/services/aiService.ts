@@ -15,7 +15,7 @@ import { buildSystemPrompt } from '../ai/systemPrompt';
 import { AI_TOOLS } from '../ai/tools';
 import { toolExecutor } from '../ai/toolExecutor';
 import { classifyCommand } from '../ai/commandClassifier';
-import { tracedAnthropicCall, tracedToolExecution, getCurrentTraceId } from '../ai/tracing';
+import { tracedAnthropicCall, tracedToolExecution, tracedCommandExecution, getCurrentTraceId } from '../ai/tracing';
 import { aiBudgetService, calculateCostCents } from './aiBudgetService';
 import { aiChatService } from './aiChatService';
 import { auditService, AuditAction } from './auditService';
@@ -86,6 +86,12 @@ export const aiService = {
     // 2. Load per-user chat history
     const chatHistory = await aiChatService.getHistory(boardId, userId);
     const conversationId = await aiChatService.getOrCreateConversationId(boardId, userId);
+
+    // Wrap the entire agent loop in a top-level LangSmith trace.
+    // The first argument becomes the trace's Input in the LangSmith UI.
+    return tracedCommandExecution(
+      { command, boardId, userId, model },
+      async () => {
 
     // 3. Build messages array
     const messages: Anthropic.MessageParam[] = [
@@ -386,5 +392,8 @@ export const aiService = {
       },
       rateLimitRemaining: 0, // Will be set by controller from rate limit headers
     };
+
+      } // end tracedCommandExecution callback
+    ); // end tracedCommandExecution
   },
 };
