@@ -3,6 +3,7 @@ import {
   WebSocketEvent,
   AI_COLORS,
   AI_BROADCAST_USER_ID,
+  MAX_OBJECTS_PER_BOARD,
   type ViewportBounds,
   type AIOperation,
   type BoardObject,
@@ -35,6 +36,25 @@ export interface ToolExecutionResult {
 }
 
 // ============================================================
+// Guards
+// ============================================================
+
+/**
+ * Check that the board hasn't hit the hard object cap (2000).
+ * Throws an Error that the tool executor catch block converts
+ * into a tool_result error for the LLM to see.
+ */
+async function assertBoardNotFull(boardId: string): Promise<void> {
+  const cached = await boardService.getBoardStateFromRedis(boardId);
+  if (cached && cached.objects.length >= MAX_OBJECTS_PER_BOARD) {
+    throw new Error(
+      `Board has reached the maximum of ${MAX_OBJECTS_PER_BOARD} objects. ` +
+      `Delete some objects before creating new ones.`
+    );
+  }
+}
+
+// ============================================================
 // Individual Tool Implementations
 // ============================================================
 
@@ -43,6 +63,7 @@ async function executeCreateStickyNote(
   boardId: string,
   userId: string
 ): Promise<ToolExecutionResult> {
+  await assertBoardNotFull(boardId);
   const id = uuidv4();
   const now = new Date();
   const object: Record<string, unknown> = {
@@ -93,6 +114,7 @@ async function executeCreateShape(
   boardId: string,
   userId: string
 ): Promise<ToolExecutionResult> {
+  await assertBoardNotFull(boardId);
   const id = uuidv4();
   const now = new Date();
   const object: Record<string, unknown> = {
@@ -144,6 +166,7 @@ async function executeCreateFrame(
   boardId: string,
   userId: string
 ): Promise<ToolExecutionResult> {
+  await assertBoardNotFull(boardId);
   const id = uuidv4();
   const now = new Date();
   const object: Record<string, unknown> = {
@@ -195,6 +218,7 @@ async function executeCreateConnector(
   boardId: string,
   userId: string
 ): Promise<ToolExecutionResult> {
+  await assertBoardNotFull(boardId);
   const id = uuidv4();
   const now = new Date();
   const fromId = input.fromObjectId as string;
@@ -274,6 +298,7 @@ async function executeCreateTextElement(
   boardId: string,
   userId: string
 ): Promise<ToolExecutionResult> {
+  await assertBoardNotFull(boardId);
   const id = uuidv4();
   const now = new Date();
   const object: Record<string, unknown> = {

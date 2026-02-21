@@ -10,6 +10,10 @@ export const AI_CONFIG = {
   VIEWPORT_OBJECT_CAP: 50,
   CHAT_MAX_MESSAGES: 10,
   CHAT_HISTORY_TTL_SECONDS: 3600,
+  /** Max object-creation operations per single AI command. */
+  MAX_CREATIONS_PER_COMMAND: 50,
+  /** Max total tool calls (create + update + delete + read) per command. */
+  MAX_OPERATIONS_PER_COMMAND: 100,
 } as const;
 
 /**

@@ -3,6 +3,7 @@ import {
   WebSocketEvent,
   SONNET_MODEL_ID,
   HAIKU_MODEL_ID,
+  AI_CONFIG,
   type ViewportBounds,
   type AICommandResponse,
   type AIOperation,
@@ -118,6 +119,7 @@ export const aiService = {
     let sonnetInputTokens = 0;
     let sonnetOutputTokens = 0;
     let turn = 0;
+    let creationCount = 0;
     let finalMessage = '';
 
     try {
@@ -163,6 +165,33 @@ export const aiService = {
           const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
           for (const toolCall of toolUseBlocks) {
+            // Hard cap: stop executing tools if we've hit the operation limit
+            if (allOperations.length >= AI_CONFIG.MAX_OPERATIONS_PER_COMMAND) {
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolCall.id,
+                content: JSON.stringify({
+                  success: false,
+                  error: `Operation limit reached (${AI_CONFIG.MAX_OPERATIONS_PER_COMMAND}). Stop and summarize what was completed.`,
+                }),
+              });
+              continue;
+            }
+
+            // Hard cap: stop creating objects if we've hit the creation limit
+            const isCreationTool = toolCall.name.startsWith('create');
+            if (isCreationTool && creationCount >= AI_CONFIG.MAX_CREATIONS_PER_COMMAND) {
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolCall.id,
+                content: JSON.stringify({
+                  success: false,
+                  error: `Creation limit reached (${AI_CONFIG.MAX_CREATIONS_PER_COMMAND} objects). Stop creating and summarize what was completed.`,
+                }),
+              });
+              continue;
+            }
+
             // Execute tool with LangSmith tracing
             const result = await tracedToolExecution(
               toolCall.name,
@@ -175,6 +204,7 @@ export const aiService = {
 
             const typedResult = result as { output: Record<string, unknown>; operation: AIOperation };
             allOperations.push(typedResult.operation);
+            if (isCreationTool) creationCount++;
 
             toolResults.push({
               type: 'tool_result',
