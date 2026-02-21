@@ -3,6 +3,7 @@ import { fabric } from 'fabric';
 import { CANVAS_CONFIG, UI_COLORS, WebSocketEvent } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { useUIStore } from '../stores/uiStore';
+import { useFlagStore } from '../stores/flagStore';
 import {
   getObjectFillColor,
   getObjectsInsideFrame,
@@ -47,6 +48,8 @@ export function useCanvas(
       preserveObjectStacking: true,
       stopContextMenu: true,
       fireRightClick: true,
+      renderOnAddRemove: false,  // Batch adds during board:state — render once after all objects added
+      skipOffscreen: true,       // Skip rendering objects entirely outside viewport
     });
 
     fabricRef.current = canvas;
@@ -354,10 +357,14 @@ function setupDotGrid(canvas: fabric.Canvas): void {
     const vpt = canvas.viewportTransform!;
     const zoom = canvas.getZoom();
 
-    // Hide dots at zoom <= 0.3 to prevent lag
-    if (zoom <= 0.3) return;
+    // Hide dots at zoom <= 0.3 (too sparse to be useful)
+    // Hide dots at zoom >= 3.0 (too dense, performance waste)
+    if (zoom <= 0.3 || zoom >= 3.0) return;
 
     const spacing = UI_COLORS.DOT_GRID_SPACING;
+    // At low zoom, double spacing to halve dot count
+    const effectiveSpacing = zoom <= 0.5 ? spacing * 2 : spacing;
+
     const canvasWidth = canvas.getWidth();
     const canvasHeight = canvas.getHeight();
 
@@ -368,22 +375,24 @@ function setupDotGrid(canvas: fabric.Canvas): void {
     const endY = startY + canvasHeight / zoom;
 
     // Round to nearest grid line
-    const firstCol = Math.floor(startX / spacing) * spacing;
-    const firstRow = Math.floor(startY / spacing) * spacing;
+    const firstCol = Math.floor(startX / effectiveSpacing) * effectiveSpacing;
+    const firstRow = Math.floor(startY / effectiveSpacing) * effectiveSpacing;
 
     ctx.save();
     ctx.fillStyle = UI_COLORS.DOT_GRID_COLOR;
 
-    for (let x = firstCol; x <= endX; x += spacing) {
-      for (let y = firstRow; y <= endY; y += spacing) {
+    // Batch all dots into a single path — one beginPath + one fill
+    // instead of 3 API calls per dot (~9,720 → 2 calls total)
+    ctx.beginPath();
+    for (let x = firstCol; x <= endX; x += effectiveSpacing) {
+      for (let y = firstRow; y <= endY; y += effectiveSpacing) {
         const screenX = x * zoom + vpt[4];
         const screenY = y * zoom + vpt[5];
-
-        ctx.beginPath();
+        ctx.moveTo(screenX + 1, screenY);
         ctx.arc(screenX, screenY, 1, 0, Math.PI * 2);
-        ctx.fill();
       }
     }
+    ctx.fill();
 
     ctx.restore();
   };
@@ -432,7 +441,10 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
     lastPosY = evt.clientY;
     // setViewportTransform updates the transform AND refreshes the cached
     // canvas offset (via calcOffset), keeping pointer hit-testing accurate.
+    // NOTE: With renderOnAddRemove=false, setViewportTransform does NOT
+    // auto-render, so we must call requestRenderAll() explicitly.
     canvas.setViewportTransform(vpt);
+    canvas.requestRenderAll();
   });
 
   canvas.on('mouse:up', () => {
@@ -442,6 +454,8 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
       const upperCanvas = canvas.getElement().parentElement?.querySelector('.upper-canvas') as HTMLCanvasElement | null;
       if (upperCanvas) upperCanvas.style.cursor = 'default';
       canvas.selection = true;
+      // Notify RemoteCursors that viewport changed so positions update
+      useBoardStore.getState().bumpViewportVersion();
       canvas.calcOffset(); // Ensure offset cache is fresh after pan ends
       canvas.requestRenderAll();
     }
@@ -495,7 +509,7 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     // Apply a very aggressive shadow glow: full color, huge blur, full opacity
     obj.set('shadow', new fabric.Shadow({
       color: hex,
-      blur: 60,
+      blur: 20,
       offsetX: 0,
       offsetY: 0,
     }));
@@ -528,7 +542,7 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     const hex = getObjectFillColor(obj);
     obj.set('shadow', new fabric.Shadow({
       color: hex,
-      blur: 60,
+      blur: 20,
       offsetX: 0,
       offsetY: 0,
     }));
@@ -622,8 +636,11 @@ function setupZoomHandler(
       new fabric.Point(evt.offsetX, evt.offsetY),
       zoom
     );
+    // With renderOnAddRemove=false, zoomToPoint won't auto-render
+    canvas.requestRenderAll();
 
     setZoom(zoom);
+    useBoardStore.getState().bumpViewportVersion();
   });
 }
 
@@ -687,6 +704,21 @@ function setupDragState(
 
   function deleteObject(obj: fabric.Object): void {
     if (obj.data?.pinned) return;
+
+    // Teleport flags use flagId, not id — handle separately via REST API
+    if (obj.data?.type === 'teleportFlag') {
+      const flagId = obj.data?.flagId as string | undefined;
+      const boardId = useBoardStore.getState().boardId;
+      const token = useBoardStore.getState().cachedAuthToken;
+      if (flagId && boardId && token) {
+        canvas.remove(obj);
+        useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+          console.error('[drag-to-trash] Flag delete failed:', err);
+        });
+      }
+      return;
+    }
+
     const objectId = obj.data?.id;
 
     // Orphan children when deleting a frame via drag-to-trash
@@ -759,6 +791,21 @@ function setupDragState(
         const deletedIds: string[] = [];
         for (const obj of objects) {
           if (obj.data?.pinned) continue;
+
+          // Teleport flags use flagId — handle separately via REST API
+          if (obj.data?.type === 'teleportFlag') {
+            const flagId = obj.data?.flagId as string | undefined;
+            const boardId = useBoardStore.getState().boardId;
+            const token = useBoardStore.getState().cachedAuthToken;
+            if (flagId && boardId && token) {
+              canvas.remove(obj);
+              useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+                console.error('[drag-to-trash] Flag delete failed:', err);
+              });
+            }
+            continue;
+          }
+
           const objectId = obj.data?.id;
 
           // Orphan children when deleting a frame via drag-to-trash
@@ -885,6 +932,8 @@ function setupEdgeScroll(canvas: fabric.Canvas): () => void {
       vpt[4] -= dx;
       vpt[5] -= dy;
       canvas.setViewportTransform(vpt);
+      // With renderOnAddRemove=false, setViewportTransform won't auto-render
+      canvas.requestRenderAll();
 
       // Also move the active object(s) so they stay under the cursor
       const activeObj = canvas.getActiveObject();
@@ -918,6 +967,9 @@ function setupEdgeScroll(canvas: fabric.Canvas): () => void {
   };
 
   const onDragEnd = () => {
+    if (isDragging) {
+      useBoardStore.getState().bumpViewportVersion();
+    }
     isDragging = false;
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
@@ -1254,16 +1306,57 @@ function setupSelectionTracking(canvas: fabric.Canvas): () => void {
     }
   }
 
+  /**
+   * Auto-open the appropriate sidebar when a selection is created/updated:
+   * - Teleport flags → open right sidebar (flag list lives there)
+   * - Regular objects → open left sidebar if closed (object properties live there)
+   *
+   * Drag state handler already closes sidebars during drag and restores
+   * on drag end, so this fires correctly for simple click-to-select.
+   */
+  function autoOpenSidebar(): void {
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    // If drag is in progress, don't auto-open (drag handler manages sidebars)
+    if (useUIStore.getState().isDraggingObject) return;
+
+    const isTeleportFlag = active.type !== 'activeSelection' &&
+      active.data?.type === 'teleportFlag';
+
+    if (isTeleportFlag) {
+      // Open right sidebar for flag interaction
+      if (!useUIStore.getState().rightSidebarOpen) {
+        useUIStore.getState().setRightSidebarOpen(true);
+      }
+    } else {
+      // Open left sidebar for object properties
+      if (!useUIStore.getState().sidebarOpen) {
+        useUIStore.getState().setSidebarOpen(true);
+      }
+    }
+  }
+
   function onSelectionCreated(): void {
     updateSelection();
-    autoCloseRightSidebar();
     autoSwitchToSelectTool();
+    // Auto-open sidebar for selected object type; auto-close right sidebar
+    // if it was auto-opened from copy (but skip close if selecting a flag)
+    const active = canvas.getActiveObject();
+    const isTeleportFlag = active && active.type !== 'activeSelection' &&
+      active.data?.type === 'teleportFlag';
+    if (!isTeleportFlag) autoCloseRightSidebar();
+    autoOpenSidebar();
   }
 
   function onSelectionUpdated(): void {
     updateSelection();
-    autoCloseRightSidebar();
     autoSwitchToSelectTool();
+    const active = canvas.getActiveObject();
+    const isTeleportFlag = active && active.type !== 'activeSelection' &&
+      active.data?.type === 'teleportFlag';
+    if (!isTeleportFlag) autoCloseRightSidebar();
+    autoOpenSidebar();
   }
 
   canvas.on('selection:created', onSelectionCreated);

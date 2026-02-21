@@ -598,7 +598,7 @@ function createFabricObject(
     case 'circle':
       return createCircle({ x, y, color });
     case 'text':
-      return createTextElement({ x, y, color });
+      return createTextElement({ x, y, color: '#000000' });
     case 'frame':
       return createFrame({ x, y, color });
     case 'connector':

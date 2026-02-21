@@ -14,6 +14,7 @@ import { FloatingTrash } from '../ui/FloatingTrash';
 import { TextInputModal } from '../ui/TextInputModal';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useTeleportFlags } from '../../hooks/useTeleportFlags';
+import { useThumbnailCapture } from '../../hooks/useThumbnailCapture';
 import { usePresenceStore } from '../../stores/presenceStore';
 import { useBoardStore } from '../../stores/boardStore';
 import styles from '../../App.module.css';
@@ -108,6 +109,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
           if (data.version != null) {
             useBoardStore.getState().setBoardVersion(data.version);
           }
+          if (data.thumbnailUpdatedAt != null) {
+            useBoardStore.getState().setThumbnailUpdatedAt(data.thumbnailUpdatedAt);
+          }
         }
       } catch (err) {
         console.error('Failed to validate board:', err);
@@ -143,108 +147,25 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
       },
     }).then((token) => {
       cachedTokenRef.current = token;
+      useBoardStore.getState().setCachedAuthToken(token);
     }).catch(() => { /* non-critical */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Thumbnail capture: captures densest-area screenshot on board enter/leave.
+  // Auto-triggers on enter (via boardStateLoaded). capture() called on leave below.
+  const { capture: captureThumbnail } = useThumbnailCapture(cachedTokenRef);
+
   // Cleanup: leave board when truly unmounting (navigating away to dashboard
   // or another board). Deferred with setTimeout(0) so StrictMode's simulated
   // unmount→remount cycle can cancel it — prevents spurious board:leave.
-  // Also captures a "fit all objects" thumbnail snapshot for the dashboard card.
   useEffect(() => {
     return () => {
       mountedRef.current = false;
       const currentBoardId = useBoardStore.getState().boardId;
-      const canvas = useBoardStore.getState().canvas;
-      const boardVersion = useBoardStore.getState().boardVersion;
 
-      // Capture thumbnail before leaving (fire-and-forget).
-      // Computes the bounding box of all objects in *logical* (world) coordinates,
-      // sets the viewport to frame them with padding, captures, then restores.
-      if (currentBoardId && canvas) {
-        try {
-          const objects = canvas.getObjects();
-          if (objects.length > 0) {
-            // Save current viewport state
-            const savedVpt = canvas.viewportTransform
-              ? [...canvas.viewportTransform]
-              : [1, 0, 0, 1, 0, 0];
-            const savedZoom = canvas.getZoom();
-
-            // Reset viewport to identity so getBoundingRect returns logical
-            // (world) coordinates rather than screen-pixel coordinates.
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-
-            // Calculate bounding box of all objects in world coordinates
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            for (const obj of objects) {
-              const rect = obj.getBoundingRect(true, true);
-              minX = Math.min(minX, rect.left);
-              minY = Math.min(minY, rect.top);
-              maxX = Math.max(maxX, rect.left + rect.width);
-              maxY = Math.max(maxY, rect.top + rect.height);
-            }
-
-            const contentWidth = maxX - minX;
-            const contentHeight = maxY - minY;
-
-            if (contentWidth > 0 && contentHeight > 0) {
-              const canvasW = canvas.getWidth();
-              const canvasH = canvas.getHeight();
-
-              // Fit zoom with 5% padding
-              const padding = 0.05;
-              const fitZoom = Math.min(
-                canvasW / (contentWidth * (1 + padding * 2)),
-                canvasH / (contentHeight * (1 + padding * 2)),
-              );
-
-              // Center the content
-              const centerX = (minX + maxX) / 2;
-              const centerY = (minY + maxY) / 2;
-              const offsetX = canvasW / 2 - centerX * fitZoom;
-              const offsetY = canvasH / 2 - centerY * fitZoom;
-
-              // Apply fitted viewport and render
-              canvas.setViewportTransform([fitZoom, 0, 0, fitZoom, offsetX, offsetY]);
-              canvas.renderAll();
-
-              // Capture at ~300px wide
-              const multiplier = 300 / Math.max(canvasW, 1);
-              const thumbnail = canvas.toDataURL({
-                format: 'jpeg',
-                quality: 0.5,
-                multiplier,
-              });
-
-              // Restore original viewport immediately
-              canvas.setViewportTransform(savedVpt as unknown as number[]);
-              canvas.setZoom(savedZoom);
-              canvas.renderAll();
-
-              // Fire-and-forget upload using the pre-cached token
-              const token = cachedTokenRef.current;
-              if (token) {
-                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-                fetch(`${apiUrl}/boards/${currentBoardId}/thumbnail`, {
-                  method: 'PUT',
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ thumbnail, version: boardVersion }),
-                }).catch((err) => {
-                  console.warn('[BoardView] Thumbnail upload failed:', err);
-                });
-              } else {
-                console.warn('[BoardView] No cached token — skipping thumbnail upload');
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('[BoardView] Thumbnail capture failed:', err);
-        }
-      }
+      // Capture thumbnail before leaving (fire-and-forget, respects 5-min cooldown)
+      captureThumbnail();
 
       if (currentBoardId) {
         // Defer so StrictMode re-mount can cancel by setting mountedRef = true
@@ -253,6 +174,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
             leaveBoard(currentBoardId);
             useBoardStore.getState().setBoardId(null);
             useBoardStore.getState().clearObjects();
+            useBoardStore.getState().setThumbnailUpdatedAt(null);
+            useBoardStore.getState().setBoardStateLoaded(false);
+            useBoardStore.getState().setCachedAuthToken(null);
             usePresenceStore.getState().clearRemoteUsers();
             usePresenceStore.getState().clearRemoteCursors();
           }

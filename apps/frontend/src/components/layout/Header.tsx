@@ -47,6 +47,7 @@ export function Header() {
       canvas.getHeight() / 2
     );
     canvas.zoomToPoint(center, clamped);
+    canvas.requestRenderAll();
     setZoom(clamped);
   };
 
@@ -65,6 +66,7 @@ export function Header() {
     vpt[4] = canvas.getWidth() / 2;
     vpt[5] = canvas.getHeight() / 2;
     canvas.setViewportTransform(vpt);
+    canvas.requestRenderAll();
   };
 
   const zoomPercent = Math.round(zoom * 100);

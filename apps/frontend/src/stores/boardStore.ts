@@ -58,9 +58,31 @@ interface BoardState {
   addConcurrentEditor: (editor: { userId: string; userName: string }) => void;
   removeConcurrentEditor: (userId: string) => void;
 
-  // --- Zoom ---
+  // --- Thumbnail ---
+  // When the thumbnail was last captured (ISO string from server).
+  // Used by useThumbnailCapture to enforce 5-minute cooldown.
+  thumbnailUpdatedAt: string | null;
+  setThumbnailUpdatedAt: (ts: string | null) => void;
+
+  // Flipped to true by useCanvasSync after board:state objects are rendered.
+  // useThumbnailCapture watches this to trigger capture on board enter.
+  boardStateLoaded: boolean;
+  setBoardStateLoaded: (loaded: boolean) => void;
+
+  // --- Auth Token Cache ---
+  // Pre-fetched Auth0 token stored here so module-scoped functions
+  // (e.g., handleDeleteSelected, drag-to-trash) can access it without
+  // needing React hook context. Set by BoardView on mount.
+  cachedAuthToken: string | null;
+  setCachedAuthToken: (token: string | null) => void;
+
+  // --- Viewport ---
   zoom: number;
   setZoom: (zoom: number) => void;
+  // Monotonic counter incremented on any viewport change (pan or zoom).
+  // Used by RemoteCursors to trigger re-render when the viewport changes.
+  viewportVersion: number;
+  bumpViewportVersion: () => void;
 }
 
 export const useBoardStore = create<BoardState>((set) => ({
@@ -132,6 +154,17 @@ export const useBoardStore = create<BoardState>((set) => ({
       concurrentEditors: state.concurrentEditors.filter((e) => e.userId !== userId),
     })),
 
+  thumbnailUpdatedAt: null,
+  setThumbnailUpdatedAt: (ts) => set({ thumbnailUpdatedAt: ts }),
+
+  boardStateLoaded: false,
+  setBoardStateLoaded: (loaded) => set({ boardStateLoaded: loaded }),
+
+  cachedAuthToken: null,
+  setCachedAuthToken: (token) => set({ cachedAuthToken: token }),
+
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),
+  viewportVersion: 0,
+  bumpViewportVersion: () => set((s) => ({ viewportVersion: s.viewportVersion + 1 })),
 }));

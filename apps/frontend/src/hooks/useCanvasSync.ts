@@ -16,6 +16,9 @@ import {
   type ObjectsBatchCreatedPayload,
   type ObjectsBatchDeletedPayload,
   type BoardObject,
+  type FlagCreatedPayload,
+  type FlagUpdatedPayload,
+  type FlagDeletedPayload,
 } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { usePresenceStore } from '../stores/presenceStore';
@@ -337,6 +340,9 @@ export function useCanvasSync(
       }
 
       canvas.requestRenderAll();
+
+      // Signal that objects are rendered — useThumbnailCapture listens for this
+      useBoardStore.getState().setBoardStateLoaded(true);
 
       // Update presence — filter out local user
       const currentLocalUserId = usePresenceStore.getState().localUserId;
@@ -774,6 +780,97 @@ export function useCanvasSync(
     };
     socket.on(WebSocketEvent.BOARD_RENAMED, handleBoardRenamed);
 
+    // --- flag:created (another user placed a teleport flag via REST) ---
+    const handleFlagCreated = (payload: FlagCreatedPayload) => {
+      const { flag, userId } = payload;
+
+      // Skip if we created it (already added locally + on canvas)
+      const currentLocalUserId = usePresenceStore.getState().localUserId;
+      if (userId === currentLocalUserId) return;
+
+      // Deduplicate — skip if flag already exists (e.g. board:state race)
+      const existingFlags = useFlagStore.getState().flags;
+      if (existingFlags.some((f) => f.id === flag.id)) return;
+
+      // Skip if marker already on canvas
+      const existingMarker = canvas.getObjects().find((o) => o.data?.flagId === flag.id);
+      if (existingMarker) return;
+
+      // Add marker to canvas
+      const marker = createFlagMarker({
+        x: flag.x,
+        y: flag.y,
+        color: flag.color,
+        flagId: flag.id,
+        label: flag.label,
+      });
+      canvas.add(marker);
+      canvas.requestRenderAll();
+
+      // Add to flag store
+      useFlagStore.setState((s) => ({
+        flags: [...s.flags, flag],
+      }));
+    };
+    socket.on(WebSocketEvent.FLAG_CREATED, handleFlagCreated);
+
+    // --- flag:updated (another user changed a flag's label/color/position via REST) ---
+    const handleFlagUpdated = (payload: FlagUpdatedPayload) => {
+      const { flag, userId } = payload;
+
+      // Skip if we updated it (already applied locally)
+      const currentLocalUserId = usePresenceStore.getState().localUserId;
+      if (userId === currentLocalUserId) return;
+
+      // Update canvas marker
+      const marker = canvas.getObjects().find((o) => o.data?.flagId === flag.id);
+      if (marker) {
+        // Update position
+        marker.set('left', flag.x);
+        marker.set('top', flag.y);
+
+        // Update pennant color (third child in the flag group: [hole, pole, pennant])
+        if (marker.type === 'group') {
+          const group = marker as fabric.Group;
+          const pennant = group.getObjects().find((c) => c.type === 'path');
+          if (pennant) {
+            pennant.set('fill', flag.color);
+          }
+        }
+
+        marker.setCoords();
+        canvas.requestRenderAll();
+      }
+
+      // Update flag store
+      useFlagStore.setState((s) => ({
+        flags: s.flags.map((f) => (f.id === flag.id ? flag : f)),
+      }));
+    };
+    socket.on(WebSocketEvent.FLAG_UPDATED, handleFlagUpdated);
+
+    // --- flag:deleted (another user deleted a teleport flag via REST) ---
+    const handleFlagDeleted = (payload: FlagDeletedPayload) => {
+      const { flagId, userId } = payload;
+
+      // Skip if we initiated the deletion (already removed locally)
+      const localUserId = usePresenceStore.getState().localUserId;
+      if (userId === localUserId) return;
+
+      // Remove flag marker from canvas (flags use data.flagId, not data.id)
+      const marker = canvas.getObjects().find((o) => o.data?.flagId === flagId);
+      if (marker) {
+        canvas.remove(marker);
+        canvas.requestRenderAll();
+      }
+
+      // Remove from flag store
+      useFlagStore.setState((s) => ({
+        flags: s.flags.filter((f) => f.id !== flagId),
+      }));
+    };
+    socket.on(WebSocketEvent.FLAG_DELETED, handleFlagDeleted);
+
     // =========================================================
     // Cleanup
     // =========================================================
@@ -797,6 +894,9 @@ export function useCanvasSync(
       socket.off(WebSocketEvent.EDIT_START, handleEditStartBroadcast);
       socket.off(WebSocketEvent.EDIT_END, handleEditEndBroadcast);
       socket.off(WebSocketEvent.BOARD_RENAMED, handleBoardRenamed);
+      socket.off(WebSocketEvent.FLAG_CREATED, handleFlagCreated);
+      socket.off(WebSocketEvent.FLAG_UPDATED, handleFlagUpdated);
+      socket.off(WebSocketEvent.FLAG_DELETED, handleFlagDeleted);
 
       throttledCursor.cancel();
       throttledObjectMove.cancel();

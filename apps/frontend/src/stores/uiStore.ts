@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { STICKY_NOTE_COLORS } from 'shared';
+import { PASTEL_COLORS } from 'shared';
 import type { BoardObject, ColorPaletteKey } from 'shared';
 import { useBoardStore } from './boardStore';
 
@@ -135,7 +135,7 @@ export const useUIStore = create<UIState>((set) => ({
     }
   },
 
-  activeColor: STICKY_NOTE_COLORS[0], // default yellow
+  activeColor: PASTEL_COLORS[3], // default blush (#F8BBD0)
   setActiveColor: (color) => set({ activeColor: color }),
 
   colorPaletteTab: 'pastel' as ColorPaletteKey,

@@ -46,16 +46,16 @@ export const SHAPE_COLORS = [
 // Tabbed color palettes (8 swatches each)
 // ============================
 
-/** Soft, muted pastels — high lightness, low-to-mid saturation */
+/** Soft, muted pastels — medium lightness for visibility on light backgrounds */
 export const PASTEL_COLORS = [
-  '#FFF3B0', // Butter
-  '#C8E6C9', // Mint
-  '#BBDEFB', // Sky
-  '#F8BBD0', // Blush
-  '#FFE0B2', // Peach
-  '#E1BEE7', // Lavender
-  '#B2EBF2', // Aqua
-  '#F0F4C3', // Lime
+  '#FFE082', // Butter
+  '#A5D6A7', // Mint
+  '#90CAF9', // Sky
+  '#F48FB1', // Blush
+  '#FFCC80', // Peach
+  '#CE93D8', // Lavender
+  '#80DEEA', // Aqua
+  '#DCE775', // Lime
 ] as const;
 
 /** Vivid, saturated neons — high saturation, mid lightness */
@@ -84,14 +84,14 @@ export const EARTH_TONE_COLORS = [
 
 /** WCAG-accessible colors — high contrast, colorblind-safe */
 export const WCAG_COLORS = [
-  '#FDD835', // Accessible Yellow
-  '#66BB6A', // Accessible Green
-  '#42A5F5', // Accessible Blue
-  '#EF9A9A', // Accessible Red
-  '#FFCC80', // Accessible Orange
-  '#CE93D8', // Accessible Purple
-  '#80DEEA', // Accessible Teal
-  '#000000', // Black
+  '#052861', // Deep Navy
+  '#C37C09', // Amber
+  '#771FAD', // Vivid Purple
+  '#17191C', // Near Black
+  '#6B7280', // Slate Gray
+  '#9EC1FA', // Soft Blue
+  '#773B22', // Sienna
+  '#8AAD1F', // Olive Green
 ] as const;
 
 /** All tabbed palettes in display order */

@@ -3,6 +3,7 @@ import { fabric } from 'fabric';
 import type { Socket } from 'socket.io-client';
 import { useUIStore } from '../stores/uiStore';
 import { useBoardStore } from '../stores/boardStore';
+import { useFlagStore } from '../stores/flagStore';
 import { WebSocketEvent } from 'shared';
 import type { BoardObject } from 'shared';
 import { fabricToBoardObject, boardObjectToFabric } from '../utils/fabricHelpers';
@@ -115,6 +116,7 @@ export function useKeyboardShortcuts(
             vpt[4] = homeCanvas.getWidth() / 2;
             vpt[5] = homeCanvas.getHeight() / 2;
             homeCanvas.setViewportTransform(vpt);
+            homeCanvas.requestRenderAll();
           }
           break;
         }
@@ -160,6 +162,13 @@ export function useKeyboardShortcuts(
 const marchingAntsIds = new Set<string>();
 let marchingAntsActive = false;
 let marchingAntsRafId: number | null = null;
+
+/**
+ * Cached Fabric object references for the marching ants animation.
+ * Populated once in startMarchingAnts(), iterated per frame in renderMarchingAnts().
+ * Avoids scanning all canvas objects (~500+) every frame to find the 1-10 matches.
+ */
+const marchingAntsObjects: fabric.Object[] = [];
 
 /** Handler ref so we can remove it on cleanup. */
 let marchingAntsClickHandler: (() => void) | null = null;
@@ -308,10 +317,12 @@ function startMarchingAnts(canvas: fabric.Canvas, objects: fabric.Object[]): voi
 
   marchingAntsActive = true;
 
-  // Track which object IDs should show the animation
+  // Track which object IDs should show the animation + cache references
+  marchingAntsObjects.length = 0;
   for (const obj of objects) {
     if (obj.data?.id) {
       marchingAntsIds.add(obj.data.id);
+      marchingAntsObjects.push(obj);
     }
   }
 
@@ -350,6 +361,7 @@ function dismissMarchingAnts(canvas: fabric.Canvas): void {
  */
 function stopMarchingAnts(canvas: fabric.Canvas): void {
   marchingAntsIds.clear();
+  marchingAntsObjects.length = 0;
   marchingAntsActive = false;
 
   if (marchingAntsRafId !== null) {
@@ -394,9 +406,9 @@ function renderMarchingAnts(): void {
   // Reset transform to pixel coordinates so we can draw in screen space
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  for (const obj of canvas.getObjects()) {
-    if (!obj.data?.id || !marchingAntsIds.has(obj.data.id)) continue;
-
+  // Iterate only cached objects (populated in startMarchingAnts),
+  // not all canvas objects — avoids O(N) scan on every frame.
+  for (const obj of marchingAntsObjects) {
     // Ensure coordinates are fresh
     obj.setCoords();
 
@@ -586,7 +598,25 @@ export function handleDeleteSelected(socket: Socket | null): void {
   const activeObj = canvas.getActiveObject();
   if (!activeObj) return;
 
+  // Dismiss marching ants if active — prevents stale mouse:down handler from
+  // stealing the next click and locking the user out of selection.
+  if (marchingAntsActive) {
+    dismissMarchingAnts(canvas);
+  }
+
   const boardId = useBoardStore.getState().boardId;
+  const cachedToken = useBoardStore.getState().cachedAuthToken;
+
+  // Helper: delete a teleport flag via REST API + remove from flag store
+  const deleteFlagObject = (obj: fabric.Object) => {
+    const flagId = obj.data?.flagId as string | undefined;
+    if (!flagId || !boardId || !cachedToken) return;
+    canvas.remove(obj);
+    // Fire-and-forget API delete
+    useFlagStore.getState().deleteFlag(boardId, flagId, cachedToken).catch((err) => {
+      console.error('[handleDeleteSelected] Flag delete failed:', err);
+    });
+  };
 
   // Helper: orphan children when a frame is deleted — restore selectability
   const orphanFrameChildren = (frameId: string) => {
@@ -617,6 +647,12 @@ export function handleDeleteSelected(socket: Socket | null): void {
     for (const obj of objects) {
       if (obj.data?.pinned) continue;
 
+      // Teleport flags use flagId, not id — handle separately
+      if (obj.data?.type === 'teleportFlag') {
+        deleteFlagObject(obj);
+        continue;
+      }
+
       const objectId = obj.data?.id;
 
       // Orphan children before removing frame
@@ -642,6 +678,13 @@ export function handleDeleteSelected(socket: Socket | null): void {
     }
   } else {
     if (activeObj.data?.pinned) return;
+
+    // Teleport flags use flagId, not id — handle separately
+    if (activeObj.data?.type === 'teleportFlag') {
+      deleteFlagObject(activeObj);
+      canvas.requestRenderAll();
+      return;
+    }
 
     const objectId = activeObj.data?.id;
 
