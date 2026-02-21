@@ -659,6 +659,11 @@ export function createConnector(options: {
   // Add custom endpoint controls for dragging each end independently
   setupConnectorEndpointControls(line);
 
+  // For arrow style, override _render to draw an arrowhead at p2
+  if ((options.style ?? 'line') === 'arrow') {
+    setupArrowheadRender(line);
+  }
+
   return line;
 }
 
@@ -689,6 +694,50 @@ export function syncConnectorCoordsAfterMove(line: fabric.Line): void {
   lineAny.x2 = (line.x2 ?? 0) + dx;
   lineAny.y2 = (line.y2 ?? 0) + dy;
   line.setCoords();
+}
+
+/**
+ * Override the Line's _render to also draw an arrowhead triangle at p2.
+ * The arrowhead is drawn in the line's local coordinate space.
+ */
+function setupArrowheadRender(line: fabric.Line): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const originalRender = (line as any)._render.bind(line);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (line as any)._render = function (ctx: CanvasRenderingContext2D) {
+    // Draw the original line
+    originalRender(ctx);
+
+    // Now draw the arrowhead at the p2 end
+    // In Line's local space, endpoints are center-relative:
+    //   p1 local = calcLinePoints().x1, .y1
+    //   p2 local = calcLinePoints().x2, .y2
+    const pts = this.calcLinePoints();
+    const p1x = pts.x1;
+    const p1y = pts.y1;
+    const p2x = pts.x2;
+    const p2y = pts.y2;
+
+    const angle = Math.atan2(p2y - p1y, p2x - p1x);
+    const headLength = 12;
+
+    ctx.save();
+    ctx.translate(p2x, p2y);
+    ctx.rotate(angle);
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-headLength, -headLength * 0.4);
+    ctx.lineTo(-headLength, headLength * 0.4);
+    ctx.closePath();
+    ctx.fillStyle = this.stroke || '#FFFFFF';
+    ctx.fill();
+    ctx.restore();
+  };
+
+  // Disable Fabric.js object caching so the arrowhead always re-renders
+  line.objectCaching = false;
 }
 
 /**

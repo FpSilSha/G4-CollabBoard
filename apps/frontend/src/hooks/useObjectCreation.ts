@@ -21,6 +21,7 @@ import {
 } from '../utils/fabricHelpers';
 import { throttle } from '../utils/throttle';
 import { setEditSession } from '../stores/editSessionRef';
+import { getSnapPreview } from '../utils/connectorAttachment';
 
 const AUTH_PARAMS = {
   authorizationParams: {
@@ -54,7 +55,8 @@ export function useObjectCreation(
       const color = useUIStore.getState().activeColor;
 
       // Only create if a creation tool is active
-      if (tool === 'select' || tool === 'dropper' || tool === 'connector' || tool === 'placeFlag') return;
+      // Line and connector tools use drag-to-create, not click-to-create
+      if (tool === 'select' || tool === 'dropper' || tool === 'connector' || tool === 'line' || tool === 'placeFlag') return;
       // Only create if clicking on empty canvas (not on existing object)
       if (opt.target) return;
 
@@ -346,13 +348,13 @@ export function useObjectCreation(
     if (!canvas) return;
 
     let prevTool = useUIStore.getState().activeTool;
-    canvas.selection = (prevTool !== 'connector');
+    canvas.selection = (prevTool !== 'connector' && prevTool !== 'line');
 
     const unsub = useUIStore.subscribe((state) => {
       const tool = state.activeTool;
       if (tool !== prevTool) {
         prevTool = tool;
-        canvas.selection = (tool !== 'connector');
+        canvas.selection = (tool !== 'connector' && tool !== 'line');
       }
     });
 
@@ -367,18 +369,65 @@ export function useObjectCreation(
     // State for the connector drag operation
     let isDragging = false;
     let previewLine: fabric.Line | null = null;
+    let snapIndicator: fabric.Circle | null = null;
     let startX = 0;
     let startY = 0;
+    let startSnapId = '';   // Object ID snapped at start point
+    let endSnapId = '';     // Object ID snapped at end point
+
+    /**
+     * Show/hide a snap indicator circle at the snap target center.
+     */
+    const showSnapIndicator = (center: { x: number; y: number } | null) => {
+      if (snapIndicator) {
+        canvas.remove(snapIndicator);
+        snapIndicator = null;
+      }
+      if (center) {
+        snapIndicator = new fabric.Circle({
+          left: center.x - 8,
+          top: center.y - 8,
+          radius: 8,
+          fill: 'rgba(76, 175, 80, 0.3)',
+          stroke: '#4CAF50',
+          strokeWidth: 2,
+          selectable: false,
+          evented: false,
+        });
+        canvas.add(snapIndicator);
+      }
+    };
 
     const handleConnectorMouseDown = (opt: fabric.IEvent) => {
       if (useUIStore.getState().activeTool !== 'connector') return;
-      // Only start on empty canvas (not on existing objects)
-      if (opt.target) return;
 
       const pointer = canvas.getPointer(opt.e);
-      startX = pointer.x;
-      startY = pointer.y;
+
+      // Check if starting on or near an object — snap start endpoint
+      const startSnap = getSnapPreview(canvas, pointer.x, pointer.y);
+      if (startSnap) {
+        startX = startSnap.center.x;
+        startY = startSnap.center.y;
+        startSnapId = startSnap.objectId;
+      } else {
+        // Allow starting on empty canvas
+        if (opt.target && opt.target.data?.type !== 'connector') {
+          // Starting on an object — snap to its center
+          const center = opt.target.getCenterPoint();
+          startX = center.x;
+          startY = center.y;
+          startSnapId = opt.target.data?.id || '';
+        } else if (opt.target) {
+          return; // Don't start on another connector
+        } else {
+          startX = pointer.x;
+          startY = pointer.y;
+          startSnapId = '';
+        }
+      }
+
       isDragging = true;
+      endSnapId = '';
 
       // Create a dashed preview line
       previewLine = new fabric.Line([startX, startY, startX, startY], {
@@ -396,36 +445,69 @@ export function useObjectCreation(
     const handleConnectorMouseMove = (opt: fabric.IEvent) => {
       if (!isDragging || !previewLine) return;
       const pointer = canvas.getPointer(opt.e);
-      previewLine.set({ x2: pointer.x, y2: pointer.y });
+
+      // Check for snap target at the current pointer position
+      const snap = getSnapPreview(canvas, pointer.x, pointer.y,
+        startSnapId ? [startSnapId] : undefined
+      );
+
+      if (snap) {
+        // Snap the preview line's end to the target center
+        previewLine.set({ x2: snap.center.x, y2: snap.center.y });
+        endSnapId = snap.objectId;
+        showSnapIndicator(snap.center);
+      } else {
+        previewLine.set({ x2: pointer.x, y2: pointer.y });
+        endSnapId = '';
+        showSnapIndicator(null);
+      }
+
       canvas.requestRenderAll();
     };
 
     const finishConnectorDrag = (endX: number, endY: number) => {
       isDragging = false;
 
-      // Remove the preview line
+      // Remove preview elements
       if (previewLine) {
         canvas.remove(previewLine);
         previewLine = null;
       }
+      showSnapIndicator(null);
+
+      // Check for end snap
+      const endSnap = getSnapPreview(canvas, endX, endY,
+        startSnapId ? [startSnapId] : undefined
+      );
+      let finalEndX = endX;
+      let finalEndY = endY;
+      let finalEndSnapId = '';
+
+      if (endSnap) {
+        finalEndX = endSnap.center.x;
+        finalEndY = endSnap.center.y;
+        finalEndSnapId = endSnap.objectId;
+      }
 
       // Only create if the user dragged a minimum distance (> 10px)
-      const dx = endX - startX;
-      const dy = endY - startY;
+      const dx = finalEndX - startX;
+      const dy = finalEndY - startY;
       const length = Math.sqrt(dx * dx + dy * dy);
       if (length < 10) {
         canvas.requestRenderAll();
         return;
       }
 
-      // Create the real connector
+      // Create the real connector with attachment IDs
       const color = useUIStore.getState().activeColor;
       const connector = createConnector({
         x: startX,
         y: startY,
-        x2: endX,
-        y2: endY,
+        x2: finalEndX,
+        y2: finalEndY,
         color,
+        fromObjectId: startSnapId || undefined,
+        toObjectId: finalEndSnapId || undefined,
       });
 
       canvas.add(connector);
@@ -455,6 +537,7 @@ export function useObjectCreation(
         isDragging = false;
         canvas.remove(previewLine);
         previewLine = null;
+        showSnapIndicator(null);
         canvas.requestRenderAll();
       }
     };
@@ -468,9 +551,124 @@ export function useObjectCreation(
       canvas.off('mouse:move', handleConnectorMouseMove);
       canvas.off('mouse:up', handleConnectorMouseUp);
       document.removeEventListener('keydown', handleConnectorEscape);
-      // Clean up any lingering preview
+      // Clean up any lingering previews
       if (previewLine) {
         canvas.remove(previewLine);
+      }
+      showSnapIndicator(null);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricRef]);
+
+  // ========================================
+  // Line (arrow) tool: click-and-drag to create
+  //
+  // Same mechanic as the connector tool, but creates a connector
+  // with style='arrow' and no object attachment.
+  // ========================================
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    let isDraggingLine = false;
+    let linePreview: fabric.Line | null = null;
+    let lineStartX = 0;
+    let lineStartY = 0;
+
+    const handleLineMouseDown = (opt: fabric.IEvent) => {
+      if (useUIStore.getState().activeTool !== 'line') return;
+      if (opt.target) return;
+
+      const pointer = canvas.getPointer(opt.e);
+      lineStartX = pointer.x;
+      lineStartY = pointer.y;
+      isDraggingLine = true;
+
+      linePreview = new fabric.Line([lineStartX, lineStartY, lineStartX, lineStartY], {
+        stroke: useUIStore.getState().activeColor,
+        strokeWidth: 2,
+        strokeDashArray: [6, 4],
+        selectable: false,
+        evented: false,
+        opacity: 0.6,
+      });
+      canvas.add(linePreview);
+      canvas.requestRenderAll();
+    };
+
+    const handleLineMouseMove = (opt: fabric.IEvent) => {
+      if (!isDraggingLine || !linePreview) return;
+      const pointer = canvas.getPointer(opt.e);
+      linePreview.set({ x2: pointer.x, y2: pointer.y });
+      canvas.requestRenderAll();
+    };
+
+    const finishLineDrag = (endX: number, endY: number) => {
+      isDraggingLine = false;
+
+      if (linePreview) {
+        canvas.remove(linePreview);
+        linePreview = null;
+      }
+
+      const dx = endX - lineStartX;
+      const dy = endY - lineStartY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 10) {
+        canvas.requestRenderAll();
+        return;
+      }
+
+      // Create an arrow-style connector (no object attachment)
+      const color = useUIStore.getState().activeColor;
+      const arrowLine = createConnector({
+        x: lineStartX,
+        y: lineStartY,
+        x2: endX,
+        y2: endY,
+        color,
+        style: 'arrow',
+      });
+
+      canvas.add(arrowLine);
+      canvas.setActiveObject(arrowLine);
+      canvas.requestRenderAll();
+
+      const userId = usePresenceStore.getState().localUserId;
+      const boardObj = fabricToBoardObject(arrowLine, userId ?? undefined);
+      addObject(boardObj);
+
+      emitObjectCreate(socketRef.current, boardObj);
+
+      useUIStore.getState().setActiveTool('select');
+    };
+
+    const handleLineMouseUp = (opt: fabric.IEvent) => {
+      if (!isDraggingLine || !linePreview) return;
+      const pointer = canvas.getPointer(opt.e);
+      finishLineDrag(pointer.x, pointer.y);
+    };
+
+    const handleLineEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isDraggingLine && linePreview) {
+        isDraggingLine = false;
+        canvas.remove(linePreview);
+        linePreview = null;
+        canvas.requestRenderAll();
+      }
+    };
+
+    canvas.on('mouse:down', handleLineMouseDown);
+    canvas.on('mouse:move', handleLineMouseMove);
+    canvas.on('mouse:up', handleLineMouseUp);
+    document.addEventListener('keydown', handleLineEscape);
+    return () => {
+      canvas.off('mouse:down', handleLineMouseDown);
+      canvas.off('mouse:move', handleLineMouseMove);
+      canvas.off('mouse:up', handleLineMouseUp);
+      document.removeEventListener('keydown', handleLineEscape);
+      if (linePreview) {
+        canvas.remove(linePreview);
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

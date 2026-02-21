@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   WebSocketEvent,
   AI_COLORS,
+  AI_BROADCAST_USER_ID,
   type ViewportBounds,
   type AIOperation,
   type BoardObject,
@@ -56,6 +57,7 @@ async function executeCreateStickyNote(
     frameId: (input.frameId as string) || null,
     createdBy: userId,
     lastEditedBy: userId,
+    createdVia: 'ai',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -65,7 +67,7 @@ async function executeCreateStickyNote(
   const payload: ObjectCreatedPayload = {
     boardId,
     object: object as unknown as BoardObject,
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_CREATED, payload);
@@ -106,6 +108,7 @@ async function executeCreateShape(
     frameId: null,
     createdBy: userId,
     lastEditedBy: userId,
+    createdVia: 'ai',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -115,7 +118,7 @@ async function executeCreateShape(
   const payload: ObjectCreatedPayload = {
     boardId,
     object: object as unknown as BoardObject,
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_CREATED, payload);
@@ -156,6 +159,7 @@ async function executeCreateFrame(
     frameId: null,
     createdBy: userId,
     lastEditedBy: userId,
+    createdVia: 'ai',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -165,7 +169,7 @@ async function executeCreateFrame(
   const payload: ObjectCreatedPayload = {
     boardId,
     object: object as unknown as BoardObject,
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_CREATED, payload);
@@ -234,6 +238,7 @@ async function executeCreateConnector(
     frameId: null,
     createdBy: userId,
     lastEditedBy: userId,
+    createdVia: 'ai',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -243,7 +248,7 @@ async function executeCreateConnector(
   const payload: ObjectCreatedPayload = {
     boardId,
     object: object as unknown as BoardObject,
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_CREATED, payload);
@@ -282,6 +287,7 @@ async function executeCreateTextElement(
     frameId: null,
     createdBy: userId,
     lastEditedBy: userId,
+    createdVia: 'ai',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -291,7 +297,7 @@ async function executeCreateTextElement(
   const payload: ObjectCreatedPayload = {
     boardId,
     object: object as unknown as BoardObject,
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_CREATED, payload);
@@ -333,7 +339,7 @@ async function executeMoveObject(
     boardId,
     objectId,
     updates: updates as unknown as ObjectUpdatedPayload['updates'],
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_UPDATED, payload);
@@ -368,7 +374,7 @@ async function executeResizeObject(
     boardId,
     objectId,
     updates: updates as unknown as ObjectUpdatedPayload['updates'],
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_UPDATED, payload);
@@ -402,7 +408,7 @@ async function executeUpdateText(
     boardId,
     objectId,
     updates: updates as unknown as ObjectUpdatedPayload['updates'],
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_UPDATED, payload);
@@ -436,7 +442,7 @@ async function executeChangeColor(
     boardId,
     objectId,
     updates: updates as unknown as ObjectUpdatedPayload['updates'],
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_UPDATED, payload);
@@ -464,7 +470,7 @@ async function executeDeleteObject(
   const payload: ObjectDeletedPayload = {
     boardId,
     objectId,
-    userId,
+    userId: AI_BROADCAST_USER_ID,
     timestamp: Date.now(),
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_DELETED, payload);
@@ -642,7 +648,7 @@ async function executeBatchUpdateByFilter(
       boardId,
       objectId: objectId as string,
       updates: rest as unknown as ObjectUpdatedPayload['updates'],
-      userId,
+      userId: AI_BROADCAST_USER_ID,
       timestamp: Date.now(),
     };
     trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_UPDATED, payload);

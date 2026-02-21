@@ -109,6 +109,14 @@ export function Sidebar() {
               onDragStart={(e) => handleDragStart(e, 'frame')}
             />
             <DraggableToolButton
+              icon={<LineIcon />}
+              label="Arrow Line (N)"
+              tool="line"
+              activeTool={activeTool}
+              onClick={setActiveTool}
+              onDragStart={(e) => handleDragStart(e, 'line')}
+            />
+            <DraggableToolButton
               icon={<ConnectorIcon />}
               label="Connector (L)"
               tool="connector"
@@ -479,7 +487,8 @@ function FrameIcon() {
   );
 }
 
-function ConnectorIcon() {
+/** Arrow line — diagonal line with arrowhead at the end */
+function LineIcon() {
   return (
     <svg
       width="20"
@@ -490,7 +499,29 @@ function ConnectorIcon() {
       strokeWidth="2"
     >
       <line x1="5" y1="19" x2="19" y2="5" />
-      <polyline points="14 5 19 5 19 10" />
+      <polyline points="13 5 19 5 19 11" />
+    </svg>
+  );
+}
+
+/** Chainlink — two interlocking oval links */
+function ConnectorIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      {/* Left half-link (open at right) */}
+      <path d="M8 8H6a4 4 0 0 0 0 8h2" />
+      {/* Right half-link (open at left) */}
+      <path d="M16 8h2a4 4 0 0 1 0 8h-2" />
+      {/* Center connecting bar */}
+      <line x1="8" y1="12" x2="16" y2="12" />
     </svg>
   );
 }

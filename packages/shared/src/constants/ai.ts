@@ -12,6 +12,16 @@ export const AI_CONFIG = {
   CHAT_HISTORY_TTL_SECONDS: 3600,
 } as const;
 
+/**
+ * Special userId used in WebSocket broadcast payloads for AI-created objects.
+ * The frontend's optimistic-update guard skips events where payload.userId
+ * matches the local user (assuming the user already placed the object locally).
+ * AI-created objects are server-side only — they have NO local optimistic copy —
+ * so we MUST use a distinct userId in the broadcast to avoid the skip.
+ * The real user's Auth0 sub is still stored in createdBy/lastEditedBy on the object.
+ */
+export const AI_BROADCAST_USER_ID = 'system:ai-tacky';
+
 export const AI_COLORS = {
   STICKY_YELLOW: '#FFEB3B',
   STICKY_PINK: '#F48FB1',

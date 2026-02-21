@@ -215,7 +215,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
       {/* Generic text-input modal (flag labels, etc.) */}
       <TextInputModal />
 
-      {/* AI Assistant — floating chat panel + Tack mascot button */}
+      {/* AI Assistant — floating chat panel + Tacky mascot button */}
       <AIChatPanel />
       <TackButton />
 

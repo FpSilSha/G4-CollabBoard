@@ -185,7 +185,7 @@ export function AIChatPanel() {
     <div className={styles.panel}>
       {/* Header */}
       <div className={styles.header}>
-        <span className={styles.headerTitle}>Tack - AI Assistant</span>
+        <span className={styles.headerTitle}>Tacky - AI Assistant</span>
         {budgetDisplay && (
           <span className={styles.headerBudget}>{budgetDisplay}</span>
         )}
@@ -199,7 +199,7 @@ export function AIChatPanel() {
           </div>
         ) : messages.length === 0 ? (
           <div className={styles.emptyState}>
-            <div className={styles.emptyTitle}>Hi, I'm Tack!</div>
+            <div className={styles.emptyTitle}>Hi, I'm Tacky!</div>
             <div className={styles.emptyHint}>
               I can create sticky notes, shapes, frames, and more.
               Try: "Create a SWOT analysis template" or "Add 5 blue sticky notes with project ideas"
@@ -237,7 +237,7 @@ export function AIChatPanel() {
           <textarea
             ref={inputRef}
             className={styles.input}
-            placeholder="Ask Tack to create or modify objects..."
+            placeholder="Ask Tacky to create or modify objects..."
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}

@@ -8,6 +8,7 @@ import { WebSocketEvent } from 'shared';
 import type { BoardObject } from 'shared';
 import { fabricToBoardObject, boardObjectToFabric } from '../utils/fabricHelpers';
 import { generateLocalId } from '../utils/idGenerator';
+import { detachConnectorsFromObject } from '../utils/connectorAttachment';
 
 /** Offset (px) for each successive paste, creating a cascade effect. */
 const PASTE_OFFSET = 20;
@@ -102,6 +103,10 @@ export function useKeyboardShortcuts(
 
         case 'f':
           useUIStore.getState().setActiveTool('frame');
+          break;
+
+        case 'n':
+          useUIStore.getState().setActiveTool('line');
           break;
 
         case 'l':
@@ -660,6 +665,11 @@ export function handleDeleteSelected(socket: Socket | null): void {
         orphanFrameChildren(objectId);
       }
 
+      // Detach connectors that reference this object
+      if (objectId) {
+        detachConnectorsFromObject(canvas, objectId);
+      }
+
       canvas.remove(obj);
 
       if (objectId) {
@@ -691,6 +701,11 @@ export function handleDeleteSelected(socket: Socket | null): void {
     // Orphan children before removing frame
     if (activeObj.data?.type === 'frame' && objectId) {
       orphanFrameChildren(objectId);
+    }
+
+    // Detach connectors that reference this object
+    if (objectId) {
+      detachConnectorsFromObject(canvas, objectId);
     }
 
     canvas.remove(activeObj);

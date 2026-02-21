@@ -2,7 +2,7 @@ import { useAIStore } from '../../stores/aiStore';
 import styles from './TackButton.module.css';
 
 /**
- * Tack mascot button — fixed bottom-right corner.
+ * Tacky mascot button — fixed bottom-right corner.
  * Toggles the AI chat panel open/closed.
  * Shows a pulsing dot when the AI is processing.
  */
@@ -27,8 +27,15 @@ export function TackButton() {
             <line x1="18" y1="6" x2="6" y2="18" />
           </>
         ) : (
-          // Thumbtack icon when closed
-          <path d="M12 2L9 9H4l3 5-2 8 7-4 7 4-2-8 3-5h-5L12 2z" />
+          // Thumbtack / pushpin icon when closed
+          <>
+            {/* Flat round pin-head */}
+            <circle cx="12" cy="6" r="4" />
+            {/* Tapered body from head to bar */}
+            <path d="M9 9.5L7.5 15h9L15 9.5" />
+            {/* Pin spike */}
+            <line x1="12" y1="15" x2="12" y2="22" />
+          </>
         )}
       </svg>
 
