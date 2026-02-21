@@ -112,6 +112,11 @@ export const aiService = {
     const allOperations: AIOperation[] = [];
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    // Per-model token tracking for accurate cost when escalation occurs
+    let haikuInputTokens = 0;
+    let haikuOutputTokens = 0;
+    let sonnetInputTokens = 0;
+    let sonnetOutputTokens = 0;
     let turn = 0;
     let finalMessage = '';
 
@@ -130,6 +135,15 @@ export const aiService = {
 
         totalInputTokens += response.usage.input_tokens;
         totalOutputTokens += response.usage.output_tokens;
+
+        // Track per-model tokens for accurate cost calculation on escalation
+        if (model === haikuModel) {
+          haikuInputTokens += response.usage.input_tokens;
+          haikuOutputTokens += response.usage.output_tokens;
+        } else {
+          sonnetInputTokens += response.usage.input_tokens;
+          sonnetOutputTokens += response.usage.output_tokens;
+        }
 
         // Check stop reason
         if (response.stop_reason === 'end_turn') {
@@ -191,8 +205,9 @@ export const aiService = {
       const errMessage = err instanceof Error ? err.message : 'Unknown error';
       logger.error(`AI agent loop error: ${errMessage}`);
 
-      // Record partial usage (use current model for pricing — close enough for error path)
-      const costCents = calculateCostCents(totalInputTokens, totalOutputTokens, model);
+      // Record partial usage — sum per-model costs for accurate billing on escalation
+      const costCents = calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel)
+                      + calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel);
       await aiBudgetService.recordUsage(userId, costCents, {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
@@ -263,8 +278,9 @@ export const aiService = {
       return errorResponse('AI_EXECUTION_FAILED', errMessage, conversationId);
     }
 
-    // 6. Record usage & cost
-    const costCents = calculateCostCents(totalInputTokens, totalOutputTokens, model);
+    // 6. Record usage & cost — sum per-model costs for accurate billing on escalation
+    const costCents = calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel)
+                    + calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel);
     await aiBudgetService.recordUsage(userId, costCents, {
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,

@@ -43,33 +43,20 @@ const COMPLEX_KEYWORDS = [
 ];
 
 /**
- * Keywords that reference existing board content (need getViewportObjects first).
- * These typically require multi-step reasoning.
+ * Keywords that reference existing content AND require spatial reasoning.
+ * Simple references like "those" or "the sticky" are fine for Haiku —
+ * it just needs to call getViewportObjects then act. These keywords
+ * indicate the user wants something more: rearranging, reorganizing,
+ * or reasoning about relationships between objects.
  */
-const REFERENCE_KEYWORDS = [
-  'existing',
-  'current',
-  'those',
-  'these',
-  'the sticky',
-  'the note',
-  'the frame',
-  'the shape',
-  'the connector',
+const COMPLEX_REFERENCE_KEYWORDS = [
+  'reorganize',
+  'rearrange',
+  'redistribute',
+  'reposition',
+  'realign',
   'all of them',
   'everything',
-  'each one',
-];
-
-/**
- * Bulk operation keywords — typically need batchUpdateByFilter or loops.
- */
-const BULK_KEYWORDS = [
-  'all ',       // trailing space to avoid matching "wall", "ball", etc.
-  'every ',
-  'each ',
-  'batch',
-  'bulk',
 ];
 
 /**
@@ -105,15 +92,8 @@ export function classifyCommand(command: string): CommandComplexity {
     }
   }
 
-  // Check for references to existing content
-  for (const keyword of REFERENCE_KEYWORDS) {
-    if (lower.includes(keyword)) {
-      return 'complex';
-    }
-  }
-
-  // Check for bulk operations
-  for (const keyword of BULK_KEYWORDS) {
+  // Check for complex references (spatial reasoning about existing content)
+  for (const keyword of COMPLEX_REFERENCE_KEYWORDS) {
     if (lower.includes(keyword)) {
       return 'complex';
     }
