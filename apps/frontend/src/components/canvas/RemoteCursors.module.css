@@ -6,7 +6,7 @@
   height: 100%;
   pointer-events: none;
   overflow: hidden;
-  z-index: 100;
+  z-index: 10; /* Below sidebars (z-index: 20) so cursors don't overlap UI chrome */
 }
 
 .cursorWrapper {

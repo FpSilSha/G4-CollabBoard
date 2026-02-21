@@ -69,9 +69,20 @@ interface BoardState {
   boardStateLoaded: boolean;
   setBoardStateLoaded: (loaded: boolean) => void;
 
-  // --- Zoom ---
+  // --- Auth Token Cache ---
+  // Pre-fetched Auth0 token stored here so module-scoped functions
+  // (e.g., handleDeleteSelected, drag-to-trash) can access it without
+  // needing React hook context. Set by BoardView on mount.
+  cachedAuthToken: string | null;
+  setCachedAuthToken: (token: string | null) => void;
+
+  // --- Viewport ---
   zoom: number;
   setZoom: (zoom: number) => void;
+  // Monotonic counter incremented on any viewport change (pan or zoom).
+  // Used by RemoteCursors to trigger re-render when the viewport changes.
+  viewportVersion: number;
+  bumpViewportVersion: () => void;
 }
 
 export const useBoardStore = create<BoardState>((set) => ({
@@ -149,6 +160,11 @@ export const useBoardStore = create<BoardState>((set) => ({
   boardStateLoaded: false,
   setBoardStateLoaded: (loaded) => set({ boardStateLoaded: loaded }),
 
+  cachedAuthToken: null,
+  setCachedAuthToken: (token) => set({ cachedAuthToken: token }),
+
   zoom: CANVAS_CONFIG.DEFAULT_ZOOM,
   setZoom: (zoom) => set({ zoom }),
+  viewportVersion: 0,
+  bumpViewportVersion: () => set((s) => ({ viewportVersion: s.viewportVersion + 1 })),
 }));

@@ -17,6 +17,7 @@ export function RemoteCursors() {
   const remoteCursors = usePresenceStore((s) => s.remoteCursors);
   const canvas = useBoardStore((s) => s.canvas);
   const zoom = useBoardStore((s) => s.zoom);
+  const viewportVersion = useBoardStore((s) => s.viewportVersion);
 
   // Convert canvas coordinates to screen coordinates
   const cursorElements = useMemo(() => {
@@ -47,7 +48,7 @@ export function RemoteCursors() {
 
     return entries;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remoteCursors, canvas, zoom]);
+  }, [remoteCursors, canvas, zoom, viewportVersion]);
 
   return (
     <div className={styles.cursorLayer}>

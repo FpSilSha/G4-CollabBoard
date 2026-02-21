@@ -147,6 +147,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
       },
     }).then((token) => {
       cachedTokenRef.current = token;
+      useBoardStore.getState().setCachedAuthToken(token);
     }).catch(() => { /* non-critical */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -175,6 +176,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
             useBoardStore.getState().clearObjects();
             useBoardStore.getState().setThumbnailUpdatedAt(null);
             useBoardStore.getState().setBoardStateLoaded(false);
+            useBoardStore.getState().setCachedAuthToken(null);
             usePresenceStore.getState().clearRemoteUsers();
             usePresenceStore.getState().clearRemoteCursors();
           }

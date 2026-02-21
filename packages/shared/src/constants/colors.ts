@@ -46,16 +46,16 @@ export const SHAPE_COLORS = [
 // Tabbed color palettes (8 swatches each)
 // ============================
 
-/** Soft, muted pastels — high lightness, low-to-mid saturation */
+/** Soft, muted pastels — medium lightness for visibility on light backgrounds */
 export const PASTEL_COLORS = [
-  '#FFF3B0', // Butter
-  '#C8E6C9', // Mint
-  '#BBDEFB', // Sky
-  '#F8BBD0', // Blush
-  '#FFE0B2', // Peach
-  '#E1BEE7', // Lavender
-  '#B2EBF2', // Aqua
-  '#F0F4C3', // Lime
+  '#FFE082', // Butter
+  '#A5D6A7', // Mint
+  '#90CAF9', // Sky
+  '#F48FB1', // Blush
+  '#FFCC80', // Peach
+  '#CE93D8', // Lavender
+  '#80DEEA', // Aqua
+  '#DCE775', // Lime
 ] as const;
 
 /** Vivid, saturated neons — high saturation, mid lightness */

@@ -3,6 +3,7 @@ import { fabric } from 'fabric';
 import type { Socket } from 'socket.io-client';
 import { useUIStore } from '../stores/uiStore';
 import { useBoardStore } from '../stores/boardStore';
+import { useFlagStore } from '../stores/flagStore';
 import { WebSocketEvent } from 'shared';
 import type { BoardObject } from 'shared';
 import { fabricToBoardObject, boardObjectToFabric } from '../utils/fabricHelpers';
@@ -586,7 +587,25 @@ export function handleDeleteSelected(socket: Socket | null): void {
   const activeObj = canvas.getActiveObject();
   if (!activeObj) return;
 
+  // Dismiss marching ants if active — prevents stale mouse:down handler from
+  // stealing the next click and locking the user out of selection.
+  if (marchingAntsActive) {
+    dismissMarchingAnts(canvas);
+  }
+
   const boardId = useBoardStore.getState().boardId;
+  const cachedToken = useBoardStore.getState().cachedAuthToken;
+
+  // Helper: delete a teleport flag via REST API + remove from flag store
+  const deleteFlagObject = (obj: fabric.Object) => {
+    const flagId = obj.data?.flagId as string | undefined;
+    if (!flagId || !boardId || !cachedToken) return;
+    canvas.remove(obj);
+    // Fire-and-forget API delete
+    useFlagStore.getState().deleteFlag(boardId, flagId, cachedToken).catch((err) => {
+      console.error('[handleDeleteSelected] Flag delete failed:', err);
+    });
+  };
 
   // Helper: orphan children when a frame is deleted — restore selectability
   const orphanFrameChildren = (frameId: string) => {
@@ -617,6 +636,12 @@ export function handleDeleteSelected(socket: Socket | null): void {
     for (const obj of objects) {
       if (obj.data?.pinned) continue;
 
+      // Teleport flags use flagId, not id — handle separately
+      if (obj.data?.type === 'teleportFlag') {
+        deleteFlagObject(obj);
+        continue;
+      }
+
       const objectId = obj.data?.id;
 
       // Orphan children before removing frame
@@ -642,6 +667,13 @@ export function handleDeleteSelected(socket: Socket | null): void {
     }
   } else {
     if (activeObj.data?.pinned) return;
+
+    // Teleport flags use flagId, not id — handle separately
+    if (activeObj.data?.type === 'teleportFlag') {
+      deleteFlagObject(activeObj);
+      canvas.requestRenderAll();
+      return;
+    }
 
     const objectId = activeObj.data?.id;
 

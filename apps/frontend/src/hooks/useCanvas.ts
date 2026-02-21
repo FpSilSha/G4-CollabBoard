@@ -3,6 +3,7 @@ import { fabric } from 'fabric';
 import { CANVAS_CONFIG, UI_COLORS, WebSocketEvent } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
 import { useUIStore } from '../stores/uiStore';
+import { useFlagStore } from '../stores/flagStore';
 import {
   getObjectFillColor,
   getObjectsInsideFrame,
@@ -442,6 +443,8 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
       const upperCanvas = canvas.getElement().parentElement?.querySelector('.upper-canvas') as HTMLCanvasElement | null;
       if (upperCanvas) upperCanvas.style.cursor = 'default';
       canvas.selection = true;
+      // Notify RemoteCursors that viewport changed so positions update
+      useBoardStore.getState().bumpViewportVersion();
       canvas.calcOffset(); // Ensure offset cache is fresh after pan ends
       canvas.requestRenderAll();
     }
@@ -624,6 +627,7 @@ function setupZoomHandler(
     );
 
     setZoom(zoom);
+    useBoardStore.getState().bumpViewportVersion();
   });
 }
 
@@ -687,6 +691,21 @@ function setupDragState(
 
   function deleteObject(obj: fabric.Object): void {
     if (obj.data?.pinned) return;
+
+    // Teleport flags use flagId, not id — handle separately via REST API
+    if (obj.data?.type === 'teleportFlag') {
+      const flagId = obj.data?.flagId as string | undefined;
+      const boardId = useBoardStore.getState().boardId;
+      const token = useBoardStore.getState().cachedAuthToken;
+      if (flagId && boardId && token) {
+        canvas.remove(obj);
+        useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+          console.error('[drag-to-trash] Flag delete failed:', err);
+        });
+      }
+      return;
+    }
+
     const objectId = obj.data?.id;
 
     // Orphan children when deleting a frame via drag-to-trash
@@ -759,6 +778,21 @@ function setupDragState(
         const deletedIds: string[] = [];
         for (const obj of objects) {
           if (obj.data?.pinned) continue;
+
+          // Teleport flags use flagId — handle separately via REST API
+          if (obj.data?.type === 'teleportFlag') {
+            const flagId = obj.data?.flagId as string | undefined;
+            const boardId = useBoardStore.getState().boardId;
+            const token = useBoardStore.getState().cachedAuthToken;
+            if (flagId && boardId && token) {
+              canvas.remove(obj);
+              useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+                console.error('[drag-to-trash] Flag delete failed:', err);
+              });
+            }
+            continue;
+          }
+
           const objectId = obj.data?.id;
 
           // Orphan children when deleting a frame via drag-to-trash
@@ -918,6 +952,9 @@ function setupEdgeScroll(canvas: fabric.Canvas): () => void {
   };
 
   const onDragEnd = () => {
+    if (isDragging) {
+      useBoardStore.getState().bumpViewportVersion();
+    }
     isDragging = false;
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
@@ -1254,16 +1291,57 @@ function setupSelectionTracking(canvas: fabric.Canvas): () => void {
     }
   }
 
+  /**
+   * Auto-open the appropriate sidebar when a selection is created/updated:
+   * - Teleport flags → open right sidebar (flag list lives there)
+   * - Regular objects → open left sidebar if closed (object properties live there)
+   *
+   * Drag state handler already closes sidebars during drag and restores
+   * on drag end, so this fires correctly for simple click-to-select.
+   */
+  function autoOpenSidebar(): void {
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    // If drag is in progress, don't auto-open (drag handler manages sidebars)
+    if (useUIStore.getState().isDraggingObject) return;
+
+    const isTeleportFlag = active.type !== 'activeSelection' &&
+      active.data?.type === 'teleportFlag';
+
+    if (isTeleportFlag) {
+      // Open right sidebar for flag interaction
+      if (!useUIStore.getState().rightSidebarOpen) {
+        useUIStore.getState().setRightSidebarOpen(true);
+      }
+    } else {
+      // Open left sidebar for object properties
+      if (!useUIStore.getState().sidebarOpen) {
+        useUIStore.getState().setSidebarOpen(true);
+      }
+    }
+  }
+
   function onSelectionCreated(): void {
     updateSelection();
-    autoCloseRightSidebar();
     autoSwitchToSelectTool();
+    // Auto-open sidebar for selected object type; auto-close right sidebar
+    // if it was auto-opened from copy (but skip close if selecting a flag)
+    const active = canvas.getActiveObject();
+    const isTeleportFlag = active && active.type !== 'activeSelection' &&
+      active.data?.type === 'teleportFlag';
+    if (!isTeleportFlag) autoCloseRightSidebar();
+    autoOpenSidebar();
   }
 
   function onSelectionUpdated(): void {
     updateSelection();
-    autoCloseRightSidebar();
     autoSwitchToSelectTool();
+    const active = canvas.getActiveObject();
+    const isTeleportFlag = active && active.type !== 'activeSelection' &&
+      active.data?.type === 'teleportFlag';
+    if (!isTeleportFlag) autoCloseRightSidebar();
+    autoOpenSidebar();
   }
 
   canvas.on('selection:created', onSelectionCreated);
