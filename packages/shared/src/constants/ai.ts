@@ -34,8 +34,21 @@ export const AI_COLORS = {
   TEXT_DEFAULT: '#212121',
 } as const;
 
+// ============================================================
+// Model IDs & Pricing
+// ============================================================
+
+export const SONNET_MODEL_ID = 'claude-sonnet-4-20250514';
+export const HAIKU_MODEL_ID = 'claude-haiku-4-20250414';
+
 /** Sonnet 4 pricing (as of 2025-05). */
 export const SONNET_4_PRICING = {
   inputPerMillionTokens: 3.0,       // $3.00 per 1M input tokens
   outputPerMillionTokens: 15.0,     // $15.00 per 1M output tokens
+} as const;
+
+/** Haiku 3.5 pricing (as of 2025-05). */
+export const HAIKU_35_PRICING = {
+  inputPerMillionTokens: 0.80,      // $0.80 per 1M input tokens
+  outputPerMillionTokens: 4.0,      // $4.00 per 1M output tokens
 } as const;

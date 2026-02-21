@@ -109,7 +109,11 @@ export interface AIConversationState {
 
 export interface AIStatusResponse {
   enabled: boolean;
-  model?: string;
+  model?: string;                     // Deprecated: use models instead
+  models?: {
+    simple: string;                   // Model for simple commands (Haiku)
+    complex: string;                  // Model for complex commands (Sonnet)
+  };
   budgetRemainingCents?: number;
   budgetTotalCents?: number;
   rateLimitPerMinute?: number;

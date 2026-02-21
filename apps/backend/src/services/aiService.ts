@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   WebSocketEvent,
+  SONNET_MODEL_ID,
+  HAIKU_MODEL_ID,
   type ViewportBounds,
   type AICommandResponse,
   type AIOperation,
@@ -11,6 +13,7 @@ import {
 import { buildSystemPrompt } from '../ai/systemPrompt';
 import { AI_TOOLS } from '../ai/tools';
 import { toolExecutor } from '../ai/toolExecutor';
+import { classifyCommand } from '../ai/commandClassifier';
 import { tracedAnthropicCall, tracedToolExecution, getCurrentTraceId } from '../ai/tracing';
 import { aiBudgetService, calculateCostCents } from './aiBudgetService';
 import { aiChatService } from './aiChatService';
@@ -62,7 +65,13 @@ export const aiService = {
   ): Promise<AICommandResponse> {
     const startTime = Date.now();
     const maxTurns = parseInt(process.env.AI_MAX_TURNS || '', 10) || 3;
-    const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+
+    // Model routing: classify command complexity and pick model
+    const complexity = classifyCommand(command);
+    const sonnetModel = process.env.ANTHROPIC_MODEL_COMPLEX || process.env.ANTHROPIC_MODEL || SONNET_MODEL_ID;
+    const haikuModel = process.env.ANTHROPIC_MODEL_SIMPLE || HAIKU_MODEL_ID;
+    let model = complexity === 'simple' ? haikuModel : sonnetModel;
+    let escalated = false;
 
     // 1. Budget check
     const budget = await aiBudgetService.checkBudget();
@@ -163,6 +172,14 @@ export const aiService = {
           // Append assistant response + tool results for next turn
           messages.push({ role: 'assistant', content: response.content });
           messages.push({ role: 'user', content: toolResults });
+
+          // Escalation: if Haiku needed multiple turns, switch to Sonnet
+          // for remaining turns (better multi-step reasoning)
+          if (!escalated && model === haikuModel && turn < maxTurns) {
+            model = sonnetModel;
+            escalated = true;
+            logger.info(`AI model escalated from Haiku → Sonnet (turn ${turn}, command: "${command.slice(0, 60)}")`);
+          }
         }
       }
 
@@ -174,8 +191,8 @@ export const aiService = {
       const errMessage = err instanceof Error ? err.message : 'Unknown error';
       logger.error(`AI agent loop error: ${errMessage}`);
 
-      // Record partial usage
-      const costCents = calculateCostCents(totalInputTokens, totalOutputTokens);
+      // Record partial usage (use current model for pricing — close enough for error path)
+      const costCents = calculateCostCents(totalInputTokens, totalOutputTokens, model);
       await aiBudgetService.recordUsage(userId, costCents, {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
@@ -247,7 +264,7 @@ export const aiService = {
     }
 
     // 6. Record usage & cost
-    const costCents = calculateCostCents(totalInputTokens, totalOutputTokens);
+    const costCents = calculateCostCents(totalInputTokens, totalOutputTokens, model);
     await aiBudgetService.recordUsage(userId, costCents, {
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
@@ -277,6 +294,8 @@ export const aiService = {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
         model,
+        complexity,
+        escalated,
         traceId: getCurrentTraceId(),
         success: true,
       },

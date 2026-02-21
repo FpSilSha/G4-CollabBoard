@@ -1,5 +1,5 @@
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
-import { SONNET_4_PRICING, AI_CONFIG } from 'shared';
+import { SONNET_4_PRICING, HAIKU_35_PRICING, AI_CONFIG } from 'shared';
 import type { AIBudgetCheck } from 'shared';
 import { logger } from '../utils/logger';
 
@@ -36,11 +36,19 @@ function budgetTokensKey(): string {
 
 /**
  * Calculate cost in cents for a given number of input/output tokens.
- * Uses Sonnet 4 pricing. Result is rounded up to nearest cent.
+ * Model-aware: uses Haiku pricing when model contains 'haiku', otherwise Sonnet.
+ * Result is rounded up to nearest cent.
  */
-export function calculateCostCents(inputTokens: number, outputTokens: number): number {
-  const inputCost = (inputTokens / 1_000_000) * SONNET_4_PRICING.inputPerMillionTokens;
-  const outputCost = (outputTokens / 1_000_000) * SONNET_4_PRICING.outputPerMillionTokens;
+export function calculateCostCents(
+  inputTokens: number,
+  outputTokens: number,
+  model?: string
+): number {
+  const pricing = model && model.includes('haiku')
+    ? HAIKU_35_PRICING
+    : SONNET_4_PRICING;
+  const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillionTokens;
+  const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillionTokens;
   return Math.ceil((inputCost + outputCost) * 100);
 }
 
