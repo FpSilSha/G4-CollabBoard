@@ -58,3 +58,24 @@
   color: var(--text-primary);
   font-weight: 500;
 }
+
+/* ============================
+   Line Detail Badges (inline SVG icons for line styling)
+   ============================ */
+
+.lineBadges {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+
+.lineBadge {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.activeEntry .lineBadge {
+  color: var(--text-secondary);
+}

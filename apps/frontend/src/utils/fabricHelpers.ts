@@ -228,7 +228,7 @@ export function createCircle(options: {
 }): fabric.Circle {
   const id = options.id ?? generateLocalId();
   const radius = options.radius ?? OBJECT_DEFAULTS.SHAPE_HEIGHT / 2;
-  return new fabric.Circle({
+  const circle = new fabric.Circle({
     left: options.x,
     top: options.y,
     radius,
@@ -241,6 +241,37 @@ export function createCircle(options: {
       shapeType: 'circle',
     },
   });
+
+  // Override drawBorders to render a circular selection border instead of rectangular
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (circle as any).drawBorders = function (
+    ctx: CanvasRenderingContext2D,
+    styleOverride?: Record<string, unknown>
+  ): fabric.Object {
+    const borderColor = (styleOverride?.borderColor as string) || this.borderColor || '#007AFF';
+    const borderWidth = (this.borderScaleFactor || 2);
+    const padding = this.padding || 4;
+
+    // Get the rendered radius accounting for scale
+    const scaleX = this.scaleX || 1;
+    const scaleY = this.scaleY || 1;
+    const rx = this.radius! * scaleX + padding + borderWidth / 2;
+    const ry = this.radius! * scaleY + padding + borderWidth / 2;
+
+    ctx.save();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = borderWidth;
+    ctx.setLineDash([4, 3]);
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+    return this;
+  };
+
+  return circle;
 }
 
 /**
@@ -1125,6 +1156,9 @@ export function createLine(options: {
 
   const baseStrokeWidth = strokeWeight === 'bold' ? 4 : 2;
 
+  // Padding around the selection border must encompass the parallel line offsets
+  const selectionPadding = strokeWeight === 'triple' ? 14 : strokeWeight === 'double' ? 10 : 6;
+
   const line = new fabric.Line(
     [options.x, options.y, options.x2, options.y2],
     {
@@ -1132,9 +1166,9 @@ export function createLine(options: {
       strokeWidth: baseStrokeWidth,
       strokeDashArray: strokePattern === 'dashed' ? [12, 8] : undefined,
       fill: '',
-      hasBorders: false,
       lockScalingX: true,
       lockScalingY: true,
+      padding: selectionPadding,
       data: {
         id,
         type: 'line',

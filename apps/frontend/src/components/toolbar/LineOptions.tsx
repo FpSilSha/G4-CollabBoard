@@ -58,6 +58,13 @@ export function LineOptions() {
     // Update Fabric object data
     Object.assign(fabricObj.data, updates);
     fabricObj.dirty = true;
+
+    // Update selection padding when weight changes so marching ants encompass all strands
+    if (updates.strokeWeight) {
+      const w = updates.strokeWeight as string;
+      fabricObj.set('padding', w === 'triple' ? 14 : w === 'double' ? 10 : 6);
+    }
+
     canvas.requestRenderAll();
 
     // Trigger object:modified to sync via existing useCanvasSync pipeline
