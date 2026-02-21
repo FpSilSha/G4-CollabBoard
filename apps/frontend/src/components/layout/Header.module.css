@@ -201,6 +201,11 @@
   color: #c62828;
 }
 
+.connectionBadge.displaced {
+  background: rgba(255, 152, 0, 0.18);
+  color: #e65100;
+}
+
 /* ============================
    Presence Avatars
    ============================ */

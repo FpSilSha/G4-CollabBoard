@@ -211,6 +211,14 @@ export function Header() {
 function ConnectionBadge({ status }: { status: ConnectionStatus }) {
   if (status === 'connected') return null;
 
+  if (status === 'displaced') {
+    return (
+      <span className={`${styles.connectionBadge} ${styles.displaced}`}>
+        Session opened elsewhere
+      </span>
+    );
+  }
+
   const label = status === 'connecting' ? 'Connecting…' : 'Offline';
   const className =
     status === 'connecting'

@@ -13,7 +13,7 @@ export interface RemoteCursor {
   lastUpdate: number; // timestamp — cursors with no update >5s are removed
 }
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'displaced';
 
 interface PresenceState {
   // --- Connection ---

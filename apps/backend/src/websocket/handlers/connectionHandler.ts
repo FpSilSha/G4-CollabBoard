@@ -176,6 +176,10 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
 
   /**
    * disconnect — Socket disconnected (network drop, tab close, etc.)
+   *
+   * Only removes user presence when this is their LAST active socket.
+   * This prevents a duplicate-session kick from wiping presence while
+   * the replacement socket is still connected.
    */
   socket.on('disconnect', async (reason: string) => {
     const userId = socket.data.userId;
@@ -184,14 +188,26 @@ export function registerConnectionHandlers(io: Server, socket: AuthenticatedSock
     logger.info(`User ${userId} disconnected: ${reason}`);
 
     try {
-      if (boardId) {
-        // Pass isDisconnect=true to preserve edit locks (TTL grace period)
+      // Check if this user still has another active socket
+      const remainingSockets = await io.fetchSockets();
+      const userStillConnected = remainingSockets.some(
+        (s) => s.id !== socket.id && (s as unknown as AuthenticatedSocket).data.userId === userId
+      );
+
+      if (boardId && !userStillConnected) {
+        // Last socket — full cleanup with edit lock grace period
         await handleLeaveBoard(io, socket, boardId, true);
       }
 
-      // Clean up: remove from all boards and session
-      await presenceService.removeUserFromAllBoards(userId);
+      // Always remove THIS socket's session
       await presenceService.removeSession(socket.id);
+
+      // Only remove from all boards if no other socket remains
+      if (!userStillConnected) {
+        await presenceService.removeUserFromAllBoards(userId);
+      } else {
+        logger.info(`User ${userId} still has active socket(s) — skipping presence cleanup`);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       logger.error(`Error during disconnect cleanup for ${userId}: ${message}`);

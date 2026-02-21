@@ -35,6 +35,7 @@ export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectingRef = useRef(false); // guard against double-connect
+  const displacedRef = useRef(false);  // true once session:replaced received
   const { getAccessTokenSilently, isAuthenticated, user } = useAuth0();
 
   // Store getAccessTokenSilently in a ref so the socket's auth callback
@@ -124,13 +125,30 @@ export function useSocket() {
           setLocalUser(payload.userId, payload.name, payload.color);
         });
 
+        // --- Session displaced by another tab/browser ---
+        // Server sends this right before force-disconnecting when the same
+        // user authenticates from a second connection.
+        socket.on('session:replaced', () => {
+          console.warn('[useSocket] Session displaced by another connection');
+          // Disable auto-reconnect so we don't fight the new session
+          socket.io.opts.reconnection = false;
+          setConnectionStatus('displaced');
+          stopHeartbeat();
+          displacedRef.current = true;
+        });
+
         socket.on('disconnect', () => {
-          setConnectionStatus('disconnected');
+          // Don't overwrite 'displaced' with 'disconnected'
+          if (!displacedRef.current) {
+            setConnectionStatus('disconnected');
+          }
           stopHeartbeat();
         });
 
         socket.on('connect_error', (err) => {
-          setConnectionStatus('disconnected');
+          if (!displacedRef.current) {
+            setConnectionStatus('disconnected');
+          }
           connectingRef.current = false;
           console.error('Socket connection error:', err.message);
         });
