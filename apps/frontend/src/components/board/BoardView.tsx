@@ -12,6 +12,8 @@ import { Toast } from '../ui/Toast';
 import { DragEdgeOverlay } from '../ui/DragEdgeOverlay';
 import { FloatingTrash } from '../ui/FloatingTrash';
 import { TextInputModal } from '../ui/TextInputModal';
+import { TackButton } from '../ai/TackButton';
+import { AIChatPanel } from '../ai/AIChatPanel';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useTeleportFlags } from '../../hooks/useTeleportFlags';
 import { useThumbnailCapture } from '../../hooks/useThumbnailCapture';
@@ -212,6 +214,10 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
       {/* Generic text-input modal (flag labels, etc.) */}
       <TextInputModal />
+
+      {/* AI Assistant — floating chat panel + Tack mascot button */}
+      <AIChatPanel />
+      <TackButton />
 
       {/* Offline overlay — blocks interaction when socket loses connection.
           Only show AFTER we've connected at least once (not on initial load). */}
