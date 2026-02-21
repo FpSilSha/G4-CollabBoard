@@ -15,6 +15,7 @@ const KEYS = {
   DB_QUERIES: 'metrics:db:queries',
   REDIS_OPS: 'metrics:redis:ops',
   WS_CONNECTIONS: 'metrics:ws:connections',
+  AI: 'metrics:ai',
   META: 'metrics:meta',
 } as const;
 
@@ -143,6 +144,13 @@ export interface MetricsSnapshot {
     operations: Record<string, number>;
     latency: Record<string, LatencyStats>;
   };
+
+  ai: {
+    commands: Record<string, number>;  // total, success, failure
+    latency: Record<string, LatencyStats>;
+    costCents: number;
+    totalTokens: number;
+  };
 }
 
 // ============================================================
@@ -223,6 +231,25 @@ export const metricsService = {
     recordLatency(`redis:${command}`, durationMs);
   },
 
+  // --- AI Metrics ---
+
+  recordAICommand(stats: {
+    latencyMs: number;
+    costCents: number;
+    tokenCount: number;
+    success: boolean;
+    errorCode?: string;
+  }): void {
+    hincrby(KEYS.AI, 'total');
+    hincrby(KEYS.AI, stats.success ? 'success' : 'failure');
+    hincrby(KEYS.AI, 'cost_cents', stats.costCents);
+    hincrby(KEYS.AI, 'tokens', stats.tokenCount);
+    if (stats.errorCode) {
+      hincrby(KEYS.AI, `error:${stats.errorCode}`);
+    }
+    recordLatency('ai:command', stats.latencyMs);
+  },
+
   // --- Retrieval (for /metrics endpoint) ---
 
   async getAll(): Promise<MetricsSnapshot> {
@@ -234,6 +261,7 @@ export const metricsService = {
     pipeline.hgetall(KEYS.DB_QUERIES);
     pipeline.hgetall(KEYS.REDIS_OPS);
     pipeline.hgetall(KEYS.WS_CONNECTIONS);
+    pipeline.hgetall(KEYS.AI);
     pipeline.hgetall(KEYS.META);
 
     const results = await pipeline.exec();
@@ -259,7 +287,8 @@ export const metricsService = {
     const dbQueries = parseHash(3);
     const redisOps = parseHash(4);
     const wsConnections = parseHash(5);
-    const meta = parseStringHash(6);
+    const aiMetrics = parseHash(6);
+    const meta = parseStringHash(7);
 
     const startedAt = meta.started_at ? new Date(meta.started_at).getTime() : Date.now();
     const uptimeSeconds = Math.floor((Date.now() - startedAt) / 1000);
@@ -291,6 +320,13 @@ export const metricsService = {
       redis: {
         operations: redisOps,
         latency: getAllLatencyStats('redis:'),
+      },
+
+      ai: {
+        commands: aiMetrics,
+        latency: getAllLatencyStats('ai:'),
+        costCents: aiMetrics.cost_cents ?? 0,
+        totalTokens: aiMetrics.tokens ?? 0,
       },
     };
   },

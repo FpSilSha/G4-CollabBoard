@@ -10,15 +10,17 @@ import {
   CreateTeleportFlagSchema,
   UpdateTeleportFlagSchema,
   FlagIdParamSchema,
+  AICommandRequestSchema,
 } from 'shared';
 import { requireAuth } from './middleware/auth';
 import { validate } from './middleware/validate';
 import { errorHandler } from './middleware/errorHandler';
-import { apiRateLimit } from './middleware/rateLimit';
+import { apiRateLimit, aiRateLimit } from './middleware/rateLimit';
 import { userController } from './controllers/userController';
 import { boardController } from './controllers/boardController';
 import { versionController } from './controllers/versionController';
 import { teleportFlagController } from './controllers/teleportFlagController';
+import { aiController } from './controllers/aiController';
 import { httpMetrics } from './middleware/httpMetrics';
 import { metricsService } from './services/metricsService';
 import { editLockService } from './services/editLockService';
@@ -113,6 +115,10 @@ app.get('/boards/:id/flags', requireAuth, apiRateLimit, validate(BoardIdParamSch
 app.post('/boards/:id/flags', requireAuth, apiRateLimit, validate(BoardIdParamSchema, 'params'), validate(CreateTeleportFlagSchema), teleportFlagController.createFlag);
 app.patch('/boards/:id/flags/:flagId', requireAuth, apiRateLimit, validate(FlagIdParamSchema, 'params'), validate(UpdateTeleportFlagSchema), teleportFlagController.updateFlag);
 app.delete('/boards/:id/flags/:flagId', requireAuth, apiRateLimit, validate(FlagIdParamSchema, 'params'), teleportFlagController.deleteFlag);
+
+// --- AI Routes ---
+app.post('/ai/execute', requireAuth, aiRateLimit, validate(AICommandRequestSchema), aiController.executeCommand);
+app.get('/ai/status', requireAuth, apiRateLimit, aiController.getStatus);
 
 // --- Error Handler (must be last) ---
 app.use(errorHandler);

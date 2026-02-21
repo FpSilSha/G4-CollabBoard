@@ -28,6 +28,9 @@ export const AuditAction = {
 
   // Subscription
   SUBSCRIPTION_CHANGE: 'subscription.change',
+
+  // AI
+  AI_EXECUTE: 'ai.execute',
 } as const;
 
 export type AuditActionType = (typeof AuditAction)[keyof typeof AuditAction];

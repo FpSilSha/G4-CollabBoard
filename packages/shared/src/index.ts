@@ -9,6 +9,7 @@ export * from './schemas/user.schemas';
 export * from './schemas/board.schemas';
 export * from './schemas/validation';
 export * from './schemas/websocket.schemas';
+export * from './schemas/ai.schemas';
 
 // Constants
 export * from './constants/limits';
