@@ -38,3 +38,7 @@ token-usage.md
 
 # Claude Code
 .claude/
+
+# Spec documents
+CollabBoard_Technical_Specification_v3_3.md
+CollabBoard_AI_Agent_Technical_Specification_v1.1.md
