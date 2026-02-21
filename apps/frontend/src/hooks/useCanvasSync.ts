@@ -34,6 +34,10 @@ import {
   syncConnectorCoordsAfterMove,
 } from '../utils/fabricHelpers';
 import { throttle } from '../utils/throttle';
+import {
+  updateAttachedConnectors,
+  detachConnectorsFromObject,
+} from '../utils/connectorAttachment';
 
 /**
  * Bridges Fabric.js canvas events <-> WebSocket events.
@@ -156,6 +160,15 @@ export function useCanvasSync(
           if (!child.data?.id) continue;
           const pos = getChildAbsolutePosition(child);
           moves.push({ objectId: child.data.id, x: pos.x, y: pos.y });
+
+          // Update connectors attached to this child
+          if (child.data.type !== 'connector') {
+            const childCenter = {
+              x: pos.x + (child.width! * (child.scaleX ?? 1)) / 2,
+              y: pos.y + (child.height! * (child.scaleY ?? 1)) / 2,
+            };
+            updateAttachedConnectors(canvas, child.data.id, childCenter);
+          }
         }
 
         if (moves.length > 0) {
@@ -164,6 +177,13 @@ export function useCanvasSync(
       } else {
         if (!target.data?.id) return;
         throttledObjectMove(target.data.id, target.left ?? 0, target.top ?? 0);
+
+        // Update connectors attached to this object (live during drag)
+        if (target.data.type !== 'connector') {
+          const center = target.getCenterPoint();
+          updateAttachedConnectors(canvas, target.data.id, center);
+          canvas.requestRenderAll();
+        }
       }
     };
 
@@ -216,6 +236,9 @@ export function useCanvasSync(
         syncConnectorCoordsAfterMove(target);
       }
 
+      // Track connector IDs that were updated via attachment (so we emit final state for them)
+      const attachedConnectorIds = new Set<string>();
+
       if (target.type === 'activeSelection') {
         // Multi-select: emit final state for each child object.
         // Use calcTransformMatrix() to get absolute positions, then
@@ -237,12 +260,37 @@ export function useCanvasSync(
 
           emitFinalState(child);
 
+          // Update attached connectors for non-connector objects
+          if (child.data.type !== 'connector') {
+            const childCenter = {
+              x: pos.x + (child.width! * (child.scaleX ?? 1)) / 2,
+              y: pos.y + (child.height! * (child.scaleY ?? 1)) / 2,
+            };
+            const updated = updateAttachedConnectors(canvas, child.data.id, childCenter);
+            updated.forEach((id) => attachedConnectorIds.add(id));
+          }
+
           // Restore group-relative coords so Fabric.js selection isn't broken
           child.set('left', origLeft);
           child.set('top', origTop);
         }
       } else {
         emitFinalState(target);
+
+        // Update and emit final state for attached connectors
+        if (target.data?.type !== 'connector' && target.data?.id) {
+          const center = target.getCenterPoint();
+          const updated = updateAttachedConnectors(canvas, target.data.id, center);
+          updated.forEach((id) => attachedConnectorIds.add(id));
+        }
+      }
+
+      // Emit final state for all connectors that were repositioned via attachment
+      for (const connId of attachedConnectorIds) {
+        const connObj = findFabricObjectById(canvas, connId);
+        if (connObj) {
+          emitFinalState(connObj);
+        }
       }
     };
 
@@ -623,6 +671,9 @@ export function useCanvasSync(
           }
         }
 
+        // Detach connectors that reference this deleted object
+        detachConnectorsFromObject(canvas, objectId);
+
         canvas.remove(fabricObj);
         canvas.requestRenderAll();
       }
@@ -652,6 +703,9 @@ export function useCanvasSync(
               }
             }
           }
+
+          // Detach connectors that reference this deleted object
+          detachConnectorsFromObject(canvas, objectId);
 
           canvas.remove(fabricObj);
         }

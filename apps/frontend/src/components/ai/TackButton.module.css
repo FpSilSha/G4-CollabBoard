@@ -1,0 +1,63 @@
+/* ============================================================
+   Tacky Mascot Button — fixed position bottom-right
+   ============================================================ */
+
+.tackButton {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--focus-blue);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 900;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: transform var(--transition-speed) var(--transition-ease),
+              box-shadow var(--transition-speed) var(--transition-ease);
+}
+
+.tackButton:hover {
+  transform: scale(var(--hover-scale));
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.tackButton:active {
+  transform: scale(var(--active-scale));
+}
+
+.tackButton.open {
+  background: var(--text-secondary);
+}
+
+/* Thumbtack icon */
+.tackIcon {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Thinking indicator dot */
+.thinkingDot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #FFEB3B;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}

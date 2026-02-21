@@ -107,3 +107,12 @@ export const apiRateLimit = rateLimit(
   RATE_LIMITS.API_REQUESTS_PER_MINUTE,
   60000
 );
+
+/**
+ * AI-specific rate limiter: configurable via RATE_LIMIT_AI_MAX_REQUESTS (default 10/min)
+ */
+export const aiRateLimit = rateLimit(
+  'ai',
+  parseInt(process.env.RATE_LIMIT_AI_MAX_REQUESTS || '10', 10),
+  60000
+);

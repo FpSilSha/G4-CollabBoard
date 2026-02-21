@@ -74,3 +74,9 @@
 - ❌ Never sync Fabric.js objects by array index (always use `fabricObject.data.id`)
 - ❌ Never create duplicate type definitions between apps (use `packages/shared`)
 - ❌ Never skip validation checkpoints between Build Sequence phases
+
+## 8. Secret File Safety
+- ❌ **NEVER read `.env` files** — they contain API keys and secrets that get exposed in conversation
+- ✅ Use `.env.example` files to check env var names, structure, or config (secrets are blank)
+- ✅ Ask the user to confirm if a specific env var exists or has a value — never read `.env` yourself
+- `.env.example` locations: `apps/backend/.env.example`, `apps/frontend/.env.example`

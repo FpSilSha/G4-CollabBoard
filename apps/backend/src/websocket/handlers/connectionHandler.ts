@@ -12,6 +12,7 @@ import { presenceService } from '../../services/presenceService';
 import { boardService } from '../../services/boardService';
 import { editLockService } from '../../services/editLockService';
 import { teleportFlagService } from '../../services/teleportFlagService';
+import { aiChatService } from '../../services/aiChatService';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
 import { auditService, AuditAction } from '../../services/auditService';
@@ -280,6 +281,12 @@ async function handleLeaveBoard(
       const msg = err instanceof Error ? err.message : 'Unknown error';
       logger.error(`Failed to release edit locks for ${userId}: ${msg}`);
     }
+
+    // Purge AI chat history on voluntary leave (not disconnect — keep for reconnect)
+    aiChatService.purgeChat(boardId, userId).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      logger.error(`Failed to purge AI chat for ${userId}: ${msg}`);
+    });
   }
 
   // Remove from presence
