@@ -24,6 +24,7 @@ import { aiController } from './controllers/aiController';
 import { httpMetrics } from './middleware/httpMetrics';
 import { metricsService } from './services/metricsService';
 import { editLockService } from './services/editLockService';
+import { auditService } from './services/auditService';
 import prisma from './models/index';
 
 const app = express();
@@ -119,6 +120,18 @@ app.delete('/boards/:id/flags/:flagId', requireAuth, apiRateLimit, validate(Flag
 // --- AI Routes ---
 app.post('/ai/execute', requireAuth, aiRateLimit, validate(AICommandRequestSchema), aiController.executeCommand);
 app.get('/ai/status', requireAuth, apiRateLimit, aiController.getStatus);
+
+// --- Audit Routes ---
+app.get('/audit/ai-errors', requireAuth, apiRateLimit, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string || '50', 10), 200);
+    const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
+    const result = await auditService.getAIErrors({ limit, offset });
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch AI errors' });
+  }
+});
 
 // --- Error Handler (must be last) ---
 app.use(errorHandler);

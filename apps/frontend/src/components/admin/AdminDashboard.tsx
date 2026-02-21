@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { MetricTile } from './MetricTile';
+import { ErrorHistoryModal } from './ErrorHistoryModal';
 import styles from './AdminDashboard.module.css';
 
 // ============================================================
@@ -63,6 +64,27 @@ interface MetricsSnapshot {
 }
 
 // ============================================================
+// AI Error type — mirrors backend audit response
+// ============================================================
+
+export interface AIError {
+  id: string;
+  userId: string;
+  boardId: string;
+  command: string;
+  errorCode: string;
+  errorMessage: string;
+  operationCount: number;
+  turnsUsed: number;
+  inputTokens: number;
+  outputTokens: number;
+  costCents: number;
+  model: string;
+  traceId: string | null;
+  timestamp: string;
+}
+
+// ============================================================
 // Constants
 // ============================================================
 
@@ -106,6 +128,28 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHrs = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  // Relative for recent, absolute for older
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen) + '...';
+}
+
 // ============================================================
 // Admin Dashboard Component
 // ============================================================
@@ -117,20 +161,31 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(POLL_INTERVAL);
   const countdownRef = useRef(POLL_INTERVAL);
+  const [recentErrors, setRecentErrors] = useState<AIError[]>([]);
+  const [totalErrors, setTotalErrors] = useState(0);
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
 
   const fetchMetrics = useCallback(async () => {
     try {
       const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/metrics`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-      });
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      const snapshot: MetricsSnapshot = await res.json();
+      const [metricsRes, errorsRes] = await Promise.all([
+        fetch(`${API_URL}/metrics`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        }),
+        fetch(`${API_URL}/audit/ai-errors?limit=3`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      if (!metricsRes.ok) throw new Error(`Server returned ${metricsRes.status}`);
+      const snapshot: MetricsSnapshot = await metricsRes.json();
       setData(snapshot);
       setError(null);
+
+      if (errorsRes.ok) {
+        const errData = await errorsRes.json() as { errors: AIError[]; total: number };
+        setRecentErrors(errData.errors);
+        setTotalErrors(errData.total);
+      }
     } catch (err) {
       console.error('[AdminDashboard] fetch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
@@ -176,11 +231,21 @@ export function AdminDashboard() {
         {error && <p className={styles.error}>{error}</p>}
         {data && (
           <>
-            <AIMetricsSection data={data} />
+            <AIMetricsSection
+              data={data}
+              recentErrors={recentErrors}
+              totalErrors={totalErrors}
+              onShowAllErrors={() => setErrorModalOpen(true)}
+            />
             <BackendMetricsSection data={data} />
           </>
         )}
       </main>
+      {errorModalOpen && (
+        <ErrorHistoryModal
+          onClose={() => setErrorModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -216,7 +281,17 @@ function SectionDivider({ label }: { label: string }) {
 // AI Metrics Section
 // ============================================================
 
-function AIMetricsSection({ data }: { data: MetricsSnapshot }) {
+function AIMetricsSection({
+  data,
+  recentErrors,
+  totalErrors,
+  onShowAllErrors,
+}: {
+  data: MetricsSnapshot;
+  recentErrors: AIError[];
+  totalErrors: number;
+  onShowAllErrors: () => void;
+}) {
   const ai = data.ai;
   const cmds = ai.commands;
   const budget = ai.budget;
@@ -247,12 +322,6 @@ function AIMetricsSection({ data }: { data: MetricsSnapshot }) {
   const centsPerDay = dayOfMonth > 0 ? budget.spentCents / dayOfMonth : 0;
   const remainingBudget = Math.max(0, budget.budgetCents - budget.spentCents);
   const projectedDays = centsPerDay > 0 ? Math.floor(remainingBudget / centsPerDay) : 999;
-
-  // Errors
-  const errorEntries = Object.entries(cmds)
-    .filter(([k]) => k.startsWith('error:'))
-    .map(([k, v]) => ({ code: k.replace('error:', ''), count: v }))
-    .sort((a, b) => b.count - a.count);
 
   return (
     <>
@@ -325,20 +394,41 @@ function AIMetricsSection({ data }: { data: MetricsSnapshot }) {
         />
       </div>
 
-      {/* Row 3: Error list */}
-      {errorEntries.length > 0 && (
-        <div className={styles.tableCard}>
-          <h3 className={styles.tableTitle}>Recent Errors</h3>
+      {/* Row 3: Recent errors from DB */}
+      <div className={styles.tableCard}>
+        <div className={styles.errorHeader}>
+          <h3 className={styles.tableTitle}>
+            Recent Errors{totalErrors > 0 && ` (${totalErrors} total)`}
+          </h3>
+          {totalErrors > 0 && (
+            <button className={styles.showAllButton} onClick={onShowAllErrors}>
+              Show all captured errors
+            </button>
+          )}
+        </div>
+        {recentErrors.length > 0 ? (
           <div className={styles.errorList}>
-            {errorEntries.map((e) => (
-              <div key={e.code} className={styles.errorItem}>
-                <span className={styles.errorCode}>{e.code}</span>
-                <span className={styles.errorCount}>{e.count}x</span>
+            {recentErrors.map((e) => (
+              <div key={e.id} className={styles.recentErrorItem}>
+                <div className={styles.recentErrorTop}>
+                  <span className={styles.errorCode}>{e.errorCode}</span>
+                  <span className={styles.errorTimestamp}>{formatTimestamp(e.timestamp)}</span>
+                </div>
+                {e.errorMessage && (
+                  <div className={styles.recentErrorMessage}>{e.errorMessage}</div>
+                )}
+                {e.command && (
+                  <div className={styles.recentErrorCommand}>
+                    Command: &ldquo;{truncate(e.command, 80)}&rdquo;
+                  </div>
+                )}
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className={styles.muted}>No errors recorded</p>
+        )}
+      </div>
     </>
   );
 }
