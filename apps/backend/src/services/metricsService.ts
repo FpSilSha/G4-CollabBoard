@@ -1,5 +1,6 @@
 import { redis } from '../utils/redis';
 import { logger } from '../utils/logger';
+import { aiBudgetService } from './aiBudgetService';
 
 // ============================================================
 // Constants
@@ -33,6 +34,7 @@ interface LatencyBucket {
 interface LatencyStats {
   avg: number;
   p50: number;
+  p90: number;
   p95: number;
   p99: number;
   count: number;
@@ -64,12 +66,13 @@ function recordLatency(category: string, durationMs: number): void {
 
 function computePercentiles(bucket: LatencyBucket): LatencyStats {
   const n = Math.min(bucket.count, RING_BUFFER_SIZE);
-  if (n === 0) return { avg: 0, p50: 0, p95: 0, p99: 0, count: 0 };
+  if (n === 0) return { avg: 0, p50: 0, p90: 0, p95: 0, p99: 0, count: 0 };
 
   const sorted = Array.from(bucket.samples.subarray(0, n)).sort((a, b) => a - b);
   return {
     avg: Math.round((bucket.sum / bucket.count) * 100) / 100,
     p50: sorted[Math.floor(n * 0.5)],
+    p90: sorted[Math.floor(n * 0.90)],
     p95: sorted[Math.floor(n * 0.95)],
     p99: sorted[Math.floor(n * 0.99)],
     count: bucket.count,
@@ -146,10 +149,17 @@ export interface MetricsSnapshot {
   };
 
   ai: {
-    commands: Record<string, number>;  // total, success, failure
+    commands: Record<string, number>;  // total, success, failure, today, error:*
     latency: Record<string, LatencyStats>;
     costCents: number;
     totalTokens: number;
+    budget: {
+      spentCents: number;
+      budgetCents: number;
+      callCount: number;
+      inputTokens: number;
+      outputTokens: number;
+    };
   };
 }
 
@@ -236,24 +246,39 @@ export const metricsService = {
   recordAICommand(stats: {
     latencyMs: number;
     costCents: number;
-    tokenCount: number;
+    inputTokens: number;
+    outputTokens: number;
     success: boolean;
     errorCode?: string;
   }): void {
+    const totalTokens = stats.inputTokens + stats.outputTokens;
     hincrby(KEYS.AI, 'total');
     hincrby(KEYS.AI, stats.success ? 'success' : 'failure');
     hincrby(KEYS.AI, 'cost_cents', stats.costCents);
-    hincrby(KEYS.AI, 'tokens', stats.tokenCount);
+    hincrby(KEYS.AI, 'tokens', totalTokens);
+    hincrby(KEYS.AI, 'input_tokens', stats.inputTokens);
+    hincrby(KEYS.AI, 'output_tokens', stats.outputTokens);
     if (stats.errorCode) {
       hincrby(KEYS.AI, `error:${stats.errorCode}`);
     }
     recordLatency('ai:command', stats.latencyMs);
+
+    // Track daily command count (separate key with TTL)
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const todayKey = `metrics:ai:today:${today}`;
+    redis.incr(todayKey).catch((err: Error) => {
+      logger.debug(`Metrics today counter failed: ${err.message}`);
+    });
+    redis.expire(todayKey, 48 * 60 * 60).catch(() => {});
   },
 
   // --- Retrieval (for /metrics endpoint) ---
 
   async getAll(): Promise<MetricsSnapshot> {
-    // Fetch all Redis hashes in a single pipeline
+    // Fetch all Redis hashes + today's AI count + budget data in parallel
+    const today = new Date().toISOString().slice(0, 10);
+    const todayKey = `metrics:ai:today:${today}`;
+
     const pipeline = redis.pipeline();
     pipeline.hgetall(KEYS.HTTP_REQUESTS);
     pipeline.hgetall(KEYS.WS_EVENTS_IN);
@@ -263,8 +288,12 @@ export const metricsService = {
     pipeline.hgetall(KEYS.WS_CONNECTIONS);
     pipeline.hgetall(KEYS.AI);
     pipeline.hgetall(KEYS.META);
+    pipeline.get(todayKey);
 
-    const results = await pipeline.exec();
+    const [results, budgetUsage] = await Promise.all([
+      pipeline.exec(),
+      aiBudgetService.getMonthlyUsage(),
+    ]);
 
     const parseHash = (index: number): Record<string, number> => {
       const data = results?.[index]?.[1] as Record<string, string> | null;
@@ -289,9 +318,13 @@ export const metricsService = {
     const wsConnections = parseHash(5);
     const aiMetrics = parseHash(6);
     const meta = parseStringHash(7);
+    const todayCount = parseInt((results?.[8]?.[1] as string) ?? '0', 10);
 
     const startedAt = meta.started_at ? new Date(meta.started_at).getTime() : Date.now();
     const uptimeSeconds = Math.floor((Date.now() - startedAt) / 1000);
+
+    // Include today count in the ai commands hash
+    const aiCommandsWithToday = { ...aiMetrics, today: todayCount };
 
     return {
       uptime: uptimeSeconds,
@@ -323,10 +356,17 @@ export const metricsService = {
       },
 
       ai: {
-        commands: aiMetrics,
+        commands: aiCommandsWithToday,
         latency: getAllLatencyStats('ai:'),
         costCents: aiMetrics.cost_cents ?? 0,
         totalTokens: aiMetrics.tokens ?? 0,
+        budget: {
+          spentCents: budgetUsage.spentCents,
+          budgetCents: budgetUsage.budgetCents,
+          callCount: budgetUsage.callCount,
+          inputTokens: aiMetrics.input_tokens ?? 0,
+          outputTokens: aiMetrics.output_tokens ?? 0,
+        },
       },
     };
   },

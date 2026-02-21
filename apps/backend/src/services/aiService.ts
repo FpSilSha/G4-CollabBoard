@@ -257,7 +257,8 @@ export const aiService = {
       metricsService.recordAICommand({
         latencyMs: Date.now() - startTime,
         costCents,
-        tokenCount: totalInputTokens + totalOutputTokens,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
         success: false,
         errorCode: 'AI_EXECUTION_FAILED',
       });
@@ -357,7 +358,8 @@ export const aiService = {
     metricsService.recordAICommand({
       latencyMs: Date.now() - startTime,
       costCents,
-      tokenCount: totalInputTokens + totalOutputTokens,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
       success: true,
     });
 

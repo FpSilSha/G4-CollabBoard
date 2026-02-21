@@ -31,6 +31,18 @@
   gap: 12px;
 }
 
+.adminLink {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.adminLink:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 .userName {
   font-size: 14px;
   color: var(--text-secondary);

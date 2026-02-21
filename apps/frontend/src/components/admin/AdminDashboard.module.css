@@ -1,0 +1,365 @@
+/* ============================
+   Admin Dashboard — Full-page metrics view
+   ============================ */
+
+.container {
+  min-height: 100vh;
+  background: var(--canvas-bg);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================
+   Header
+   ============================ */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  border-bottom: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+}
+
+.backLink {
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+  white-space: nowrap;
+}
+
+.backLink:hover {
+  color: var(--text-primary);
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.countdown {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================
+   Main Content
+   ============================ */
+
+.main {
+  flex: 1;
+  padding: 24px 32px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  overflow-y: auto;
+}
+
+/* ============================
+   Section Headers
+   ============================ */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 32px 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.sectionHeader:first-child {
+  margin-top: 0;
+}
+
+.sectionLine {
+  flex: 1;
+  height: 1px;
+  background: var(--sidebar-border);
+}
+
+/* ============================
+   Tile Grid
+   ============================ */
+
+.tileGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .tileGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 500px) {
+  .tileGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================
+   Progress Bar (budget spend)
+   ============================ */
+
+.progressBar {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--focus-blue);
+  transition: width 300ms ease;
+}
+
+.progressFillWarning {
+  background: #f57c00;
+}
+
+.progressFillDanger {
+  background: #f44336;
+}
+
+/* ============================
+   Latency Percentile List
+   ============================ */
+
+.percentileList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.percentileRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.percentileLabel {
+  color: var(--text-tertiary);
+}
+
+.percentileValue {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ============================
+   Data Tables
+   ============================ */
+
+.tableCard {
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.tableTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--sidebar-border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 6px 12px 6px 0;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table td:first-child {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Right-align numeric columns */
+.numCell {
+  text-align: right;
+}
+
+/* ============================
+   WebSocket Events — Side-by-side tables
+   ============================ */
+
+.wsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 700px) {
+  .wsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================
+   Error List
+   ============================ */
+
+.errorList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.errorItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.errorCode {
+  color: #c62828;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.errorCount {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* ============================
+   Command Breakdown List
+   ============================ */
+
+.breakdownList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.breakdownRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.breakdownLabel {
+  color: var(--text-secondary);
+}
+
+.breakdownValue {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ============================
+   Loading & Error States
+   ============================ */
+
+.loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.loading p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--focus-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error {
+  background: rgba(244, 67, 54, 0.1);
+  color: #c62828;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+/* ============================
+   Edit Locks
+   ============================ */
+
+.lockList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.lockItem {
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: 13px;
+}

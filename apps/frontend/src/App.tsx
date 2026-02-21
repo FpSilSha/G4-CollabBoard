@@ -2,6 +2,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { BoardView } from './components/board/BoardView';
+import { AdminDashboard } from './components/admin/AdminDashboard';
 import { useSocket } from './hooks/useSocket';
 import styles from './App.module.css';
 
@@ -20,6 +21,7 @@ import styles from './App.module.css';
  * Routes:
  *   /                 -> Dashboard (board list + create)
  *   /board/:boardId   -> Board canvas view
+ *   /admin            -> Admin metrics dashboard
  *   *                 -> Redirect to /
  */
 export function App() {
@@ -67,6 +69,7 @@ export function App() {
           />
         }
       />
+      <Route path="/admin" element={<AdminDashboard />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
