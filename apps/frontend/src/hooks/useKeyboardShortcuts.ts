@@ -116,6 +116,7 @@ export function useKeyboardShortcuts(
             vpt[4] = homeCanvas.getWidth() / 2;
             vpt[5] = homeCanvas.getHeight() / 2;
             homeCanvas.setViewportTransform(vpt);
+            homeCanvas.requestRenderAll();
           }
           break;
         }

@@ -441,7 +441,10 @@ function setupPanHandler(canvas: fabric.Canvas): () => void {
     lastPosY = evt.clientY;
     // setViewportTransform updates the transform AND refreshes the cached
     // canvas offset (via calcOffset), keeping pointer hit-testing accurate.
+    // NOTE: With renderOnAddRemove=false, setViewportTransform does NOT
+    // auto-render, so we must call requestRenderAll() explicitly.
     canvas.setViewportTransform(vpt);
+    canvas.requestRenderAll();
   });
 
   canvas.on('mouse:up', () => {
@@ -633,6 +636,8 @@ function setupZoomHandler(
       new fabric.Point(evt.offsetX, evt.offsetY),
       zoom
     );
+    // With renderOnAddRemove=false, zoomToPoint won't auto-render
+    canvas.requestRenderAll();
 
     setZoom(zoom);
     useBoardStore.getState().bumpViewportVersion();
@@ -927,6 +932,8 @@ function setupEdgeScroll(canvas: fabric.Canvas): () => void {
       vpt[4] -= dx;
       vpt[5] -= dy;
       canvas.setViewportTransform(vpt);
+      // With renderOnAddRemove=false, setViewportTransform won't auto-render
+      canvas.requestRenderAll();
 
       // Also move the active object(s) so they stay under the cursor
       const activeObj = canvas.getActiveObject();
