@@ -668,7 +668,38 @@ export function createConnector(options: {
     setupArrowheadRender(line);
   }
 
+  // If the connector already has anchors (loaded from server), lock movement
+  applyConnectorLockState(line);
+
   return line;
+}
+
+/**
+ * Apply or remove movement locks on a connector based on its anchor state.
+ * When any anchor is set, the connector becomes immovable — only the
+ * attached objects' movement can reposition it. The lock button stays
+ * visible so the user can unlock.
+ */
+export function applyConnectorLockState(line: fabric.Line): void {
+  const hasAnyAnchor = !!(line.data?.fromAnchor || line.data?.toAnchor);
+
+  if (hasAnyAnchor) {
+    line.set({
+      lockMovementX: true,
+      lockMovementY: true,
+    });
+    line.setControlVisible('p1', false);
+    line.setControlVisible('p2', false);
+    line.setControlVisible('lockBtn', true);
+  } else {
+    line.set({
+      lockMovementX: false,
+      lockMovementY: false,
+    });
+    line.setControlVisible('p1', true);
+    line.setControlVisible('p2', true);
+    line.setControlVisible('lockBtn', true);
+  }
 }
 
 /**
@@ -925,6 +956,12 @@ function setupConnectorEndpointControls(line: fabric.Line): void {
 
     ctx.restore();
   };
+
+  // IMPORTANT: Create an instance-specific controls object.
+  // Fabric.js shares `controls` via the prototype, so mutating it directly
+  // would add lockBtn/p1/p2 to ALL objects (including shapes). Spread the
+  // existing controls into a new object so only this connector gets them.
+  line.controls = { ...line.controls };
 
   // P1 control (start point)
   line.controls.p1 = new fabric.Control({

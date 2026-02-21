@@ -8,6 +8,7 @@ import {
   getObjectFillColor,
   getObjectsInsideFrame,
   fabricToBoardObject,
+  applyConnectorLockState,
 } from '../utils/fabricHelpers';
 import { findEdgeLockTarget } from '../utils/edgeGeometry';
 import { setupRotationModeListeners } from './useKeyboardShortcuts';
@@ -1000,6 +1001,8 @@ function setupEdgeScroll(canvas: fabric.Canvas): () => void {
  *   2. If inside an object → lock to that interior point (highest z-index wins).
  *   3. If no target → unlock (clear attachment).
  *
+ * If already locked (any anchor exists), clicking unlocks both endpoints.
+ *
  * Snaps the endpoint position to the resolved anchor point and emits the update.
  */
 function handleConnectorLock(
@@ -1010,35 +1013,45 @@ function handleConnectorLock(
   if (!line.data?.id) return;
   const connectorId = line.data.id;
 
-  // Get absolute endpoint positions
-  const x1 = line.x1 ?? 0;
-  const y1 = line.y1 ?? 0;
-  const x2 = line.x2 ?? 0;
-  const y2 = line.y2 ?? 0;
+  const wasLocked = !!(line.data.fromAnchor || line.data.toAnchor);
 
-  // Try to lock each endpoint
-  const fromResult = findEdgeLockTarget(canvas, x1, y1, [connectorId]);
-  const toResult = findEdgeLockTarget(canvas, x2, y2, [connectorId]);
-
-  // Update from-endpoint
-  if (fromResult) {
-    line.data.fromObjectId = fromResult.objectId;
-    line.data.fromAnchor = fromResult.anchor;
-    line.set({ x1: fromResult.absolutePoint.x, y1: fromResult.absolutePoint.y });
-  } else {
+  if (wasLocked) {
+    // Toggle OFF — clear all attachments
     line.data.fromObjectId = '';
     line.data.fromAnchor = null;
-  }
-
-  // Update to-endpoint
-  if (toResult) {
-    line.data.toObjectId = toResult.objectId;
-    line.data.toAnchor = toResult.anchor;
-    line.set({ x2: toResult.absolutePoint.x, y2: toResult.absolutePoint.y });
-  } else {
     line.data.toObjectId = '';
     line.data.toAnchor = null;
+  } else {
+    // Toggle ON — try to lock each endpoint to nearest edge
+    const x1 = line.x1 ?? 0;
+    const y1 = line.y1 ?? 0;
+    const x2 = line.x2 ?? 0;
+    const y2 = line.y2 ?? 0;
+
+    const fromResult = findEdgeLockTarget(canvas, x1, y1, [connectorId]);
+    const toResult = findEdgeLockTarget(canvas, x2, y2, [connectorId]);
+
+    if (fromResult) {
+      line.data.fromObjectId = fromResult.objectId;
+      line.data.fromAnchor = fromResult.anchor;
+      line.set({ x1: fromResult.absolutePoint.x, y1: fromResult.absolutePoint.y });
+    } else {
+      line.data.fromObjectId = '';
+      line.data.fromAnchor = null;
+    }
+
+    if (toResult) {
+      line.data.toObjectId = toResult.objectId;
+      line.data.toAnchor = toResult.anchor;
+      line.set({ x2: toResult.absolutePoint.x, y2: toResult.absolutePoint.y });
+    } else {
+      line.data.toObjectId = '';
+      line.data.toAnchor = null;
+    }
   }
+
+  // Apply movement lock/unlock based on new anchor state
+  applyConnectorLockState(line);
 
   line.setCoords();
   canvas.requestRenderAll();
