@@ -28,6 +28,17 @@ export const teleportFlagController = {
       const { id: boardId } = req.params;
       const { label, x, y, color } = req.body;
       const result = await teleportFlagService.createFlag(boardId, sub, { label, x, y, color });
+
+      // Broadcast to all clients in the board room (including sender).
+      // Frontend skips the event if userId matches local user (already added optimistically).
+      const io = getIO();
+      trackedEmit(io.to(boardId), WebSocketEvent.FLAG_CREATED, {
+        boardId,
+        flag: result,
+        userId: sub,
+        timestamp: Date.now(),
+      });
+
       res.status(201).json(result);
     } catch (err) {
       next(err);
@@ -39,8 +50,20 @@ export const teleportFlagController = {
    */
   async updateFlag(req: Request, res: Response, next: NextFunction) {
     try {
+      const { sub } = (req as AuthenticatedRequest).user;
       const { id: boardId, flagId } = req.params;
       const result = await teleportFlagService.updateFlag(boardId, flagId, req.body);
+
+      // Broadcast to all clients in the board room (including sender).
+      // Frontend skips the event if userId matches local user (already updated optimistically).
+      const io = getIO();
+      trackedEmit(io.to(boardId), WebSocketEvent.FLAG_UPDATED, {
+        boardId,
+        flag: result,
+        userId: sub,
+        timestamp: Date.now(),
+      });
+
       res.json(result);
     } catch (err) {
       next(err);

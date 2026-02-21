@@ -41,6 +41,8 @@ export enum WebSocketEvent {
   SYNC_CONFLICT = 'sync:conflict',
 
   // Teleport Flags
+  FLAG_CREATED = 'flag:created',
+  FLAG_UPDATED = 'flag:updated',
   FLAG_DELETED = 'flag:deleted',
 
   // Auth
@@ -253,6 +255,20 @@ export interface HeartbeatPayload {
 export interface WebSocketErrorPayload {
   code: string;
   message: string;
+  timestamp: number;
+}
+
+export interface FlagCreatedPayload {
+  boardId: string;
+  flag: TeleportFlag;
+  userId: string;
+  timestamp: number;
+}
+
+export interface FlagUpdatedPayload {
+  boardId: string;
+  flag: TeleportFlag;
+  userId: string;
   timestamp: number;
 }
 
