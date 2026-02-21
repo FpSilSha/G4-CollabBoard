@@ -5,7 +5,7 @@
 export const AI_CONFIG = {
   MAX_COMMAND_LENGTH: 1000,
   MAX_TURNS: 3,
-  DEFAULT_MODEL: 'claude-sonnet-4-20250514',
+  DEFAULT_MODEL: 'claude-sonnet-4-6',
   MONTHLY_BUDGET_CENTS_DEFAULT: 1000,
   VIEWPORT_OBJECT_CAP: 50,
   CHAT_MAX_MESSAGES: 10,
@@ -42,17 +42,17 @@ export const AI_COLORS = {
 // Model IDs & Pricing
 // ============================================================
 
-export const SONNET_MODEL_ID = 'claude-sonnet-4-20250514';
-export const HAIKU_MODEL_ID = 'claude-haiku-4-20250414';
+export const SONNET_MODEL_ID = 'claude-sonnet-4-6';
+export const HAIKU_MODEL_ID = 'claude-haiku-4-5-20251001';
 
-/** Sonnet 4 pricing (as of 2025-05). */
+/** Sonnet 4.6 pricing (as of 2025-10). */
 export const SONNET_4_PRICING = {
   inputPerMillionTokens: 3.0,       // $3.00 per 1M input tokens
   outputPerMillionTokens: 15.0,     // $15.00 per 1M output tokens
 } as const;
 
-/** Haiku 3.5 pricing (as of 2025-05). */
-export const HAIKU_35_PRICING = {
-  inputPerMillionTokens: 0.80,      // $0.80 per 1M input tokens
-  outputPerMillionTokens: 4.0,      // $4.00 per 1M output tokens
+/** Haiku 4.5 pricing (as of 2025-10). */
+export const HAIKU_45_PRICING = {
+  inputPerMillionTokens: 1.0,       // $1.00 per 1M input tokens
+  outputPerMillionTokens: 5.0,      // $5.00 per 1M output tokens
 } as const;

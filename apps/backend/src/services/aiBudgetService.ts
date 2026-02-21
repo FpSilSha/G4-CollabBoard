@@ -1,5 +1,5 @@
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
-import { SONNET_4_PRICING, HAIKU_35_PRICING, AI_CONFIG } from 'shared';
+import { SONNET_4_PRICING, HAIKU_45_PRICING, AI_CONFIG } from 'shared';
 import type { AIBudgetCheck } from 'shared';
 import { logger } from '../utils/logger';
 
@@ -45,7 +45,7 @@ export function calculateCostCents(
   model?: string
 ): number {
   const pricing = model && model.includes('haiku')
-    ? HAIKU_35_PRICING
+    ? HAIKU_45_PRICING
     : SONNET_4_PRICING;
   const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillionTokens;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillionTokens;

@@ -82,8 +82,8 @@ export const aiController = {
       res.json({
         enabled: true,
         models: {
-          simple: process.env.ANTHROPIC_MODEL_SIMPLE || 'claude-haiku-4-20250414',
-          complex: process.env.ANTHROPIC_MODEL_COMPLEX || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+          simple: process.env.ANTHROPIC_MODEL_SIMPLE || 'claude-haiku-4-5-20251001',
+          complex: process.env.ANTHROPIC_MODEL_COMPLEX || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
         },
         budgetRemainingCents: Math.max(0, usage.budgetCents - usage.spentCents),
         budgetTotalCents: usage.budgetCents,
