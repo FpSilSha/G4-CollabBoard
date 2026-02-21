@@ -53,7 +53,7 @@ export const ObjectCreatePayloadSchema = z.object({
   boardId: z.string().uuid(),
   object: z.object({
     id: z.string().uuid(),
-    type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
+    type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text', 'line']),
   }).passthrough(), // Allow additional type-specific fields
   timestamp: z.number().int().positive(),
 });
@@ -83,6 +83,12 @@ export const ObjectUpdateFieldsSchema = z.object({
   updatedAt: z.any().optional(),
   frameId: z.string().uuid().nullable().optional(),
   locked: z.boolean().optional(),
+  // Line styling
+  endpointStyle: z.enum(['none', 'arrow-end', 'arrow-both']).optional(),
+  strokePattern: z.enum(['solid', 'dashed']).optional(),
+  strokeWeight: z.enum(['normal', 'bold', 'double', 'triple']).optional(),
+  // Text font
+  fontFamily: z.string().max(200).optional(),
 }).passthrough();
 
 // object:delete
@@ -109,7 +115,7 @@ export const ObjectsBatchCreatePayloadSchema = z.object({
   boardId: z.string().uuid(),
   objects: z.array(z.object({
     id: z.string().uuid(),
-    type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
+    type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text', 'line']),
   }).passthrough()).min(1).max(50), // Cap at 50 objects per batch
   timestamp: z.number().int().positive(),
 });

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { PASTEL_COLORS } from 'shared';
-import type { BoardObject, ColorPaletteKey } from 'shared';
+import type { BoardObject, ColorPaletteKey, LineEndpointStyle, LineStrokePattern, LineStrokeWeight } from 'shared';
 import { useBoardStore } from './boardStore';
 
 /**
@@ -15,7 +15,7 @@ import { useBoardStore } from './boardStore';
  * - 'connector': click-and-drag to create a connector (snaps to objects)
  * - 'dropper': click an object to sample its fill color
  */
-export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'line' | 'connector' | 'dropper' | 'placeFlag';
+export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'line' | 'connector' | 'dropper' | 'placeFlag' | 'arrow' | 'star';
 
 /** Maximum number of custom color slots (2 rows of 5) */
 const MAX_CUSTOM_COLORS = 10;
@@ -102,6 +102,20 @@ interface UIState {
   selectedObjectTypes: string[];
   setSelection: (ids: string[], types: string[]) => void;
   clearSelection: () => void;
+
+  // Line tool styling defaults (persist between draws)
+  lineEndpointStyle: LineEndpointStyle;
+  setLineEndpointStyle: (style: LineEndpointStyle) => void;
+  lineStrokePattern: LineStrokePattern;
+  setLineStrokePattern: (pattern: LineStrokePattern) => void;
+  lineStrokeWeight: LineStrokeWeight;
+  setLineStrokeWeight: (weight: LineStrokeWeight) => void;
+
+  // Text tool styling defaults (persist between creates)
+  textFontSize: number;
+  setTextFontSize: (size: number) => void;
+  textFontFamily: string;
+  setTextFontFamily: (family: string) => void;
 
   // Generic text-input modal (replaces window.prompt for flag labels, etc.)
   textInputModal: {
@@ -226,6 +240,18 @@ export const useUIStore = create<UIState>((set) => ({
   selectedObjectTypes: [],
   setSelection: (ids, types) => set({ selectedObjectIds: ids, selectedObjectTypes: types }),
   clearSelection: () => set({ selectedObjectIds: [], selectedObjectTypes: [] }),
+
+  lineEndpointStyle: 'none' as LineEndpointStyle,
+  setLineEndpointStyle: (style) => set({ lineEndpointStyle: style }),
+  lineStrokePattern: 'solid' as LineStrokePattern,
+  setLineStrokePattern: (pattern) => set({ lineStrokePattern: pattern }),
+  lineStrokeWeight: 'normal' as LineStrokeWeight,
+  setLineStrokeWeight: (weight) => set({ lineStrokeWeight: weight }),
+
+  textFontSize: 24,
+  setTextFontSize: (size) => set({ textFontSize: size }),
+  textFontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  setTextFontFamily: (family) => set({ textFontFamily: family }),
 
   textInputModal: null,
   openTextInputModal: (opts) =>

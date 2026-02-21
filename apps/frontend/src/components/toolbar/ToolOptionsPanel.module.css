@@ -1,0 +1,8 @@
+/* Container for contextual tool options panels (Line, Text) */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--divider);
+}

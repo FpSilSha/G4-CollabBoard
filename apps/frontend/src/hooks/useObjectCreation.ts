@@ -14,6 +14,9 @@ import {
   createTextElement,
   createFrame,
   createConnector,
+  createLine,
+  createArrow,
+  createStar,
   createFlagMarker,
   fabricToBoardObject,
   getStickyChildren,
@@ -306,8 +309,8 @@ export function useObjectCreation(
         // For frames, sample the border color (stroke of child rect)
         const borderRect = target.getObjects()[0];
         fill = borderRect.stroke as string;
-      } else if (target.data?.type === 'connector') {
-        // For connectors, sample the stroke color
+      } else if (target.data?.type === 'connector' || target.data?.type === 'line') {
+        // For connectors and lines, sample the stroke color
         fill = target.stroke as string;
       } else {
         fill = target.fill as string | undefined;
@@ -619,23 +622,26 @@ export function useObjectCreation(
         return;
       }
 
-      // Create an arrow-style connector (no object attachment)
-      const color = useUIStore.getState().activeColor;
-      const arrowLine = createConnector({
+      // Create a standalone Line object with styling from uiStore
+      const uiState = useUIStore.getState();
+      const color = uiState.activeColor;
+      const lineObj = createLine({
         x: lineStartX,
         y: lineStartY,
         x2: endX,
         y2: endY,
         color,
-        style: 'arrow',
+        endpointStyle: uiState.lineEndpointStyle,
+        strokePattern: uiState.lineStrokePattern,
+        strokeWeight: uiState.lineStrokeWeight,
       });
 
-      canvas.add(arrowLine);
-      canvas.setActiveObject(arrowLine);
+      canvas.add(lineObj);
+      canvas.setActiveObject(lineObj);
       canvas.requestRenderAll();
 
       const userId = usePresenceStore.getState().localUserId;
-      const boardObj = fabricToBoardObject(arrowLine, userId ?? undefined);
+      const boardObj = fabricToBoardObject(lineObj, userId ?? undefined);
       addObject(boardObj);
 
       emitObjectCreate(socketRef.current, boardObj);
@@ -795,8 +801,20 @@ function createFabricObject(
       return createRectangle({ x, y, color });
     case 'circle':
       return createCircle({ x, y, color });
-    case 'text':
-      return createTextElement({ x, y, color: '#000000' });
+    case 'arrow':
+      return createArrow({ x, y, color });
+    case 'star':
+      return createStar({ x, y, color });
+    case 'text': {
+      const uiState = useUIStore.getState();
+      return createTextElement({
+        x,
+        y,
+        color: '#000000',
+        fontSize: uiState.textFontSize,
+        fontFamily: uiState.textFontFamily,
+      });
+    }
     case 'frame':
       return createFrame({ x, y, color });
     case 'connector':

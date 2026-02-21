@@ -343,6 +343,59 @@ async function executeCreateTextElement(
   };
 }
 
+async function executeCreateLine(
+  input: Record<string, unknown>,
+  boardId: string,
+  userId: string
+): Promise<ToolExecutionResult> {
+  await assertBoardNotFull(boardId);
+  const id = uuidv4();
+  const now = new Date();
+  const object: Record<string, unknown> = {
+    id,
+    type: 'line',
+    x: input.x as number,
+    y: input.y as number,
+    x2: input.x2 as number,
+    y2: input.y2 as number,
+    color: (input.color as string) || '#757575',
+    endpointStyle: (input.endpointStyle as string) || 'none',
+    strokePattern: (input.strokePattern as string) || 'solid',
+    strokeWeight: (input.strokeWeight as string) || 'normal',
+    frameId: null,
+    createdBy: userId,
+    lastEditedBy: userId,
+    createdVia: 'ai',
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  await boardService.addObjectInRedis(boardId, object);
+
+  const payload: ObjectCreatedPayload = {
+    boardId,
+    object: object as unknown as BoardObject,
+    userId: AI_BROADCAST_USER_ID,
+    timestamp: Date.now(),
+  };
+  trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_CREATED, payload);
+
+  return {
+    output: {
+      objectId: id,
+      success: true,
+      type: 'line',
+      message: `Created line from (${input.x}, ${input.y}) to (${input.x2}, ${input.y2})`,
+    },
+    operation: {
+      type: 'create',
+      objectType: 'line',
+      objectId: id,
+      details: { x: input.x, y: input.y, x2: input.x2, y2: input.y2 },
+    },
+  };
+}
+
 // ─── Manipulation Tools ───────────────────────────────────────
 
 async function executeMoveObject(
@@ -732,6 +785,8 @@ export const toolExecutor = {
           return await executeCreateFrame(typedInput, boardId, userId);
         case 'createConnector':
           return await executeCreateConnector(typedInput, boardId, userId);
+        case 'createLine':
+          return await executeCreateLine(typedInput, boardId, userId);
         case 'createTextElement':
           return await executeCreateTextElement(typedInput, boardId, userId);
 

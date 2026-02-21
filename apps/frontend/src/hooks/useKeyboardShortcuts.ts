@@ -105,6 +105,14 @@ export function useKeyboardShortcuts(
           useUIStore.getState().setActiveTool('frame');
           break;
 
+        case 'a':
+          useUIStore.getState().setActiveTool('arrow');
+          break;
+
+        case 'g':
+          useUIStore.getState().setActiveTool('star');
+          break;
+
         case 'n':
           useUIStore.getState().setActiveTool('line');
           break;
@@ -529,6 +537,11 @@ function handlePaste(socket: Socket | null): void {
         fromAnchor: null,
         toAnchor: null,
       } : {}),
+      // Lines: offset both endpoints
+      ...(entry.type === 'line' ? {
+        x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
+        y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
+      } : {}),
       frameId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -553,6 +566,10 @@ function handlePaste(socket: Socket | null): void {
       x: entry.x + PASTE_OFFSET,
       y: entry.y + PASTE_OFFSET,
       ...(entry.type === 'connector' ? {
+        x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
+        y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
+      } : {}),
+      ...(entry.type === 'line' ? {
         x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
         y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
       } : {}),
