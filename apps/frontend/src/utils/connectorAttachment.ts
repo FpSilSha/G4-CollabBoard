@@ -1,12 +1,16 @@
 import { fabric } from 'fabric';
-import { findFabricObjectById, syncConnectorCoordsAfterMove } from './fabricHelpers';
+import { findFabricObjectById } from './fabricHelpers';
+import { getObjectGeometry, anchorToAbsolute } from './edgeGeometry';
 
 // ============================================================
 // Connector Attachment System
 //
 // Manages the relationship between connectors and the objects
-// they are attached to. When an object moves, all connectors
-// attached to it move their respective endpoint(s) to follow.
+// they are attached to. When an object moves/rotates/resizes,
+// all connectors attached to it move their respective endpoint(s)
+// to follow — using anchor points for edge-locked connectors or
+// falling back to center tracking for legacy connectors.
+//
 // When an object is deleted, attached connector endpoints
 // become free (detached).
 // ============================================================
@@ -17,6 +21,7 @@ export const SNAP_RADIUS = 25;
 /**
  * Find the nearest non-connector, non-flag object to a point on the canvas.
  * Returns the object and its center point if within SNAP_RADIUS, else null.
+ * Used during drag-to-create connector (center snapping for initial creation).
  */
 export function findSnapTarget(
   canvas: fabric.Canvas,
@@ -30,7 +35,7 @@ export function findSnapTarget(
   for (const obj of canvas.getObjects()) {
     // Skip connectors (can't attach to another connector), flags, and preview lines
     const type = obj.data?.type;
-    if (!type || type === 'connector' || type === 'flag') continue;
+    if (!type || type === 'connector' || type === 'teleportFlag') continue;
     if (!obj.data?.id) continue;
     if (excludeIds && excludeIds.includes(obj.data.id)) continue;
 
@@ -71,17 +76,28 @@ export function getObjectCenter(
 /**
  * Update all connectors that are attached to a given object.
  *
- * When an object moves, any connector with fromObjectId or toObjectId
- * matching the object's ID gets its corresponding endpoint moved to
- * the object's new center point.
+ * When an object moves, rotates, or resizes, any connector with
+ * fromObjectId or toObjectId matching the object's ID gets its
+ * corresponding endpoint repositioned:
+ *   - If the connector has an anchor (fromAnchor/toAnchor),
+ *     computes the new absolute position via anchorToAbsolute(),
+ *     which correctly handles rotation and resize.
+ *   - If no anchor (legacy center-snap), falls back to center point.
+ *
+ * Reads the object's current geometry directly from the canvas
+ * (no newCenter parameter needed — works for move, rotate, AND resize).
  *
  * Returns a list of updated connector IDs (for emitting updates to server).
  */
 export function updateAttachedConnectors(
   canvas: fabric.Canvas,
-  movedObjectId: string,
-  newCenter: { x: number; y: number }
+  movedObjectId: string
 ): string[] {
+  // Find the moved object to get its current geometry
+  const movedObj = findFabricObjectById(canvas, movedObjectId);
+  if (!movedObj) return [];
+
+  const geo = getObjectGeometry(movedObj);
   const updatedIds: string[] = [];
 
   for (const obj of canvas.getObjects()) {
@@ -93,14 +109,26 @@ export function updateAttachedConnectors(
     let changed = false;
 
     if (fromId === movedObjectId) {
-      // Move start endpoint (x1, y1) to new center
-      line.set({ x1: newCenter.x, y1: newCenter.y });
+      const fromAnchor = obj.data.fromAnchor;
+      if (fromAnchor) {
+        // Anchor-aware: resolve through object's current transform
+        const pos = anchorToAbsolute(fromAnchor, geo);
+        line.set({ x1: pos.x, y1: pos.y });
+      } else {
+        // Legacy: snap to center
+        line.set({ x1: geo.centerX, y1: geo.centerY });
+      }
       changed = true;
     }
 
     if (toId === movedObjectId) {
-      // Move end endpoint (x2, y2) to new center
-      line.set({ x2: newCenter.x, y2: newCenter.y });
+      const toAnchor = obj.data.toAnchor;
+      if (toAnchor) {
+        const pos = anchorToAbsolute(toAnchor, geo);
+        line.set({ x2: pos.x, y2: pos.y });
+      } else {
+        line.set({ x2: geo.centerX, y2: geo.centerY });
+      }
       changed = true;
     }
 
@@ -118,7 +146,8 @@ export function updateAttachedConnectors(
  *
  * When an object is deleted, any connector with fromObjectId or toObjectId
  * matching the deleted object's ID gets that reference cleared (set to '').
- * The connector stays where it is — only the attachment relationship is severed.
+ * Anchors are also cleared. The connector stays where it is — only the
+ * attachment relationship is severed.
  *
  * Returns a list of updated connector IDs + their updated fromObjectId/toObjectId.
  */
@@ -136,11 +165,13 @@ export function detachConnectorsFromObject(
 
     if (fromId === deletedObjectId) {
       obj.data.fromObjectId = '';
+      obj.data.fromAnchor = null;
       changed = true;
     }
 
     if (toId === deletedObjectId) {
       obj.data.toObjectId = '';
+      obj.data.toAnchor = null;
       changed = true;
     }
 

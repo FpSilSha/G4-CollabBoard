@@ -8,7 +8,9 @@ import {
   getObjectFillColor,
   getObjectsInsideFrame,
   fabricToBoardObject,
+  applyConnectorLockState,
 } from '../utils/fabricHelpers';
+import { findEdgeLockTarget } from '../utils/edgeGeometry';
 import { setupRotationModeListeners } from './useKeyboardShortcuts';
 import type { Socket } from 'socket.io-client';
 
@@ -990,6 +992,79 @@ function setupEdgeScroll(canvas: fabric.Canvas): () => void {
 }
 
 // ============================================================
+// Connector Lock Handler
+// ============================================================
+
+/**
+ * Handle the connector lock-button click. For each endpoint:
+ *   1. If within EDGE_SNAP_RADIUS of an object's edge → lock to that edge point.
+ *   2. If inside an object → lock to that interior point (highest z-index wins).
+ *   3. If no target → unlock (clear attachment).
+ *
+ * If already locked (any anchor exists), clicking unlocks both endpoints.
+ *
+ * Snaps the endpoint position to the resolved anchor point and emits the update.
+ */
+function handleConnectorLock(
+  line: fabric.Line,
+  canvas: fabric.Canvas,
+  emitObjectUpdate: (objectId: string, updates: Record<string, unknown>) => void
+): void {
+  if (!line.data?.id) return;
+  const connectorId = line.data.id;
+
+  const wasLocked = !!(line.data.fromAnchor || line.data.toAnchor);
+
+  if (wasLocked) {
+    // Toggle OFF — clear all attachments
+    line.data.fromObjectId = '';
+    line.data.fromAnchor = null;
+    line.data.toObjectId = '';
+    line.data.toAnchor = null;
+  } else {
+    // Toggle ON — try to lock each endpoint to nearest edge
+    const x1 = line.x1 ?? 0;
+    const y1 = line.y1 ?? 0;
+    const x2 = line.x2 ?? 0;
+    const y2 = line.y2 ?? 0;
+
+    const fromResult = findEdgeLockTarget(canvas, x1, y1, [connectorId]);
+    const toResult = findEdgeLockTarget(canvas, x2, y2, [connectorId]);
+
+    if (fromResult) {
+      line.data.fromObjectId = fromResult.objectId;
+      line.data.fromAnchor = fromResult.anchor;
+      line.set({ x1: fromResult.absolutePoint.x, y1: fromResult.absolutePoint.y });
+    } else {
+      line.data.fromObjectId = '';
+      line.data.fromAnchor = null;
+    }
+
+    if (toResult) {
+      line.data.toObjectId = toResult.objectId;
+      line.data.toAnchor = toResult.anchor;
+      line.set({ x2: toResult.absolutePoint.x, y2: toResult.absolutePoint.y });
+    } else {
+      line.data.toObjectId = '';
+      line.data.toAnchor = null;
+    }
+  }
+
+  // Apply movement lock/unlock based on new anchor state
+  applyConnectorLockState(line);
+
+  line.setCoords();
+  canvas.requestRenderAll();
+
+  // Emit the updated connector state
+  const boardObj = fabricToBoardObject(line);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { id, createdBy, createdAt, type, ...updates } = boardObj as unknown as Record<string, unknown>;
+  emitObjectUpdate(connectorId, updates);
+  useBoardStore.getState().updateObject(connectorId, updates as Record<string, unknown>);
+}
+
+// ============================================================
 // Frame Control Handlers (Lock/Unlock + Title Editing + Anchored Movement)
 // ============================================================
 
@@ -1033,16 +1108,25 @@ function setupFrameControlHandlers(
   // --- Lock Toggle Handler ---
   // Overrides the lockToggle control's actionHandler on each frame that's
   // selected. We listen for mouse:down on the canvas and check if the
-  // click hit the lockToggle control.
+  // click hit the lockToggle control. Also handles connector lockBtn.
   const onMouseDown = (opt: fabric.IEvent) => {
     const target = opt.target;
-    if (!target || target.data?.type !== 'frame') return;
-    if (!(target instanceof fabric.Group)) return;
+    if (!target) return;
 
     // Check if the click hit one of our custom controls
     // Fabric.js sets __corner on the target when a control is clicked
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const corner = (target as any).__corner;
+
+    // --- Connector Lock Button ---
+    if (corner === 'lockBtn' && target.data?.type === 'connector') {
+      handleConnectorLock(target as fabric.Line, canvas, emitObjectUpdate);
+      return;
+    }
+
+    // Below: frame-specific controls
+    if (target.data?.type !== 'frame') return;
+    if (!(target instanceof fabric.Group)) return;
 
     if (corner === 'lockToggle') {
       const isLocked = target.data.locked ?? false;
