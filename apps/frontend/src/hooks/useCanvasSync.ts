@@ -163,11 +163,7 @@ export function useCanvasSync(
 
           // Update connectors attached to this child
           if (child.data.type !== 'connector') {
-            const childCenter = {
-              x: pos.x + (child.width! * (child.scaleX ?? 1)) / 2,
-              y: pos.y + (child.height! * (child.scaleY ?? 1)) / 2,
-            };
-            updateAttachedConnectors(canvas, child.data.id, childCenter);
+            updateAttachedConnectors(canvas, child.data.id);
           }
         }
 
@@ -180,8 +176,7 @@ export function useCanvasSync(
 
         // Update connectors attached to this object (live during drag)
         if (target.data.type !== 'connector') {
-          const center = target.getCenterPoint();
-          updateAttachedConnectors(canvas, target.data.id, center);
+          updateAttachedConnectors(canvas, target.data.id);
           canvas.requestRenderAll();
         }
       }
@@ -262,11 +257,7 @@ export function useCanvasSync(
 
           // Update attached connectors for non-connector objects
           if (child.data.type !== 'connector') {
-            const childCenter = {
-              x: pos.x + (child.width! * (child.scaleX ?? 1)) / 2,
-              y: pos.y + (child.height! * (child.scaleY ?? 1)) / 2,
-            };
-            const updated = updateAttachedConnectors(canvas, child.data.id, childCenter);
+            const updated = updateAttachedConnectors(canvas, child.data.id);
             updated.forEach((id) => attachedConnectorIds.add(id));
           }
 
@@ -279,8 +270,7 @@ export function useCanvasSync(
 
         // Update and emit final state for attached connectors
         if (target.data?.type !== 'connector' && target.data?.id) {
-          const center = target.getCenterPoint();
-          const updated = updateAttachedConnectors(canvas, target.data.id, center);
+          const updated = updateAttachedConnectors(canvas, target.data.id);
           updated.forEach((id) => attachedConnectorIds.add(id));
         }
       }
@@ -514,7 +504,13 @@ export function useCanvasSync(
         if (u.x !== undefined) fabricObj.set('left', u.x as number);
         if (u.y !== undefined) fabricObj.set('top', u.y as number);
       }
-      if (u.rotation !== undefined) fabricObj.set('angle', u.rotation as number);
+      if (u.rotation !== undefined) {
+        fabricObj.set('angle', u.rotation as number);
+        // Rotation changes anchor positions — update attached connectors
+        if (fabricObj.data?.id && fabricObj.data?.type !== 'connector') {
+          updateAttachedConnectors(canvas, fabricObj.data.id);
+        }
+      }
 
       // Apply type-specific updates
       const objType = fabricObj.data?.type;
@@ -571,6 +567,11 @@ export function useCanvasSync(
         const connLine = fabricObj as fabric.Line;
         if (u.x2 !== undefined) connLine.set('x2', u.x2 as number);
         if (u.y2 !== undefined) connLine.set('y2', u.y2 as number);
+        // Sync attachment IDs and anchors
+        if (u.fromObjectId !== undefined) fabricObj.data.fromObjectId = u.fromObjectId;
+        if (u.toObjectId !== undefined) fabricObj.data.toObjectId = u.toObjectId;
+        if (u.fromAnchor !== undefined) fabricObj.data.fromAnchor = u.fromAnchor;
+        if (u.toAnchor !== undefined) fabricObj.data.toAnchor = u.toAnchor;
       } else {
         // Shape updates (rectangle, circle)
         if (u.color) fabricObj.set('fill', u.color as string);
@@ -587,6 +588,12 @@ export function useCanvasSync(
           fabricObj.set('scaleX', 1);
           fabricObj.set('scaleY', 1);
         }
+      }
+
+      // Size changes affect anchor positions — update attached connectors
+      if ((u.width !== undefined || u.height !== undefined) &&
+          objType !== 'connector' && fabricObj.data?.id) {
+        updateAttachedConnectors(canvas, fabricObj.data.id);
       }
 
       // Apply frameId changes (applies to all object types)

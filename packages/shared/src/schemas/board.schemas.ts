@@ -5,6 +5,12 @@ const coordinate = z.number().min(-1000000).max(1000000);
 const dimension = z.number().min(50).max(2000);
 const rotation = z.number().min(-360).max(360);
 
+/** Normalized anchor point on an object (rx/ry relative to center & half-dims). */
+const anchorPoint = z.object({
+  rx: z.number().min(-2).max(2),
+  ry: z.number().min(-2).max(2),
+});
+
 export const CreateBoardSchema = z.object({
   title: z.string().min(1).max(255).trim(),
 });
@@ -56,6 +62,8 @@ export const ConnectorCreateSchema = z.object({
   type: z.literal('connector'),
   fromObjectId: z.string().default(''),
   toObjectId: z.string().default(''),
+  fromAnchor: anchorPoint.nullable().optional(),
+  toAnchor: anchorPoint.nullable().optional(),
   style: z.enum(['line', 'arrow']).default('line'),
   color: hexColor,
   x2: coordinate,
@@ -95,6 +103,8 @@ export const ObjectUpdateSchema = z.object({
   style: z.enum(['line', 'arrow']).optional(),
   fromObjectId: z.string().optional(),
   toObjectId: z.string().optional(),
+  fromAnchor: anchorPoint.nullable().optional(),
+  toAnchor: anchorPoint.nullable().optional(),
   frameId: z.string().uuid().nullable().optional(),
   locked: z.boolean().optional(),
 });

@@ -73,10 +73,31 @@ export interface Frame extends BaseObject {
 
 export type ConnectorStyle = 'line' | 'arrow';
 
+/**
+ * Normalized anchor point on an object, in the object's local (unrotated) space.
+ * rx/ry are normalized relative to the object's center and half-dimensions:
+ *   rx = (localX - centerX) / halfWidth
+ *   ry = (localY - centerY) / halfHeight
+ *
+ * Examples for a rectangle:
+ *   Center         = { rx:  0, ry:  0 }
+ *   Right edge mid = { rx:  1, ry:  0 }
+ *   Top edge mid   = { rx:  0, ry: -1 }
+ *   Bottom-left    = { rx: -1, ry:  1 }
+ */
+export interface AnchorPoint {
+  rx: number;
+  ry: number;
+}
+
 export interface Connector extends BaseObject {
   type: 'connector';
   fromObjectId: string;
   toObjectId: string;
+  /** Where on fromObject the start endpoint attaches (null = center or unattached) */
+  fromAnchor?: AnchorPoint | null;
+  /** Where on toObject the end endpoint attaches (null = center or unattached) */
+  toAnchor?: AnchorPoint | null;
   style: ConnectorStyle;
   color: string;
   /** Endpoint x-coordinate (start point is BaseObject.x/y) */

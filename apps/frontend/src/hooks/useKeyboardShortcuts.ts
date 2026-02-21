@@ -520,10 +520,14 @@ function handlePaste(socket: Socket | null): void {
       id: generateLocalId(),
       x: entry.x + PASTE_OFFSET,
       y: entry.y + PASTE_OFFSET,
-      // Connectors: offset both endpoints (x2/y2 are absolute coords)
+      // Connectors: offset both endpoints and clear stale attachments
       ...(entry.type === 'connector' ? {
         x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
         y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
+        fromObjectId: '',
+        toObjectId: '',
+        fromAnchor: null,
+        toAnchor: null,
       } : {}),
       frameId: null,
       createdAt: new Date(),

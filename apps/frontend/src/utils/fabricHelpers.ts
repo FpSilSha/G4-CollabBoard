@@ -626,6 +626,8 @@ export function createConnector(options: {
   style?: 'line' | 'arrow';
   fromObjectId?: string;
   toObjectId?: string;
+  fromAnchor?: { rx: number; ry: number } | null;
+  toAnchor?: { rx: number; ry: number } | null;
   id?: string;
 }): fabric.Line {
   const id = options.id ?? generateLocalId();
@@ -652,6 +654,8 @@ export function createConnector(options: {
         style: options.style ?? 'line',
         fromObjectId: options.fromObjectId ?? '',
         toObjectId: options.toObjectId ?? '',
+        fromAnchor: options.fromAnchor ?? null,
+        toAnchor: options.toAnchor ?? null,
       },
     }
   );
@@ -814,6 +818,7 @@ function setupConnectorEndpointControls(line: fabric.Line): void {
   // Action handler: x, y are in canvas coordinates (from Fabric.js).
   // Set the endpoint directly. Fabric's Line._set override will
   // recalculate left/top/width/height automatically.
+  // Also clears any edge-lock attachment (drag = detach).
   const makeActionHandler = (endpoint: 'p1' | 'p2') => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return function (_eventData: any, transform: any, x: number, y: number) {
@@ -822,11 +827,103 @@ function setupConnectorEndpointControls(line: fabric.Line): void {
       if (typeof lineObj.calcLinePoints !== 'function') return false;
       if (endpoint === 'p1') {
         lineObj.set({ x1: x, y1: y });
+        // Detach from locked object when manually dragging
+        if (lineObj.data) {
+          lineObj.data.fromObjectId = '';
+          lineObj.data.fromAnchor = null;
+        }
       } else {
         lineObj.set({ x2: x, y2: y });
+        if (lineObj.data) {
+          lineObj.data.toObjectId = '';
+          lineObj.data.toAnchor = null;
+        }
       }
       return true;
     };
+  };
+
+  // --- Lock button at the connector midpoint ---
+  const lockRadius = 10;
+
+  // Position handler: midpoint of p1 and p2
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lockPositionHandler = (_dim: any, finalMatrix: any, fabricObj: any) => {
+    const lineObj = fabricObj as fabric.Line;
+    if (typeof lineObj.calcLinePoints !== 'function') {
+      return fabric.util.transformPoint(new fabric.Point(0, 0), finalMatrix);
+    }
+    const pts = lineObj.calcLinePoints();
+    const midX = (pts.x1 + pts.x2) / 2;
+    const midY = (pts.y1 + pts.y2) / 2;
+
+    const objectMatrix = lineObj.calcTransformMatrix();
+    const viewportMatrix = lineObj.canvas!.viewportTransform!;
+    const totalMatrix = fabric.util.multiplyTransformMatrices(viewportMatrix, objectMatrix);
+    return fabric.util.transformPoint(new fabric.Point(midX, midY), totalMatrix);
+  };
+
+  // Render: padlock icon (green=locked, dark=unlocked)
+  const renderLockButton = (
+    ctx: CanvasRenderingContext2D,
+    left: number,
+    top: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _styleOverride: any,
+    fabricObj: fabric.Object
+  ) => {
+    const hasAnchor = fabricObj.data?.fromAnchor || fabricObj.data?.toAnchor;
+    ctx.save();
+    ctx.translate(left, top);
+
+    // Background circle
+    ctx.beginPath();
+    ctx.arc(0, 0, lockRadius, 0, Math.PI * 2);
+    ctx.fillStyle = hasAnchor ? '#4CAF50' : '#222222';
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    if (hasAnchor) {
+      // ---- CLOSED LOCK ----
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.roundRect(-4, 0, 8, 6, 1);
+      ctx.fill();
+
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, 0, 3.5, Math.PI, 0);
+      ctx.stroke();
+
+      ctx.fillStyle = '#4CAF50';
+      ctx.beginPath();
+      ctx.arc(0, 3, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // ---- OPEN LOCK ----
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.roundRect(-4, 1, 8, 6, 1);
+      ctx.fill();
+
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(2, -2, 3.5, Math.PI, -0.15);
+      ctx.stroke();
+
+      ctx.fillStyle = '#222222';
+      ctx.beginPath();
+      ctx.arc(0, 4, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
   };
 
   // P1 control (start point)
@@ -853,7 +950,19 @@ function setupConnectorEndpointControls(line: fabric.Line): void {
     actionName: 'modifyLine' as any,
   });
 
-  // Hide all default controls — only show our custom endpoint controls
+  // Lock button at midpoint — action handler wired externally in useCanvas
+  line.controls.lockBtn = new fabric.Control({
+    positionHandler: lockPositionHandler,
+    actionHandler: () => false, // placeholder — overridden at setup time
+    cursorStyle: 'pointer',
+    render: renderLockButton,
+    sizeX: lockRadius * 2,
+    sizeY: lockRadius * 2,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'lockToEdge' as any,
+  });
+
+  // Hide all default controls — only show our custom endpoint + lock controls
   const defaultControls = ['tl', 'tr', 'bl', 'br', 'ml', 'mr', 'mt', 'mb', 'mtr'];
   for (const key of defaultControls) {
     line.setControlVisible(key, false);
@@ -983,6 +1092,8 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
       type: 'connector' as const,
       fromObjectId: data.fromObjectId ?? '',
       toObjectId: data.toObjectId ?? '',
+      fromAnchor: data.fromAnchor ?? null,
+      toAnchor: data.toAnchor ?? null,
       style: data.style ?? 'line',
       color: (line.stroke as string) ?? '#FFFFFF',
       x2: line.x2 ?? 0,
@@ -1090,6 +1201,8 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         style: obj.style,
         fromObjectId: obj.fromObjectId,
         toObjectId: obj.toObjectId,
+        fromAnchor: obj.fromAnchor ?? null,
+        toAnchor: obj.toAnchor ?? null,
         id: obj.id,
       });
       break;
