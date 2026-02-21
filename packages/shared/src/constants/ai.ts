@@ -4,7 +4,12 @@
 
 export const AI_CONFIG = {
   MAX_COMMAND_LENGTH: 1000,
+  /** @deprecated Use MAX_TURNS_SIMPLE / MAX_TURNS_COMPLEX instead */
   MAX_TURNS: 3,
+  /** Max agent-loop turns for simple commands (Haiku). */
+  MAX_TURNS_SIMPLE: 5,
+  /** Max agent-loop turns for complex commands (Sonnet). */
+  MAX_TURNS_COMPLEX: 7,
   DEFAULT_MODEL: 'claude-sonnet-4-6',
   MONTHLY_BUDGET_CENTS_DEFAULT: 1000,
   VIEWPORT_OBJECT_CAP: 50,

@@ -52,11 +52,166 @@ function errorResponse(
   };
 }
 
+// ────────────────────────────────────────────────────────────
+// Agent Loop — extracted so we can retry with a different model
+// ────────────────────────────────────────────────────────────
+
+interface AgentLoopResult {
+  finalMessage: string;
+  operations: AIOperation[];
+  inputTokens: number;
+  outputTokens: number;
+  turnsUsed: number;
+  /** True if the loop ended with tool errors and zero successful operations. */
+  failedWithNoOps: boolean;
+  /** Error message if the loop threw. */
+  error?: string;
+}
+
+async function runAgentLoop(
+  model: string,
+  messages: Anthropic.MessageParam[],
+  maxTurns: number,
+  boardId: string,
+  userId: string,
+  viewport: ViewportBounds,
+): Promise<AgentLoopResult> {
+  const operations: AIOperation[] = [];
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let turn = 0;
+  let creationCount = 0;
+  let finalMessage = '';
+  let toolErrorCount = 0;
+
+  try {
+    while (turn < maxTurns) {
+      turn++;
+
+      // Call Anthropic with LangSmith tracing
+      const response = await tracedAnthropicCall({
+        model,
+        max_tokens: 4096,
+        system: buildSystemPrompt(boardId, viewport),
+        tools: AI_TOOLS,
+        messages,
+      });
+
+      totalInputTokens += response.usage.input_tokens;
+      totalOutputTokens += response.usage.output_tokens;
+
+      // Check stop reason
+      if (response.stop_reason === 'end_turn') {
+        finalMessage = response.content
+          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+          .map(block => block.text)
+          .join('');
+        break;
+      }
+
+      if (response.stop_reason === 'tool_use') {
+        const toolUseBlocks = response.content.filter(
+          (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+        );
+
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+        for (const toolCall of toolUseBlocks) {
+          // Hard cap: stop executing tools if we've hit the operation limit
+          if (operations.length >= AI_CONFIG.MAX_OPERATIONS_PER_COMMAND) {
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolCall.id,
+              content: JSON.stringify({
+                success: false,
+                error: `Operation limit reached (${AI_CONFIG.MAX_OPERATIONS_PER_COMMAND}). Stop and summarize what was completed.`,
+              }),
+            });
+            continue;
+          }
+
+          // Hard cap: stop creating objects if we've hit the creation limit
+          const isCreationTool = toolCall.name.startsWith('create');
+          if (isCreationTool && creationCount >= AI_CONFIG.MAX_CREATIONS_PER_COMMAND) {
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolCall.id,
+              content: JSON.stringify({
+                success: false,
+                error: `Creation limit reached (${AI_CONFIG.MAX_CREATIONS_PER_COMMAND} objects). Stop creating and summarize what was completed.`,
+              }),
+            });
+            continue;
+          }
+
+          // Execute tool with LangSmith tracing
+          const result = await tracedToolExecution(
+            toolCall.name,
+            toolCall.input,
+            boardId,
+            userId,
+            viewport,
+            toolExecutor.execute.bind(toolExecutor)
+          );
+
+          const typedResult = result as { output: Record<string, unknown>; operation: AIOperation };
+          operations.push(typedResult.operation);
+          if (isCreationTool) creationCount++;
+
+          // Track tool errors for retry decision
+          if (typedResult.output && (typedResult.output as Record<string, unknown>).success === false) {
+            toolErrorCount++;
+          }
+
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolCall.id,
+            content: JSON.stringify(typedResult.output),
+          });
+        }
+
+        // Append assistant response + tool results for next turn
+        messages.push({ role: 'assistant', content: response.content });
+        messages.push({ role: 'user', content: toolResults });
+      }
+    }
+
+    // If we exhausted turns without end_turn, extract any text from the last response
+    if (!finalMessage && turn >= maxTurns) {
+      finalMessage = 'Completed (reached maximum steps).';
+    }
+
+    return {
+      finalMessage,
+      operations,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      turnsUsed: turn,
+      failedWithNoOps: operations.length === 0 && toolErrorCount > 0,
+    };
+  } catch (err) {
+    const errMessage = err instanceof Error ? err.message : 'Unknown error';
+    return {
+      finalMessage: '',
+      operations,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      turnsUsed: turn,
+      failedWithNoOps: operations.length === 0,
+      error: errMessage,
+    };
+  }
+}
+
 export const aiService = {
   /**
    * Execute an AI command on a board.
    * This is the main agent loop: budget check → build messages → call Anthropic
    * → execute tools → loop until end_turn or max turns → return summary.
+   *
+   * Model routing: simple commands → Haiku (5 turns), complex → Sonnet (7 turns).
+   * If Haiku fails with zero successful operations, the command is retried with
+   * Sonnet from a clean context (safety-net retry, not mid-loop escalation).
    */
   async executeCommand(
     boardId: string,
@@ -65,14 +220,19 @@ export const aiService = {
     viewport: ViewportBounds
   ): Promise<AICommandResponse> {
     const startTime = Date.now();
-    const maxTurns = parseInt(process.env.AI_MAX_TURNS || '', 10) || 3;
 
     // Model routing: classify command complexity and pick model
     const complexity = classifyCommand(command);
     const sonnetModel = process.env.ANTHROPIC_MODEL_COMPLEX || process.env.ANTHROPIC_MODEL || SONNET_MODEL_ID;
     const haikuModel = process.env.ANTHROPIC_MODEL_SIMPLE || HAIKU_MODEL_ID;
-    let model = complexity === 'simple' ? haikuModel : sonnetModel;
-    let escalated = false;
+    const initialModel = complexity === 'simple' ? haikuModel : sonnetModel;
+
+    // Per-model turn limits: Haiku gets 5, Sonnet gets 7 (env-overridable)
+    const haikuMaxTurns = parseInt(process.env.AI_MAX_TURNS_SIMPLE || '', 10) || AI_CONFIG.MAX_TURNS_SIMPLE;
+    const sonnetMaxTurns = parseInt(process.env.AI_MAX_TURNS_COMPLEX || '', 10) || AI_CONFIG.MAX_TURNS_COMPLEX;
+    const maxTurns = initialModel === haikuModel ? haikuMaxTurns : sonnetMaxTurns;
+
+    logger.info(`AI classifier: "${command.slice(0, 80)}" → ${complexity} → ${initialModel === haikuModel ? 'Haiku' : 'Sonnet'} (maxTurns=${maxTurns})`);
 
     // 1. Budget check
     const budget = await aiBudgetService.checkBudget();
@@ -90,11 +250,11 @@ export const aiService = {
     // Wrap the entire agent loop in a top-level LangSmith trace.
     // The first argument becomes the trace's Input in the LangSmith UI.
     return tracedCommandExecution(
-      { command, boardId, userId, model },
+      { command, boardId, userId, model: initialModel },
       async () => {
 
     // 3. Build messages array
-    const messages: Anthropic.MessageParam[] = [
+    const buildMessages = (): Anthropic.MessageParam[] => [
       ...chatHistory.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
@@ -115,133 +275,63 @@ export const aiService = {
       // Socket.io may not be ready (e.g., during tests) — non-fatal
     }
 
-    // 5. Agent loop
-    const allOperations: AIOperation[] = [];
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    // Per-model token tracking for accurate cost when escalation occurs
-    let haikuInputTokens = 0;
-    let haikuOutputTokens = 0;
-    let sonnetInputTokens = 0;
-    let sonnetOutputTokens = 0;
-    let turn = 0;
-    let creationCount = 0;
-    let finalMessage = '';
+    // 5. Run agent loop
+    let result = await runAgentLoop(
+      initialModel, buildMessages(), maxTurns, boardId, userId, viewport
+    );
+    let finalModel = initialModel;
+    let retried = false;
 
-    try {
-      while (turn < maxTurns) {
-        turn++;
+    // Track per-model tokens for metrics
+    let haikuInputTokens = initialModel === haikuModel ? result.inputTokens : 0;
+    let haikuOutputTokens = initialModel === haikuModel ? result.outputTokens : 0;
+    let sonnetInputTokens = initialModel === sonnetModel ? result.inputTokens : 0;
+    let sonnetOutputTokens = initialModel === sonnetModel ? result.outputTokens : 0;
 
-        // Call Anthropic with LangSmith tracing
-        const response = await tracedAnthropicCall({
-          model,
-          max_tokens: 4096,
-          system: buildSystemPrompt(boardId, viewport),
-          tools: AI_TOOLS,
-          messages,
-        });
+    // 5b. Safety-net retry: if Haiku failed with zero successful operations,
+    //     retry the entire command with Sonnet from a clean context.
+    if (initialModel === haikuModel && result.failedWithNoOps) {
+      logger.warn(
+        `AI Haiku failed with 0 ops — retrying with Sonnet (command: "${command.slice(0, 60)}", ` +
+        `error: ${result.error || 'tool errors'}, turns: ${result.turnsUsed})`
+      );
 
-        totalInputTokens += response.usage.input_tokens;
-        totalOutputTokens += response.usage.output_tokens;
+      // Record the failed Haiku attempt in metrics before retrying
+      const haikuCost = calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel);
+      metricsService.recordAICommand({
+        latencyMs: Date.now() - startTime,
+        costCents: haikuCost,
+        inputTokens: haikuInputTokens,
+        outputTokens: haikuOutputTokens,
+        success: false,
+        errorCode: 'AI_HAIKU_RETRY',
+        model: haikuModel,
+      });
 
-        // Track per-model tokens for accurate cost calculation on escalation
-        if (model === haikuModel) {
-          haikuInputTokens += response.usage.input_tokens;
-          haikuOutputTokens += response.usage.output_tokens;
-        } else {
-          sonnetInputTokens += response.usage.input_tokens;
-          sonnetOutputTokens += response.usage.output_tokens;
-        }
+      // Retry with Sonnet — fresh messages, full turn budget
+      result = await runAgentLoop(
+        sonnetModel, buildMessages(), sonnetMaxTurns, boardId, userId, viewport
+      );
+      finalModel = sonnetModel;
+      retried = true;
 
-        // Check stop reason
-        if (response.stop_reason === 'end_turn') {
-          // Extract text content
-          finalMessage = response.content
-            .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-            .map(block => block.text)
-            .join('');
-          break;
-        }
+      // Add Sonnet tokens
+      sonnetInputTokens += result.inputTokens;
+      sonnetOutputTokens += result.outputTokens;
 
-        if (response.stop_reason === 'tool_use') {
-          const toolUseBlocks = response.content.filter(
-            (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
-          );
+      logger.info(
+        `AI Sonnet retry ${result.error ? 'also failed' : 'succeeded'}: ` +
+        `${result.operations.length} ops, ${result.turnsUsed} turns`
+      );
+    }
 
-          const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    // Aggregate totals
+    const totalInputTokens = haikuInputTokens + sonnetInputTokens;
+    const totalOutputTokens = haikuOutputTokens + sonnetOutputTokens;
+    const totalTurnsUsed = result.turnsUsed; // Report turns of the final (successful) attempt
 
-          for (const toolCall of toolUseBlocks) {
-            // Hard cap: stop executing tools if we've hit the operation limit
-            if (allOperations.length >= AI_CONFIG.MAX_OPERATIONS_PER_COMMAND) {
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: toolCall.id,
-                content: JSON.stringify({
-                  success: false,
-                  error: `Operation limit reached (${AI_CONFIG.MAX_OPERATIONS_PER_COMMAND}). Stop and summarize what was completed.`,
-                }),
-              });
-              continue;
-            }
-
-            // Hard cap: stop creating objects if we've hit the creation limit
-            const isCreationTool = toolCall.name.startsWith('create');
-            if (isCreationTool && creationCount >= AI_CONFIG.MAX_CREATIONS_PER_COMMAND) {
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: toolCall.id,
-                content: JSON.stringify({
-                  success: false,
-                  error: `Creation limit reached (${AI_CONFIG.MAX_CREATIONS_PER_COMMAND} objects). Stop creating and summarize what was completed.`,
-                }),
-              });
-              continue;
-            }
-
-            // Execute tool with LangSmith tracing
-            const result = await tracedToolExecution(
-              toolCall.name,
-              toolCall.input,
-              boardId,
-              userId,
-              viewport,
-              toolExecutor.execute.bind(toolExecutor)
-            );
-
-            const typedResult = result as { output: Record<string, unknown>; operation: AIOperation };
-            allOperations.push(typedResult.operation);
-            if (isCreationTool) creationCount++;
-
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: toolCall.id,
-              content: JSON.stringify(typedResult.output),
-            });
-          }
-
-          // Append assistant response + tool results for next turn
-          messages.push({ role: 'assistant', content: response.content });
-          messages.push({ role: 'user', content: toolResults });
-
-          // Escalation: if Haiku needed multiple turns, switch to Sonnet
-          // for remaining turns (better multi-step reasoning)
-          if (!escalated && model === haikuModel && turn < maxTurns) {
-            model = sonnetModel;
-            escalated = true;
-            logger.info(`AI model escalated from Haiku → Sonnet (turn ${turn}, command: "${command.slice(0, 60)}")`);
-          }
-        }
-      }
-
-      // If we exhausted turns without end_turn, extract any text from the last response
-      if (!finalMessage && turn >= maxTurns) {
-        finalMessage = 'Completed (reached maximum steps).';
-      }
-    } catch (err) {
-      const errMessage = err instanceof Error ? err.message : 'Unknown error';
-      logger.error(`AI agent loop error: ${errMessage}`);
-
-      // Record partial usage — sum per-model costs for accurate billing on escalation
+    // Handle errors (either from initial run or retry)
+    if (result.error) {
       const costCents = calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel)
                       + calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel);
       await aiBudgetService.recordUsage(userId, costCents, {
@@ -249,11 +339,10 @@ export const aiService = {
         outputTokens: totalOutputTokens,
         command,
         boardId,
-        turnsUsed: turn,
-        toolCallCount: allOperations.length,
+        turnsUsed: totalTurnsUsed,
+        toolCallCount: result.operations.length,
       });
 
-      // Record failure in metrics (with per-model splits when escalated)
       metricsService.recordAICommand({
         latencyMs: Date.now() - startTime,
         costCents,
@@ -261,8 +350,8 @@ export const aiService = {
         outputTokens: totalOutputTokens,
         success: false,
         errorCode: 'AI_EXECUTION_FAILED',
-        model,
-        ...(escalated ? {
+        model: finalModel,
+        ...(retried ? {
           modelSplits: [
             { model: haikuModel, inputTokens: haikuInputTokens, outputTokens: haikuOutputTokens, costCents: calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel) },
             { model: sonnetModel, inputTokens: sonnetInputTokens, outputTokens: sonnetOutputTokens, costCents: calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel) },
@@ -270,7 +359,6 @@ export const aiService = {
         } : {}),
       });
 
-      // Audit log
       auditService.log({
         userId,
         action: AuditAction.AI_EXECUTE,
@@ -278,18 +366,18 @@ export const aiService = {
         entityId: boardId,
         metadata: {
           command,
-          operationCount: allOperations.length,
+          operationCount: result.operations.length,
           costCents,
-          turnsUsed: turn,
+          turnsUsed: totalTurnsUsed,
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
-          model,
+          model: finalModel,
           complexity,
-          escalated,
+          retried,
           traceId: getCurrentTraceId(),
           success: false,
           errorCode: 'AI_EXECUTION_FAILED',
-          errorMessage: errMessage,
+          errorMessage: result.error,
         },
       });
 
@@ -298,7 +386,7 @@ export const aiService = {
         const completePayload: AICompletePayload = {
           boardId,
           userId,
-          operationCount: allOperations.length,
+          operationCount: result.operations.length,
           timestamp: Date.now(),
         };
         trackedEmit(getIO().to(boardId), WebSocketEvent.AI_COMPLETE, completePayload);
@@ -307,28 +395,28 @@ export const aiService = {
       }
 
       // If we managed some operations, return partial success
-      if (allOperations.length > 0) {
+      if (result.operations.length > 0) {
         return {
           success: true,
           conversationId,
-          message: `Partially completed (${allOperations.length} operations) before error: ${errMessage}`,
-          operations: allOperations,
+          message: `Partially completed (${result.operations.length} operations) before error: ${result.error}`,
+          operations: result.operations,
           usage: {
             inputTokens: totalInputTokens,
             outputTokens: totalOutputTokens,
             totalTokens: totalInputTokens + totalOutputTokens,
             estimatedCostCents: costCents,
             budgetRemainingCents: Math.max(0, budget.remainingCents - costCents),
-            turnsUsed: turn,
+            turnsUsed: totalTurnsUsed,
           },
           rateLimitRemaining: 0,
         };
       }
 
-      return errorResponse('AI_EXECUTION_FAILED', errMessage, conversationId);
+      return errorResponse('AI_EXECUTION_FAILED', result.error, conversationId);
     }
 
-    // 6. Record usage & cost — sum per-model costs for accurate billing on escalation
+    // 6. Record usage & cost
     const costCents = calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel)
                     + calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel);
     await aiBudgetService.recordUsage(userId, costCents, {
@@ -336,14 +424,14 @@ export const aiService = {
       outputTokens: totalOutputTokens,
       command,
       boardId,
-      turnsUsed: turn,
-      toolCallCount: allOperations.length,
+      turnsUsed: totalTurnsUsed,
+      toolCallCount: result.operations.length,
     });
 
     // 7. Save to per-user chat history
     await aiChatService.appendMessages(boardId, userId, [
       { role: 'user', content: command },
-      { role: 'assistant', content: finalMessage },
+      { role: 'assistant', content: result.finalMessage },
     ]);
 
     // 8. Audit log
@@ -354,28 +442,28 @@ export const aiService = {
       entityId: boardId,
       metadata: {
         command,
-        operationCount: allOperations.length,
+        operationCount: result.operations.length,
         costCents,
-        turnsUsed: turn,
+        turnsUsed: totalTurnsUsed,
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
-        model,
+        model: finalModel,
         complexity,
-        escalated,
+        retried,
         traceId: getCurrentTraceId(),
         success: true,
       },
     });
 
-    // 9. Record metrics (with per-model splits when escalated)
+    // 9. Record metrics
     metricsService.recordAICommand({
       latencyMs: Date.now() - startTime,
       costCents,
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
       success: true,
-      model,
-      ...(escalated ? {
+      model: finalModel,
+      ...(retried ? {
         modelSplits: [
           { model: haikuModel, inputTokens: haikuInputTokens, outputTokens: haikuOutputTokens, costCents: calculateCostCents(haikuInputTokens, haikuOutputTokens, haikuModel) },
           { model: sonnetModel, inputTokens: sonnetInputTokens, outputTokens: sonnetOutputTokens, costCents: calculateCostCents(sonnetInputTokens, sonnetOutputTokens, sonnetModel) },
@@ -388,7 +476,7 @@ export const aiService = {
       const completePayload: AICompletePayload = {
         boardId,
         userId,
-        operationCount: allOperations.length,
+        operationCount: result.operations.length,
         timestamp: Date.now(),
       };
       trackedEmit(getIO().to(boardId), WebSocketEvent.AI_COMPLETE, completePayload);
@@ -402,15 +490,15 @@ export const aiService = {
     return {
       success: true,
       conversationId,
-      message: finalMessage,
-      operations: allOperations,
+      message: result.finalMessage,
+      operations: result.operations,
       usage: {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
         totalTokens: totalInputTokens + totalOutputTokens,
         estimatedCostCents: costCents,
         budgetRemainingCents: updatedBudget.remainingCents,
-        turnsUsed: turn,
+        turnsUsed: totalTurnsUsed,
       },
       rateLimitRemaining: 0, // Will be set by controller from rate limit headers
     };
