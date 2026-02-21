@@ -43,7 +43,7 @@ export const AI_COLORS = {
 // ============================================================
 
 export const SONNET_MODEL_ID = 'claude-sonnet-4-20250514';
-export const HAIKU_MODEL_ID = 'claude-haiku-4-20250414';
+export const HAIKU_MODEL_ID = 'claude-3-5-haiku-20241022';
 
 /** Sonnet 4 pricing (as of 2025-05). */
 export const SONNET_4_PRICING = {
