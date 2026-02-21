@@ -224,6 +224,14 @@
   border-collapse: collapse;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  padding: 6px 8px;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .table th {
@@ -233,16 +241,12 @@
   text-transform: uppercase;
   font-size: 11px;
   letter-spacing: 0.5px;
-  padding: 6px 12px 6px 0;
   border-bottom: 1px solid var(--sidebar-border);
-  white-space: nowrap;
 }
 
 .table td {
-  padding: 6px 12px 6px 0;
   color: var(--text-secondary);
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-  white-space: nowrap;
 }
 
 .table tr:last-child td {
@@ -252,11 +256,20 @@
 .table td:first-child {
   color: var(--text-primary);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Right-align numeric columns */
 .numCell {
   text-align: right;
+  width: 72px;
+  min-width: 60px;
+}
+
+/* Endpoint / name column takes remaining space */
+.nameCell {
+  width: auto;
 }
 
 /* ============================

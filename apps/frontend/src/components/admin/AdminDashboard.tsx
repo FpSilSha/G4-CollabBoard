@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { MetricTile } from './MetricTile';
+import { FlippableTile } from './FlippableTile';
 import { ErrorHistoryModal } from './ErrorHistoryModal';
 import styles from './AdminDashboard.module.css';
+import flipStyles from './FlippableTile.module.css';
 
 // ============================================================
 // Types — mirrors backend MetricsSnapshot
@@ -55,6 +57,16 @@ interface MetricsSnapshot {
       inputTokens: number;
       outputTokens: number;
     };
+    /** Per-model breakdown (keyed by short model name, e.g. "haiku" | "sonnet") */
+    byModel?: Record<string, {
+      total: number;
+      success: number;
+      failure: number;
+      costCents: number;
+      inputTokens: number;
+      outputTokens: number;
+      latency: LatencyStats;
+    }>;
   };
 
   editLocks?: {
@@ -281,6 +293,17 @@ function SectionDivider({ label }: { label: string }) {
 // AI Metrics Section
 // ============================================================
 
+/** Per-model stats shape from the backend */
+type ModelStats = {
+  total: number;
+  success: number;
+  failure: number;
+  costCents: number;
+  inputTokens: number;
+  outputTokens: number;
+  latency: LatencyStats;
+};
+
 function AIMetricsSection({
   data,
   recentErrors,
@@ -296,6 +319,9 @@ function AIMetricsSection({
   const cmds = ai.commands;
   const budget = ai.budget;
   const latency = ai.latency?.command;
+  const byModel = ai.byModel ?? {};
+  const hasModelData = Object.keys(byModel).length > 0;
+  const modelNames = Object.keys(byModel).sort(); // e.g. ["haiku", "sonnet"]
 
   // Command counts
   const total = cmds.total ?? 0;
@@ -323,6 +349,35 @@ function AIMetricsSection({
   const remainingBudget = Math.max(0, budget.budgetCents - budget.spentCents);
   const projectedDays = centsPerDay > 0 ? Math.floor(remainingBudget / centsPerDay) : 999;
 
+  // Helper: render per-model rows on the back of a flippable tile
+  function ModelBackFace({ label, renderRow }: { label: string; renderRow: (m: ModelStats, name: string) => ReactNode }) {
+    return (
+      <>
+        <span className={flipStyles.backLabel}>{label}</span>
+        {hasModelData ? modelNames.map((name, i) => (
+          <div key={name}>
+            {i > 0 && <div className={flipStyles.divider} />}
+            <div className={flipStyles.modelSection}>
+              <div className={flipStyles.modelName}>{name}</div>
+              {renderRow(byModel[name], name)}
+            </div>
+          </div>
+        )) : (
+          <span className={flipStyles.noData}>No per-model data yet</span>
+        )}
+      </>
+    );
+  }
+
+  function ModelRow({ label, value }: { label: string; value: string }) {
+    return (
+      <div className={flipStyles.modelRow}>
+        <span className={flipStyles.modelRowLabel}>{label}</span>
+        <span className={flipStyles.modelRowValue}>{value}</span>
+      </div>
+    );
+  }
+
   return (
     <>
       <SectionDivider label="AI" />
@@ -331,66 +386,174 @@ function AIMetricsSection({
       <div className={styles.tileGrid}>
         <MetricTile label="AI Commands Today" value={String(today)} subtitle={`${total} total`} />
 
-        <MetricTile
-          label="AI Spend This Month"
-          value={formatCents(budget.spentCents)}
-          subtitle={`${formatCents(budget.spentCents)} / ${formatCents(budget.budgetCents)}`}
-        >
-          <div className={styles.progressBar}>
-            <div
-              className={`${styles.progressFill} ${progressClass}`}
-              style={{ width: `${spentPct}%` }}
+        <FlippableTile
+          canFlip={hasModelData}
+          front={
+            <MetricTile
+              bare
+              label="AI Spend This Month"
+              value={formatCents(budget.spentCents)}
+              subtitle={`${formatCents(budget.spentCents)} / ${formatCents(budget.budgetCents)}`}
+            >
+              <div className={styles.progressBar}>
+                <div
+                  className={`${styles.progressFill} ${progressClass}`}
+                  style={{ width: `${spentPct}%` }}
+                />
+              </div>
+            </MetricTile>
+          }
+          back={
+            <ModelBackFace label="Spend by Model" renderRow={(m) => (
+              <>
+                <ModelRow label="Cost" value={formatCents(m.costCents)} />
+                <ModelRow label="Commands" value={String(m.total)} />
+              </>
+            )} />
+          }
+        />
+
+        <FlippableTile
+          canFlip={hasModelData}
+          front={
+            <MetricTile
+              bare
+              label="Avg Response Time"
+              value={latency ? formatMs(latency.avg) : '—'}
+            >
+              {latency && latency.count > 0 && (
+                <div className={styles.percentileList}>
+                  <PercentileRow label="p50" value={latency.p50} />
+                  <PercentileRow label="p90" value={latency.p90} />
+                  <PercentileRow label="p95" value={latency.p95} />
+                  <PercentileRow label="p99" value={latency.p99} />
+                </div>
+              )}
+            </MetricTile>
+          }
+          back={
+            <ModelBackFace label="Latency by Model" renderRow={(m) => (
+              <>
+                <ModelRow label="Avg" value={formatMs(m.latency.avg)} />
+                <ModelRow label="p50" value={formatMs(m.latency.p50)} />
+                <ModelRow label="p95" value={formatMs(m.latency.p95)} />
+              </>
+            )} />
+          }
+        />
+
+        <FlippableTile
+          canFlip={hasModelData}
+          front={
+            <MetricTile
+              bare
+              label="Success Rate"
+              value={successRate === '—' ? '—' : `${successRate}%`}
+              subtitle={total > 0 ? `${success} / ${total}` : undefined}
             />
-          </div>
-        </MetricTile>
-
-        <MetricTile
-          label="Avg Response Time"
-          value={latency ? formatMs(latency.avg) : '—'}
-        >
-          {latency && latency.count > 0 && (
-            <div className={styles.percentileList}>
-              <PercentileRow label="p50" value={latency.p50} />
-              <PercentileRow label="p90" value={latency.p90} />
-              <PercentileRow label="p95" value={latency.p95} />
-              <PercentileRow label="p99" value={latency.p99} />
-            </div>
-          )}
-        </MetricTile>
-
-        <MetricTile
-          label="Success Rate"
-          value={successRate === '—' ? '—' : `${successRate}%`}
-          subtitle={total > 0 ? `${success} / ${total}` : undefined}
+          }
+          back={
+            <ModelBackFace label="Success by Model" renderRow={(m) => {
+              const rate = m.total > 0 ? ((m.success / m.total) * 100).toFixed(1) : '—';
+              return (
+                <>
+                  <ModelRow label="Rate" value={rate === '—' ? '—' : `${rate}%`} />
+                  <ModelRow label="Pass / Fail" value={`${m.success} / ${m.failure}`} />
+                </>
+              );
+            }} />
+          }
         />
       </div>
 
       {/* Row 2: Breakdown stats */}
       <div className={styles.tileGrid}>
-        <MetricTile label="Command Breakdown" value={String(total)}>
-          <div className={styles.breakdownList}>
-            <BreakdownRow label="Successful" value={success} />
-            <BreakdownRow label="Failed" value={failure} />
-          </div>
-        </MetricTile>
-
-        <MetricTile label="Token Usage" value={formatNumber(budget.inputTokens + budget.outputTokens)}>
-          <div className={styles.breakdownList}>
-            <BreakdownRow label="Input" value={formatNumber(budget.inputTokens)} />
-            <BreakdownRow label="Output" value={formatNumber(budget.outputTokens)} />
-          </div>
-        </MetricTile>
-
-        <MetricTile
-          label="Cost per Command"
-          value={avgCostCents === '—' ? '—' : `${avgCostCents}\u00A2`}
-          subtitle={budget.callCount > 0 ? `${budget.callCount} commands` : undefined}
+        <FlippableTile
+          canFlip={hasModelData}
+          front={
+            <MetricTile bare label="Command Breakdown" value={String(total)}>
+              <div className={styles.breakdownList}>
+                <BreakdownRow label="Successful" value={success} />
+                <BreakdownRow label="Failed" value={failure} />
+              </div>
+            </MetricTile>
+          }
+          back={
+            <ModelBackFace label="Commands by Model" renderRow={(m) => (
+              <>
+                <ModelRow label="Total" value={String(m.total)} />
+                <ModelRow label="Success" value={String(m.success)} />
+                <ModelRow label="Failed" value={String(m.failure)} />
+              </>
+            )} />
+          }
         />
 
-        <MetricTile
-          label="Budget Burn Rate"
-          value={centsPerDay > 0 ? `${centsPerDay.toFixed(1)}\u00A2/day` : '—'}
-          subtitle={projectedDays < 999 ? `~${projectedDays} days remaining` : undefined}
+        <FlippableTile
+          canFlip={hasModelData}
+          front={
+            <MetricTile bare label="Token Usage" value={formatNumber(budget.inputTokens + budget.outputTokens)}>
+              <div className={styles.breakdownList}>
+                <BreakdownRow label="Input" value={formatNumber(budget.inputTokens)} />
+                <BreakdownRow label="Output" value={formatNumber(budget.outputTokens)} />
+              </div>
+            </MetricTile>
+          }
+          back={
+            <ModelBackFace label="Tokens by Model" renderRow={(m) => (
+              <>
+                <ModelRow label="Input" value={formatNumber(m.inputTokens)} />
+                <ModelRow label="Output" value={formatNumber(m.outputTokens)} />
+                <ModelRow label="Total" value={formatNumber(m.inputTokens + m.outputTokens)} />
+              </>
+            )} />
+          }
+        />
+
+        <FlippableTile
+          canFlip={hasModelData}
+          front={
+            <MetricTile
+              bare
+              label="Cost per Command"
+              value={avgCostCents === '—' ? '—' : `${avgCostCents}\u00A2`}
+              subtitle={budget.callCount > 0 ? `${budget.callCount} commands` : undefined}
+            />
+          }
+          back={
+            <ModelBackFace label="Cost/Cmd by Model" renderRow={(m) => {
+              const avg = m.total > 0 ? (m.costCents / m.total).toFixed(1) : '—';
+              return (
+                <>
+                  <ModelRow label="Avg Cost" value={avg === '—' ? '—' : `${avg}\u00A2`} />
+                  <ModelRow label="Total Cost" value={formatCents(m.costCents)} />
+                </>
+              );
+            }} />
+          }
+        />
+
+        <FlippableTile
+          canFlip={hasModelData}
+          front={
+            <MetricTile
+              bare
+              label="Budget Burn Rate"
+              value={centsPerDay > 0 ? `${centsPerDay.toFixed(1)}\u00A2/day` : '—'}
+              subtitle={projectedDays < 999 ? `~${projectedDays} days remaining` : undefined}
+            />
+          }
+          back={
+            <ModelBackFace label="Burn by Model" renderRow={(m) => {
+              const modelPerDay = dayOfMonth > 0 ? m.costCents / dayOfMonth : 0;
+              return (
+                <>
+                  <ModelRow label="Rate" value={modelPerDay > 0 ? `${modelPerDay.toFixed(1)}\u00A2/day` : '—'} />
+                  <ModelRow label="Total Spend" value={formatCents(m.costCents)} />
+                </>
+              );
+            }} />
+          }
         />
       </div>
 
@@ -445,9 +608,21 @@ function BackendMetricsSection({ data }: { data: MetricsSnapshot }) {
       {/* Connection tiles */}
       <div className={styles.tileGrid}>
         <MetricTile label="Uptime" value={formatUptime(data.uptime)} />
-        <MetricTile label="WS Current" value={String(data.websocket.connections.current)} />
-        <MetricTile label="WS Total" value={formatNumber(data.websocket.connections.total)} />
-        <MetricTile label="WS Peak" value={String(data.websocket.connections.peak)} />
+        <MetricTile
+          label="WS Current"
+          value={String(data.websocket.connections.current)}
+          tooltip="Number of WebSocket connections open right now"
+        />
+        <MetricTile
+          label="WS Total"
+          value={formatNumber(data.websocket.connections.total)}
+          tooltip="Total WebSocket connections since the server started"
+        />
+        <MetricTile
+          label="WS Peak"
+          value={String(data.websocket.connections.peak)}
+          tooltip="Highest concurrent WebSocket connection count since the server started"
+        />
       </div>
 
       {/* HTTP Requests Table */}
@@ -589,9 +764,18 @@ function LatencyTable({
     <div className={styles.tableCard}>
       <h3 className={styles.tableTitle}>{title}</h3>
       <table className={styles.table}>
+        <colgroup>
+          <col />
+          <col style={{ width: 72 }} />
+          <col style={{ width: 72 }} />
+          <col style={{ width: 72 }} />
+          <col style={{ width: 72 }} />
+          <col style={{ width: 72 }} />
+          <col style={{ width: 72 }} />
+        </colgroup>
         <thead>
           <tr>
-            <th>Endpoint</th>
+            <th className={styles.nameCell}>Endpoint</th>
             <th className={styles.numCell}>Count</th>
             <th className={styles.numCell}>Avg</th>
             <th className={styles.numCell}>p50</th>
@@ -603,7 +787,7 @@ function LatencyTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.label}>
-              <td>{row.label}</td>
+              <td className={styles.nameCell}>{row.label}</td>
               <td className={styles.numCell}>{formatNumber(row.count)}</td>
               <td className={styles.numCell}>{row.latency ? formatMs(row.latency.avg) : '—'}</td>
               <td className={styles.numCell}>{row.latency ? formatMs(row.latency.p50) : '—'}</td>
@@ -645,16 +829,20 @@ function CounterTable({
     <div className={styles.tableCard}>
       <h3 className={styles.tableTitle}>{title}</h3>
       <table className={styles.table}>
+        <colgroup>
+          <col />
+          <col style={{ width: 80 }} />
+        </colgroup>
         <thead>
           <tr>
-            <th>Event</th>
+            <th className={styles.nameCell}>Event</th>
             <th className={styles.numCell}>Count</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(([event, count]) => (
             <tr key={event}>
-              <td>{event}</td>
+              <td className={styles.nameCell}>{event}</td>
               <td className={styles.numCell}>{formatNumber(count)}</td>
             </tr>
           ))}

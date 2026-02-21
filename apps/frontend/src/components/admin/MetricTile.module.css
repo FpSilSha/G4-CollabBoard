@@ -41,6 +41,13 @@
   color: var(--text-secondary);
 }
 
+/* Bare variant — no card chrome, used inside FlippableTile */
+.tileBare {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* Wide variant for tables spanning full width */
 .wide {
   grid-column: 1 / -1;

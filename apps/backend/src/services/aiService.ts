@@ -261,6 +261,7 @@ export const aiService = {
         outputTokens: totalOutputTokens,
         success: false,
         errorCode: 'AI_EXECUTION_FAILED',
+        model,
       });
 
       // Audit log
@@ -274,6 +275,12 @@ export const aiService = {
           operationCount: allOperations.length,
           costCents,
           turnsUsed: turn,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          model,
+          complexity,
+          escalated,
+          traceId: getCurrentTraceId(),
           success: false,
           errorCode: 'AI_EXECUTION_FAILED',
           errorMessage: errMessage,
@@ -361,6 +368,7 @@ export const aiService = {
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
       success: true,
+      model,
     });
 
     // 10. Broadcast ai:complete

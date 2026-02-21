@@ -1,0 +1,126 @@
+/* ============================
+   FlippableTile — 3D flip card
+   ============================ */
+
+.container {
+  perspective: 800px;
+}
+
+.card {
+  position: relative;
+  width: 100%;
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.card.flipped {
+  transform: rotateY(180deg);
+}
+
+/* Both faces share the same slot */
+.face {
+  position: relative;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backFace {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+}
+
+/* Flip arrow button */
+.flipButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: background 0.15s ease, color 0.15s ease;
+  padding: 0;
+}
+
+.flipButton:hover {
+  background: var(--btn-hover);
+  color: var(--text-primary);
+}
+
+/* ============================
+   Back face content styling
+   ============================ */
+
+.backLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.modelSection {
+  margin-bottom: 6px;
+}
+
+.modelSection:last-of-type {
+  margin-bottom: 0;
+}
+
+.modelName {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 2px;
+}
+
+.modelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.modelRowLabel {
+  color: var(--text-tertiary);
+}
+
+.modelRowValue {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.noData {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  padding-top: 4px;
+}
+
+.divider {
+  height: 1px;
+  background: var(--sidebar-border);
+  margin: 4px 0;
+}
