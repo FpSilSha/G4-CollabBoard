@@ -170,6 +170,23 @@
   background: #f44336;
 }
 
+.budgetRemaining {
+  font-size: 0.72rem;
+  color: rgba(0, 0, 0, 0.45);
+  margin-top: 4px;
+  text-align: center;
+}
+
+.budgetTextWarning {
+  color: #f57c00;
+  font-weight: 600;
+}
+
+.budgetTextDanger {
+  color: #f44336;
+  font-weight: 600;
+}
+
 /* ============================
    Latency Percentile List
    ============================ */

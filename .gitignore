@@ -19,6 +19,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+nul
 
 # Prisma
 apps/backend/prisma/migrations/**/migration_lock.toml

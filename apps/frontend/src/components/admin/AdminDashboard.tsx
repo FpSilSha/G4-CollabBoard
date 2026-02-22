@@ -330,12 +330,16 @@ function AIMetricsSection({
   const failure = cmds.failure ?? 0;
   const successRate = total > 0 ? ((success / total) * 100).toFixed(1) : '—';
 
-  // Budget
+  // Budget — thresholds based on % remaining (spec: yellow <25%, red <10%)
   const spentPct = budget.budgetCents > 0
     ? Math.min(100, (budget.spentCents / budget.budgetCents) * 100)
     : 0;
-  const progressClass = spentPct > 90 ? styles.progressFillDanger
-    : spentPct > 70 ? styles.progressFillWarning
+  const remainingPct = 100 - spentPct;
+  const progressClass = remainingPct < 10 ? styles.progressFillDanger   // red: <10% left
+    : remainingPct < 25 ? styles.progressFillWarning                    // yellow/orange: <25% left
+    : '';
+  const budgetTextClass = remainingPct < 10 ? styles.budgetTextDanger
+    : remainingPct < 25 ? styles.budgetTextWarning
     : '';
 
   // Cost per command
@@ -400,6 +404,9 @@ function AIMetricsSection({
                   className={`${styles.progressFill} ${progressClass}`}
                   style={{ width: `${spentPct}%` }}
                 />
+              </div>
+              <div className={`${styles.budgetRemaining} ${budgetTextClass}`}>
+                {formatCents(remainingBudget)} remaining ({remainingPct.toFixed(0)}%)
               </div>
             </MetricTile>
           }

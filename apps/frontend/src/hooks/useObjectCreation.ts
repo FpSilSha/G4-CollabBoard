@@ -55,6 +55,9 @@ export function useObjectCreation(
     if (!canvas) return;
 
     const handleMouseDown = (opt: fabric.IEvent) => {
+      // Only left-click triggers object placement (ignore right-click, middle-click)
+      if ((opt.e as MouseEvent).button !== 0) return;
+
       const tool = useUIStore.getState().activeTool;
       const color = useUIStore.getState().activeColor;
 
@@ -296,6 +299,8 @@ export function useObjectCreation(
      * by discarding any active object immediately after.
      */
     const handleDropperClick = (opt: fabric.IEvent) => {
+      // Only left-click triggers dropper sampling
+      if ((opt.e as MouseEvent).button !== 0) return;
       if (useUIStore.getState().activeTool !== 'dropper') return;
       if (!opt.target) return;
 
@@ -403,6 +408,8 @@ export function useObjectCreation(
     };
 
     const handleConnectorMouseDown = (opt: fabric.IEvent) => {
+      // Only left-click initiates connector creation
+      if ((opt.e as MouseEvent).button !== 0) return;
       if (useUIStore.getState().activeTool !== 'connector') return;
 
       const pointer = canvas.getPointer(opt.e);
@@ -580,6 +587,8 @@ export function useObjectCreation(
     let lineStartY = 0;
 
     const handleLineMouseDown = (opt: fabric.IEvent) => {
+      // Only left-click initiates line creation
+      if ((opt.e as MouseEvent).button !== 0) return;
       if (useUIStore.getState().activeTool !== 'line') return;
       if (opt.target) return;
 
