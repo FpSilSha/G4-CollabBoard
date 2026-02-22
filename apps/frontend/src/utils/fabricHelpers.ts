@@ -189,8 +189,9 @@ export function updateFrameColor(group: fabric.Group, newColor: string): void {
   const label = objects[2] as fabric.Text;
   borderRect.set('stroke', newColor);
   borderRect.set('fill', hexToRgba(newColor, 0.06));
-  labelBg.set('fill', hexToRgba(newColor, 0.25));
-  label.set('fill', newColor);
+  // Label bg stays dark for all frame colors; text stays white
+  labelBg.set('fill', 'rgba(0, 0, 0, 0.6)');
+  label.set('fill', '#ffffff');
 }
 
 // ============================================================
@@ -421,8 +422,8 @@ export function createDiamond(options: {
   id?: string;
 }): fabric.Polygon {
   const id = options.id ?? generateLocalId();
-  const w = options.width ?? OBJECT_DEFAULTS.SHAPE_WIDTH;
-  const h = options.height ?? OBJECT_DEFAULTS.SHAPE_HEIGHT;
+  const w = options.width ?? 200;  // wider than tall for flowchart-style diamonds
+  const h = options.height ?? 140;
 
   const points = [
     { x: w / 2, y: 0 },   // top
@@ -534,13 +535,13 @@ export function createFrame(options: {
     left: 8,
     top: -20,
     fontSize: 13,
-    fill: color,
+    fill: '#ffffff',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     selectable: false,
     evented: false,
   });
 
-  // Darker background behind the title for readability (tinted to frame color)
+  // Dark background behind the title for readability (consistent across all frame colors)
   const labelPadH = 6;
   const labelPadV = 2;
   const labelBg = new fabric.Rect({
@@ -548,7 +549,7 @@ export function createFrame(options: {
     top: -20 - labelPadV,
     width: label.width! + labelPadH * 2,
     height: (label.height ?? 16) + labelPadV * 2,
-    fill: hexToRgba(color, 0.25),
+    fill: 'rgba(0, 0, 0, 0.6)',
     rx: 3,
     ry: 3,
     selectable: false,
@@ -622,23 +623,20 @@ export function getObjectsInsideFrame(
   allowFrames?: boolean
 ): fabric.Object[] {
   const allObjects = canvas.getObjects();
-  const frameIndex = allObjects.indexOf(frame);
-  if (frameIndex === -1) return [];
+  const frameId = frame.data?.id;
 
   // A child frame cannot adopt other frames
   const parentIsChild = isFrameChild(frame);
 
   const result: fabric.Object[] = [];
-  for (let i = frameIndex + 1; i < allObjects.length; i++) {
-    const obj = allObjects[i];
+  for (const obj of allObjects) {
+    if (obj === frame) continue; // skip self
     if (!obj.data?.id) continue;
     if (obj.data.type === 'connector') continue;
     if (obj.data.type === 'frame') {
       if (!allowFrames || parentIsChild) continue;
-      // One-level nesting: skip if inner frame already has frame children
-      if (frameHasFrameChildren(canvas, obj.data.id)) continue;
       // Skip if inner frame is already a child of a DIFFERENT frame
-      if (obj.data.frameId && obj.data.frameId !== frame.data?.id) continue;
+      if (obj.data.frameId && obj.data.frameId !== frameId) continue;
     }
     if (isObjectInsideFrame(obj, frame)) {
       result.push(obj);

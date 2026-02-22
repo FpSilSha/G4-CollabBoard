@@ -142,6 +142,7 @@ export function Header() {
           />
         ) : (
           <div className={styles.boardTitleRow}>
+            <span className={styles.boardTitleLabel}>Title:</span>
             <h1 className={styles.boardTitle}>{boardTitle}</h1>
             {isOwner && (
               <button

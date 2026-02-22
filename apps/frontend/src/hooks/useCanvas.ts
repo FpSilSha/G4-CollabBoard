@@ -1143,28 +1143,80 @@ function setupFrameControlHandlers(
       target.data.locked = newLocked;
 
       if (newLocked) {
-        // Lock: find all qualifying objects and anchor them.
-        // allowFrames=true enables one-level-deep frame nesting (inner frames
-        // are adopted only if they have no frame children of their own).
+        // Lock: find all qualifying objects inside bounds and anchor them.
+        // allowFrames=true enables one-level-deep frame nesting.
         const children = getObjectsInsideFrame(canvas, target, true);
+
+        // First pass: identify child frames so we can exclude their
+        // existing children (grandchildren) from being re-parented.
+        const adoptedFrameIds = new Set<string>();
         for (const child of children) {
+          if (child.data?.type === 'frame') {
+            adoptedFrameIds.add(child.data.id);
+          }
+        }
+
+        // Second pass: adopt objects as direct children of this frame,
+        // but skip objects that already belong to an adopted child frame
+        // (they should keep their existing frameId → child frame).
+        for (const child of children) {
+          // If this object already belongs to an adopted child frame, don't re-parent it
+          if (child.data?.frameId && adoptedFrameIds.has(child.data.frameId)) {
+            // Just lock it visually — it keeps its existing frameId
+            child.set({ selectable: false, evented: false });
+            continue;
+          }
+
           child.data = { ...child.data, frameId: target.data.id };
-          // Make children unselectable while locked inside the frame
           child.set({ selectable: false, evented: false });
-          // Emit frameId update for each child
           emitObjectUpdate(child.data.id, { frameId: target.data.id });
-          // Update in boardStore
           useBoardStore.getState().updateObject(child.data.id, { frameId: target.data.id });
+
+          // If the child is a frame, promote it above the parent in z-order
+          // so it renders in front (frames default to back).
+          if (child.data?.type === 'frame') {
+            const parentIdx = canvas.getObjects().indexOf(target);
+            const childIdx = canvas.getObjects().indexOf(child);
+            if (childIdx < parentIdx) {
+              canvas.moveTo(child, parentIdx);
+            }
+          }
+        }
+
+        // Also lock any grandchildren that weren't caught by getObjectsInsideFrame
+        // (e.g. grandchildren that are inside the child frame but were too small
+        // to overlap with the parent's bounds check).
+        if (adoptedFrameIds.size > 0) {
+          for (const obj of canvas.getObjects()) {
+            if (obj.data?.frameId && adoptedFrameIds.has(obj.data.frameId)) {
+              obj.set({ selectable: false, evented: false });
+            }
+          }
         }
       } else {
-        // Unlock: clear frameId from all children and restore selectability
+        // Unlock: release direct children only.
+        // If a child frame was locked before, keep it locked with its children.
         const allObjects = canvas.getObjects();
         for (const obj of allObjects) {
-          if (obj.data?.frameId === target.data.id) {
-            obj.data = { ...obj.data, frameId: null };
-            obj.set({ selectable: true, evented: true });
-            emitObjectUpdate(obj.data.id, { frameId: null });
-            useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          if (obj.data?.frameId !== target.data.id) continue;
+
+          // If this child is a frame that is itself locked, keep it locked
+          // and don't release its own children — just detach from parent.
+          const isLockedChildFrame = obj.data?.type === 'frame' && obj.data?.locked;
+
+          obj.data = { ...obj.data, frameId: null };
+          obj.set({ selectable: true, evented: true });
+          emitObjectUpdate(obj.data.id, { frameId: null });
+          useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+
+          // If the child frame was locked, restore its children's unselectable state
+          if (isLockedChildFrame) {
+            const childFrameId = obj.data.id;
+            for (const grandchild of allObjects) {
+              if (grandchild.data?.frameId === childFrameId) {
+                grandchild.set({ selectable: false, evented: false });
+              }
+            }
           }
         }
       }
