@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useBoardStore } from '../../src/stores/boardStore';
 import { makeBoardObject } from '../mocks/factories';
 import type { BoardObject } from 'shared';
@@ -298,5 +298,47 @@ describe('setZoom', () => {
   it('updates zoom value', () => {
     useBoardStore.getState().setZoom(2.5);
     expect(useBoardStore.getState().zoom).toBe(2.5);
+  });
+});
+
+// ─── remaining setters ────────────────────────────────────────────────────────
+
+describe('remaining setters', () => {
+  it('setMaxObjectsPerBoard updates maxObjectsPerBoard', () => {
+    useBoardStore.getState().setMaxObjectsPerBoard(500);
+    expect(useBoardStore.getState().maxObjectsPerBoard).toBe(500);
+  });
+
+  it('setEditingObjectId updates editingObjectId', () => {
+    useBoardStore.getState().setEditingObjectId('obj-99');
+    expect(useBoardStore.getState().editingObjectId).toBe('obj-99');
+  });
+
+  it('setEditingOriginalText updates editingOriginalText', () => {
+    useBoardStore.getState().setEditingOriginalText('original text');
+    expect(useBoardStore.getState().editingOriginalText).toBe('original text');
+  });
+
+  it('setFinishEditingFn stores and calls the function', () => {
+    const fn = vi.fn();
+    useBoardStore.getState().setFinishEditingFn(fn);
+    expect(useBoardStore.getState().finishEditingFn).toBe(fn);
+    useBoardStore.getState().finishEditingFn!(false);
+    expect(fn).toHaveBeenCalledWith(false);
+  });
+
+  it('setThumbnailUpdatedAt updates thumbnailUpdatedAt', () => {
+    useBoardStore.getState().setThumbnailUpdatedAt('2024-01-01T00:00:00Z');
+    expect(useBoardStore.getState().thumbnailUpdatedAt).toBe('2024-01-01T00:00:00Z');
+  });
+
+  it('setBoardStateLoaded updates boardStateLoaded', () => {
+    useBoardStore.getState().setBoardStateLoaded(true);
+    expect(useBoardStore.getState().boardStateLoaded).toBe(true);
+  });
+
+  it('setCachedAuthToken updates cachedAuthToken', () => {
+    useBoardStore.getState().setCachedAuthToken('token-abc');
+    expect(useBoardStore.getState().cachedAuthToken).toBe('token-abc');
   });
 });

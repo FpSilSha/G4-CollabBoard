@@ -440,3 +440,28 @@ describe('closeTextInputModal', () => {
     expect(useUIStore.getState().textInputModal).toBeNull();
   });
 });
+
+// ─── updateActiveClipboard ────────────────────────────────────────────────────
+
+describe('updateActiveClipboard', () => {
+  it('replaces the active clipboard entry and updates clipboard', () => {
+    const entry1 = [{ id: 'obj-1' }] as any;
+    const entry2 = [{ id: 'obj-2' }] as any;
+    const updated = [{ id: 'obj-updated' }] as any;
+
+    useUIStore.getState().pushClipboard(entry1);
+    useUIStore.getState().pushClipboard(entry2);
+    useUIStore.getState().setActiveClipboardIndex(1);
+    useUIStore.getState().updateActiveClipboard(updated);
+
+    const state = useUIStore.getState();
+    expect(state.clipboard).toEqual(updated);
+    expect(state.clipboardHistory[1]).toEqual(updated);
+  });
+
+  it('still updates clipboard field even when history is empty', () => {
+    const entries = [{ id: 'obj-1' }] as any;
+    useUIStore.getState().updateActiveClipboard(entries);
+    expect(useUIStore.getState().clipboard).toEqual(entries);
+  });
+});

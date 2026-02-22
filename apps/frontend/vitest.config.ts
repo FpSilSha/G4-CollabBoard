@@ -16,6 +16,15 @@ export default defineConfig({
         'src/**/*.module.css',
         'src/**/*.d.ts',
         'src/components/**',
+        // Canvas hooks — require real Fabric.js canvas, covered by Playwright (future)
+        'src/hooks/**',
+        // Fabric.js object factories — canvas-dependent, not unit-testable
+        'src/utils/fabricHelpers.ts',
+        'src/utils/connectorAttachment.ts',
+        // Thin store refs and singletons — not logic
+        'src/stores/flagStore.ts',
+        'src/stores/socketRef.ts',
+        'src/stores/editSessionRef.ts',
       ],
       thresholds: {
         lines: 80,
