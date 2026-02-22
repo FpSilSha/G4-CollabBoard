@@ -90,6 +90,8 @@ export const ObjectUpdateFieldsSchema = z.object({
   strokeWeight: z.enum(['normal', 'bold', 'double', 'triple']).optional(),
   // Text font
   fontFamily: z.string().max(200).optional(),
+  // Layer order
+  zIndex: z.number().int().min(0).optional(),
 }).passthrough();
 
 // object:delete

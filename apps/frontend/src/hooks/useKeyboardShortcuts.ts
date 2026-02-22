@@ -606,16 +606,20 @@ function handlePaste(socket: Socket | null): void {
     });
   }
 
-  // Emit all created objects in a SINGLE batch message to avoid rate-limit issues.
+  // Emit created objects in batch messages (max 50 per message to match schema).
   // Previously each object was sent as a separate OBJECT_CREATE event, which
   // caused force-disconnects when pasting many objects rapidly (e.g., 192 events/sec
-  // exceeded the 60/sec limit). The batch approach sends one message total.
+  // exceeded the 60/sec limit). The batch approach sends one message per chunk.
+  const BATCH_CHUNK_SIZE = 50;
   if (boardId && socket?.connected && newBoardObjects.length > 0) {
-    socket.emit(WebSocketEvent.OBJECTS_BATCH_CREATE, {
-      boardId,
-      objects: newBoardObjects,
-      timestamp: Date.now(),
-    });
+    for (let i = 0; i < newBoardObjects.length; i += BATCH_CHUNK_SIZE) {
+      const chunk = newBoardObjects.slice(i, i + BATCH_CHUNK_SIZE);
+      socket.emit(WebSocketEvent.OBJECTS_BATCH_CREATE, {
+        boardId,
+        objects: chunk,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   // Update clipboard positions for cascading paste
@@ -663,15 +667,19 @@ export function handleDeleteSelected(socket: Socket | null): void {
   const boardId = useBoardStore.getState().boardId;
   const cachedToken = useBoardStore.getState().cachedAuthToken;
 
-  // Helper: delete a teleport flag via REST API + remove from flag store
-  const deleteFlagObject = (obj: fabric.Object) => {
+  // Helper: delete a teleport flag via REST API + remove from flag store.
+  // Only removes from canvas AFTER server confirms (prevents ghost deletes on 403).
+  const deleteFlagObject = async (obj: fabric.Object) => {
     const flagId = obj.data?.flagId as string | undefined;
     if (!flagId || !boardId || !cachedToken) return;
-    canvas.remove(obj);
-    // Fire-and-forget API delete
-    useFlagStore.getState().deleteFlag(boardId, flagId, cachedToken).catch((err) => {
+    try {
+      await useFlagStore.getState().deleteFlag(boardId, flagId, cachedToken);
+      canvas.remove(obj);
+      canvas.requestRenderAll();
+    } catch (err) {
       console.error('[handleDeleteSelected] Flag delete failed:', err);
-    });
+      useUIStore.getState().showToast('Cannot delete this flag — you are not the creator or board owner');
+    }
   };
 
   // Helper: orphan children when a frame is deleted — restore selectability

@@ -1,4 +1,5 @@
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
+import { scanKeys } from '../utils/redisScan';
 import { EDIT_LOCK_CONFIG } from 'shared';
 import { logger } from '../utils/logger';
 
@@ -81,7 +82,7 @@ export const editLockService = {
     excludeUserId?: string
   ): Promise<Array<{ userId: string; userName: string }>> {
     const pattern = objectLockPattern(boardId, objectId);
-    const keys = await redis.keys(pattern);
+    const keys = await scanKeys(pattern);
 
     if (keys.length === 0) return [];
 
@@ -135,7 +136,7 @@ export const editLockService = {
     userId: string
   ): Promise<string[]> {
     const pattern = boardLockPattern(boardId);
-    const keys = await redis.keys(pattern);
+    const keys = await scanKeys(pattern);
 
     if (keys.length === 0) return [];
 
@@ -161,7 +162,7 @@ export const editLockService = {
    * Returns a flat list of { objectId, userId, userName } entries.
    */
   async getAllLocks(): Promise<Array<{ objectId: string; userId: string; userName: string }>> {
-    const keys = await redis.keys('editlock:*');
+    const keys = await scanKeys('editlock:*');
     if (keys.length === 0) return [];
 
     const pipeline = redis.pipeline();

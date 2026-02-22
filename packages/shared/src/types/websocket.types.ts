@@ -283,6 +283,7 @@ export interface FlagDeletedPayload {
   timestamp: number;
 }
 
+
 // --- AI Activity Payloads ---
 
 export interface AIThinkingPayload {

@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../../src/utils/redisScan', () => ({
+  scanKeys: vi.fn(),
+}));
+
 import { editLockService } from '../../src/services/editLockService';
 import { instrumentedRedis as redis } from '../../src/utils/instrumentedRedis';
+import { scanKeys } from '../../src/utils/redisScan';
 import { EDIT_LOCK_CONFIG } from 'shared';
 
 const BOARD_ID = 'board-abc';
@@ -15,7 +21,7 @@ describe('editLockService.acquireLock', () => {
 
   it('calls redis.setex with the correct key format and TTL', async () => {
     vi.mocked(redis.setex).mockResolvedValue('OK');
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await editLockService.acquireLock(BOARD_ID, OBJECT_ID, USER_ID, USER_NAME);
 
@@ -29,7 +35,7 @@ describe('editLockService.acquireLock', () => {
 
   it('stores the userName as the lock value', async () => {
     vi.mocked(redis.setex).mockResolvedValue('OK');
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await editLockService.acquireLock(BOARD_ID, OBJECT_ID, USER_ID, 'Bob');
 
@@ -42,7 +48,7 @@ describe('editLockService.acquireLock', () => {
 
   it('returns empty otherEditors when no other locks exist', async () => {
     vi.mocked(redis.setex).mockResolvedValue('OK');
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     const result = await editLockService.acquireLock(BOARD_ID, OBJECT_ID, USER_ID, USER_NAME);
 
@@ -56,7 +62,7 @@ describe('editLockService.acquireLock', () => {
 
     vi.mocked(redis.setex).mockResolvedValue('OK');
     // keys returns both keys (the one just set and the other user's)
-    vi.mocked(redis.keys).mockResolvedValue([ownKey, otherUserKey]);
+    vi.mocked(scanKeys).mockResolvedValue([ownKey, otherUserKey]);
 
     const mockPipeline = {
       get: vi.fn().mockReturnThis(),
@@ -76,12 +82,12 @@ describe('editLockService.acquireLock', () => {
 
   it('uses the correct pattern for scanning object locks', async () => {
     vi.mocked(redis.setex).mockResolvedValue('OK');
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await editLockService.acquireLock(BOARD_ID, OBJECT_ID, USER_ID, USER_NAME);
 
     // keys should have been called with the object pattern
-    expect(redis.keys).toHaveBeenCalledWith(`editlock:${BOARD_ID}:${OBJECT_ID}:*`);
+    expect(scanKeys).toHaveBeenCalledWith(`editlock:${BOARD_ID}:${OBJECT_ID}:*`);
   });
 });
 
@@ -156,7 +162,7 @@ describe('editLockService.getObjectEditors', () => {
   });
 
   it('returns empty array when no keys match the pattern', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     const result = await editLockService.getObjectEditors(BOARD_ID, OBJECT_ID);
 
@@ -166,7 +172,7 @@ describe('editLockService.getObjectEditors', () => {
   it('returns all editors when no excludeUserId provided', async () => {
     const key1 = `editlock:${BOARD_ID}:${OBJECT_ID}:user-1`;
     const key2 = `editlock:${BOARD_ID}:${OBJECT_ID}:user-2`;
-    vi.mocked(redis.keys).mockResolvedValue([key1, key2]);
+    vi.mocked(scanKeys).mockResolvedValue([key1, key2]);
 
     const mockPipeline = {
       get: vi.fn().mockReturnThis(),
@@ -187,7 +193,7 @@ describe('editLockService.getObjectEditors', () => {
   it('excludes the specified userId from results', async () => {
     const key1 = `editlock:${BOARD_ID}:${OBJECT_ID}:user-1`;
     const key2 = `editlock:${BOARD_ID}:${OBJECT_ID}:user-2`;
-    vi.mocked(redis.keys).mockResolvedValue([key1, key2]);
+    vi.mocked(scanKeys).mockResolvedValue([key1, key2]);
 
     const mockPipeline = {
       get: vi.fn().mockReturnThis(),
@@ -207,7 +213,7 @@ describe('editLockService.getObjectEditors', () => {
   it('skips entries with errors or null usernames', async () => {
     const key1 = `editlock:${BOARD_ID}:${OBJECT_ID}:user-1`;
     const key2 = `editlock:${BOARD_ID}:${OBJECT_ID}:user-2`;
-    vi.mocked(redis.keys).mockResolvedValue([key1, key2]);
+    vi.mocked(scanKeys).mockResolvedValue([key1, key2]);
 
     const mockPipeline = {
       get: vi.fn().mockReturnThis(),
@@ -226,7 +232,7 @@ describe('editLockService.getObjectEditors', () => {
 
   it('returns empty array when pipeline.exec returns null', async () => {
     const key1 = `editlock:${BOARD_ID}:${OBJECT_ID}:user-1`;
-    vi.mocked(redis.keys).mockResolvedValue([key1]);
+    vi.mocked(scanKeys).mockResolvedValue([key1]);
 
     const mockPipeline = {
       get: vi.fn().mockReturnThis(),
@@ -246,7 +252,7 @@ describe('editLockService.getUserLocks', () => {
   });
 
   it('returns empty array when no locks exist for the board', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     const result = await editLockService.getUserLocks(BOARD_ID, USER_ID);
 
@@ -256,7 +262,7 @@ describe('editLockService.getUserLocks', () => {
   it('returns objectIds for keys matching the userId suffix', async () => {
     const matchingKey = `editlock:${BOARD_ID}:${OBJECT_ID}:${USER_ID}`;
     const otherKey = `editlock:${BOARD_ID}:other-obj:user-2`;
-    vi.mocked(redis.keys).mockResolvedValue([matchingKey, otherKey]);
+    vi.mocked(scanKeys).mockResolvedValue([matchingKey, otherKey]);
 
     const result = await editLockService.getUserLocks(BOARD_ID, USER_ID);
 
@@ -265,11 +271,11 @@ describe('editLockService.getUserLocks', () => {
   });
 
   it('uses the board lock pattern for redis.keys call', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await editLockService.getUserLocks(BOARD_ID, USER_ID);
 
-    expect(redis.keys).toHaveBeenCalledWith(`editlock:${BOARD_ID}:*`);
+    expect(scanKeys).toHaveBeenCalledWith(`editlock:${BOARD_ID}:*`);
   });
 });
 
@@ -279,7 +285,7 @@ describe('editLockService.getAllLocks', () => {
   });
 
   it('returns empty array when no editlock keys exist', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     const result = await editLockService.getAllLocks();
 
@@ -288,7 +294,7 @@ describe('editLockService.getAllLocks', () => {
 
   it('returns lock entries with objectId, userId, and userName', async () => {
     const key = `editlock:${BOARD_ID}:${OBJECT_ID}:${USER_ID}`;
-    vi.mocked(redis.keys).mockResolvedValue([key]);
+    vi.mocked(scanKeys).mockResolvedValue([key]);
 
     const mockPipeline = {
       get: vi.fn().mockReturnThis(),
@@ -307,7 +313,7 @@ describe('editLockService.getAllLocks', () => {
   });
 
   it('skips entries with fewer than 4 colon-separated parts', async () => {
-    vi.mocked(redis.keys).mockResolvedValue(['editlock:bad-key']);
+    vi.mocked(scanKeys).mockResolvedValue(['editlock:bad-key']);
 
     const mockPipeline = {
       get: vi.fn().mockReturnThis(),
@@ -321,10 +327,10 @@ describe('editLockService.getAllLocks', () => {
   });
 
   it('scans using the global editlock:* pattern', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await editLockService.getAllLocks();
 
-    expect(redis.keys).toHaveBeenCalledWith('editlock:*');
+    expect(scanKeys).toHaveBeenCalledWith('editlock:*');
   });
 });

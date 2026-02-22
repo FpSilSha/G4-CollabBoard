@@ -1,4 +1,5 @@
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
+import { scanKeys } from '../utils/redisScan';
 import { boardService } from '../services/boardService';
 import { versionService } from '../services/versionService';
 import prisma from '../models/index';
@@ -25,7 +26,7 @@ let autoSaveInterval: ReturnType<typeof setInterval> | null = null;
  * Scans Redis presence keys (format: presence:{boardId}:{userId}).
  */
 async function getActiveBoardIds(): Promise<string[]> {
-  const presenceKeys = await redis.keys('presence:*:*');
+  const presenceKeys = await scanKeys('presence:*:*');
   const uniqueBoardIds = new Set<string>();
 
   for (const key of presenceKeys) {

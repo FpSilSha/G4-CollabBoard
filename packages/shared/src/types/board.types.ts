@@ -35,6 +35,8 @@ export interface BaseObject {
   createdAt: Date;
   updatedAt: Date;
   lastEditedBy: string;
+  /** Canvas stacking order. Lower = behind, higher = in front. */
+  zIndex?: number;
   /**
    * How this object was created. Omitted or 'manual' for human-created objects.
    * 'ai' indicates the object was created by the AI agent (Tacky) on behalf of

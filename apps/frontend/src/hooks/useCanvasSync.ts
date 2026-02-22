@@ -348,10 +348,18 @@ export function useCanvasSync(
         canvas.add(preservedFabricObj);
       }
 
+      // Sort objects by zIndex (if present) before rendering so canvas order
+      // matches persisted stacking order. Objects without zIndex sort last.
+      const sorted = [...objects].sort((a, b) => {
+        const za = a.zIndex ?? Number.MAX_SAFE_INTEGER;
+        const zb = b.zIndex ?? Number.MAX_SAFE_INTEGER;
+        return za - zb;
+      });
+
       // Render each object from server
       const boardObjects: BoardObject[] = [];
       const frameObjects: fabric.Object[] = [];
-      objects.forEach((obj: BoardObject) => {
+      sorted.forEach((obj: BoardObject) => {
         if (editingId && obj.id === editingId) {
           // Skip rebuilding the object we're editing — it's already preserved.
           // Still include it in the store so the data stays consistent.
@@ -668,6 +676,12 @@ export function useCanvasSync(
             child.set({ selectable: !isNowLocked, evented: !isNowLocked });
           }
         }
+      }
+
+      // Apply z-index changes — move to correct canvas position
+      if (u.zIndex !== undefined) {
+        fabricObj.data.zIndex = u.zIndex as number;
+        canvas.moveTo(fabricObj, u.zIndex as number);
       }
 
       fabricObj.setCoords();

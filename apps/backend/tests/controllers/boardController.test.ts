@@ -358,7 +358,7 @@ describe('boardController', () => {
 
       await boardController.saveThumbnail(req, res, next);
 
-      expect(boardService.saveThumbnail).toHaveBeenCalledWith('board-abc', 'data:image/jpeg;base64,abc', 1);
+      expect(boardService.saveThumbnail).toHaveBeenCalledWith('board-abc', 'auth0|user-1', 'data:image/jpeg;base64,abc', 1);
       expect(res.json).toHaveBeenCalledWith(result);
       expect(next).not.toHaveBeenCalled();
     });
@@ -418,7 +418,7 @@ describe('boardController', () => {
 
       await boardController.saveThumbnail(req, res, next);
 
-      expect(boardService.saveThumbnail).toHaveBeenCalledWith('board-abc', 'data:image/jpeg;base64,abc', undefined);
+      expect(boardService.saveThumbnail).toHaveBeenCalledWith('board-abc', 'auth0|user-1', 'data:image/jpeg;base64,abc', undefined);
     });
 
     it('calls next when saveThumbnail service throws', async () => {

@@ -23,9 +23,15 @@ vi.mock('../../src/services/versionService', () => ({
   },
 }));
 
+// ─── Mock redisScan ───────────────────────────────────────────────────────────
+vi.mock('../../src/utils/redisScan', () => ({
+  scanKeys: vi.fn(),
+}));
+
 import { boardService } from '../../src/services/boardService';
 import { versionService } from '../../src/services/versionService';
 import { instrumentedRedis as redis } from '../../src/utils/instrumentedRedis';
+import { scanKeys } from '../../src/utils/redisScan';
 import prisma from '../../src/models/index';
 
 // Import the worker AFTER mocks so all dependencies are already mocked
@@ -49,12 +55,12 @@ describe('autoSave worker', () => {
   // ─── stopAutoSaveWorker — no active boards ──────────────────────────────────
   describe('stopAutoSaveWorker — no active boards', () => {
     it('runs final flush with no boards when Redis keys are empty', async () => {
-      vi.mocked(redis.keys).mockResolvedValue([]);
+      vi.mocked(scanKeys).mockResolvedValue([]);
 
       await stopAutoSaveWorker();
 
       // keys was called to find active boards
-      expect(redis.keys).toHaveBeenCalledWith('presence:*:*');
+      expect(scanKeys).toHaveBeenCalledWith('presence:*:*');
       // No flush should occur because there are no boards
       expect(boardService.flushRedisToPostgres).not.toHaveBeenCalled();
     });
@@ -63,7 +69,7 @@ describe('autoSave worker', () => {
   // ─── stopAutoSaveWorker — active boards ────────────────────────────────────
   describe('stopAutoSaveWorker — with active boards', () => {
     it('flushes each active board during shutdown', async () => {
-      vi.mocked(redis.keys).mockResolvedValue([
+      vi.mocked(scanKeys).mockResolvedValue([
         'presence:board-1:user-a',
         'presence:board-2:user-b',
       ]);
@@ -77,7 +83,7 @@ describe('autoSave worker', () => {
     });
 
     it('deduplicates board IDs from multiple presence keys for the same board', async () => {
-      vi.mocked(redis.keys).mockResolvedValue([
+      vi.mocked(scanKeys).mockResolvedValue([
         'presence:board-1:user-a',
         'presence:board-1:user-b',
         'presence:board-1:user-c',
@@ -92,7 +98,7 @@ describe('autoSave worker', () => {
     });
 
     it('handles version conflict: flushRedisToPostgres returns success=false', async () => {
-      vi.mocked(redis.keys).mockResolvedValue(['presence:board-1:user-a']);
+      vi.mocked(scanKeys).mockResolvedValue(['presence:board-1:user-a']);
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: false } as never);
 
       // Should not throw
@@ -101,7 +107,7 @@ describe('autoSave worker', () => {
     });
 
     it('continues flushing remaining boards even when one throws', async () => {
-      vi.mocked(redis.keys).mockResolvedValue([
+      vi.mocked(scanKeys).mockResolvedValue([
         'presence:board-fail:user-a',
         'presence:board-ok:user-b',
       ]);
@@ -118,7 +124,7 @@ describe('autoSave worker', () => {
   // ─── startAutoSaveWorker — interval behaviour ──────────────────────────────
   describe('startAutoSaveWorker — interval triggers', () => {
     it('starts the worker and runs a tick after the interval elapses', async () => {
-      vi.mocked(redis.keys).mockResolvedValue(['presence:board-1:user-a']);
+      vi.mocked(scanKeys).mockResolvedValue(['presence:board-1:user-a']);
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: true } as never);
 
       startAutoSaveWorker();
@@ -133,7 +139,7 @@ describe('autoSave worker', () => {
     });
 
     it('does not start a second interval if already running', () => {
-      vi.mocked(redis.keys).mockResolvedValue([]);
+      vi.mocked(scanKeys).mockResolvedValue([]);
 
       startAutoSaveWorker();
       startAutoSaveWorker(); // Second call should be a no-op
@@ -148,7 +154,7 @@ describe('autoSave worker', () => {
   // ─── Tick with no active boards ────────────────────────────────────────────
   describe('auto-save tick — no active boards', () => {
     it('does not call flushRedisToPostgres when no boards are active', async () => {
-      vi.mocked(redis.keys).mockResolvedValue([]);
+      vi.mocked(scanKeys).mockResolvedValue([]);
 
       startAutoSaveWorker();
       await vi.advanceTimersByTimeAsync(60000);
@@ -162,7 +168,7 @@ describe('autoSave worker', () => {
     it('creates a version snapshot after every 5th successful save', async () => {
       const boardId = 'board-snap';
 
-      vi.mocked(redis.keys).mockResolvedValue([`presence:${boardId}:user-a`]);
+      vi.mocked(scanKeys).mockResolvedValue([`presence:${boardId}:user-a`]);
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: true } as never);
       vi.mocked(boardService.getBoardStateFromRedis).mockResolvedValue({
         boardId,
@@ -198,7 +204,7 @@ describe('autoSave worker', () => {
     it('skips snapshot when getBoardStateFromRedis returns null', async () => {
       const boardId = 'board-null-state';
 
-      vi.mocked(redis.keys).mockResolvedValue([`presence:${boardId}:user-a`]);
+      vi.mocked(scanKeys).mockResolvedValue([`presence:${boardId}:user-a`]);
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: true } as never);
       vi.mocked(boardService.getBoardStateFromRedis).mockResolvedValue(null as never);
       vi.mocked(prisma.board.findUnique).mockResolvedValue({
@@ -220,7 +226,7 @@ describe('autoSave worker', () => {
     it('skips snapshot when board has no objects in cache', async () => {
       const boardId = 'board-empty';
 
-      vi.mocked(redis.keys).mockResolvedValue([`presence:${boardId}:user-a`]);
+      vi.mocked(scanKeys).mockResolvedValue([`presence:${boardId}:user-a`]);
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: true } as never);
       vi.mocked(boardService.getBoardStateFromRedis).mockResolvedValue({
         boardId,
@@ -247,7 +253,7 @@ describe('autoSave worker', () => {
     it('skips snapshot when board does not exist in Postgres', async () => {
       const boardId = 'board-gone';
 
-      vi.mocked(redis.keys).mockResolvedValue([`presence:${boardId}:user-a`]);
+      vi.mocked(scanKeys).mockResolvedValue([`presence:${boardId}:user-a`]);
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: true } as never);
       vi.mocked(boardService.getBoardStateFromRedis).mockResolvedValue({
         boardId,
@@ -271,7 +277,7 @@ describe('autoSave worker', () => {
     it('resets save count to 0 on version conflict', async () => {
       const boardId = 'board-conflict';
 
-      vi.mocked(redis.keys).mockResolvedValue([`presence:${boardId}:user-a`]);
+      vi.mocked(scanKeys).mockResolvedValue([`presence:${boardId}:user-a`]);
       // First flush returns conflict (success: false)
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: false } as never);
 
@@ -291,7 +297,7 @@ describe('autoSave worker', () => {
   // ─── Error resilience ──────────────────────────────────────────────────────
   describe('error resilience', () => {
     it('logs error and does not crash when redis.keys throws during tick', async () => {
-      vi.mocked(redis.keys).mockRejectedValue(new Error('Redis is down'));
+      vi.mocked(scanKeys).mockRejectedValue(new Error('Redis is down'));
 
       startAutoSaveWorker();
 
@@ -302,7 +308,7 @@ describe('autoSave worker', () => {
     });
 
     it('logs error and does not crash when redis.keys throws during shutdown', async () => {
-      vi.mocked(redis.keys).mockRejectedValue(new Error('Redis unavailable'));
+      vi.mocked(scanKeys).mockRejectedValue(new Error('Redis unavailable'));
 
       await expect(stopAutoSaveWorker()).resolves.toBeUndefined();
     });
@@ -310,7 +316,7 @@ describe('autoSave worker', () => {
     it('continues processing remaining boards when a snapshot throws', async () => {
       const boardId = 'board-snap-fail';
 
-      vi.mocked(redis.keys).mockResolvedValue([`presence:${boardId}:user-a`]);
+      vi.mocked(scanKeys).mockResolvedValue([`presence:${boardId}:user-a`]);
       vi.mocked(boardService.flushRedisToPostgres).mockResolvedValue({ success: true } as never);
       vi.mocked(boardService.getBoardStateFromRedis).mockResolvedValue({
         boardId,

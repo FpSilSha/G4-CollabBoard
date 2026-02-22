@@ -98,15 +98,16 @@ export function TeleportFlagList() {
     async (flagId: string) => {
       if (!boardId || !canvas) return;
       try {
-        // Remove canvas marker
+        const token = await getToken();
+        // Await server confirmation BEFORE removing from canvas
+        await deleteFlag(boardId, flagId, token);
+        // Server confirmed — now remove canvas marker
         const objects = canvas.getObjects();
         const marker = objects.find((o) => o.data?.flagId === flagId);
         if (marker) {
           canvas.remove(marker);
           canvas.requestRenderAll();
         }
-        const token = await getToken();
-        await deleteFlag(boardId, flagId, token);
       } catch (err) {
         console.error('[TeleportFlagList] deleteFlag error:', err);
       }

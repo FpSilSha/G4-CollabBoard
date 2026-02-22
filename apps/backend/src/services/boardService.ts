@@ -5,9 +5,14 @@ import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { metricsService } from './metricsService';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
+import {
+  atomicAddObject,
+  atomicUpdateObject,
+  atomicRemoveObject,
+} from '../utils/redisAtomicOps';
 
 /** Redis key for a board's cached state. */
-function boardStateKey(boardId: string): string {
+export function boardStateKey(boardId: string): string {
   return `board:${boardId}:state`;
 }
 
@@ -344,14 +349,22 @@ export const boardService = {
    * Any user who has been on the board can update the thumbnail.
    * Enforces a 5-minute cooldown to prevent churn from rapid join/leave.
    */
-  async saveThumbnail(boardId: string, thumbnail: string, version?: number) {
-    // Check 5-minute cooldown
+  async saveThumbnail(boardId: string, userId: string, thumbnail: string, version?: number) {
     const board = await prisma.board.findUnique({
       where: { id: boardId },
-      select: { thumbnailUpdatedAt: true },
+      select: { ownerId: true, thumbnailUpdatedAt: true },
     });
 
-    if (board?.thumbnailUpdatedAt) {
+    if (!board) {
+      throw new AppError(404, 'Board not found');
+    }
+
+    if (board.ownerId !== userId) {
+      throw new AppError(403, 'Not authorized to update this thumbnail');
+    }
+
+    // Check 5-minute cooldown
+    if (board.thumbnailUpdatedAt) {
       const elapsed = Date.now() - board.thumbnailUpdatedAt.getTime();
       if (elapsed < 5 * 60 * 1000) {
         return { success: false, reason: 'cooldown' };
@@ -433,17 +446,21 @@ export const boardService = {
    * Does NOT write to Postgres — auto-save handles that.
    */
   async addObjectInRedis(boardId: string, object: Record<string, unknown>): Promise<void> {
-    const cachedState = await this.getOrLoadBoardState(boardId);
+    const key = boardStateKey(boardId);
+    let result = await atomicAddObject(key, JSON.stringify(object), MAX_OBJECTS_PER_BOARD);
 
-    const duplicateExists = cachedState.objects.some(
-      (existingObj) => existingObj.id === object.id
-    );
-    if (duplicateExists) {
-      throw new AppError(409, 'Object with this ID already exists', 'DUPLICATE_OBJECT');
+    if (result === -2) {
+      // State not in Redis yet — load from Postgres and retry
+      await this.loadBoardToRedis(boardId);
+      result = await atomicAddObject(key, JSON.stringify(object), MAX_OBJECTS_PER_BOARD);
     }
 
-    cachedState.objects.push(object as unknown as BoardObject);
-    await this.saveBoardStateToRedis(boardId, cachedState);
+    if (result === -1) {
+      throw new AppError(409, 'Object with this ID already exists', 'DUPLICATE_OBJECT');
+    }
+    if (result === -3) {
+      throw new AppError(403, `Object limit reached (max ${MAX_OBJECTS_PER_BOARD})`, 'OBJECT_LIMIT');
+    }
   },
 
   /**
@@ -455,23 +472,17 @@ export const boardService = {
     objectId: string,
     updates: Record<string, unknown>
   ): Promise<void> {
-    const cachedState = await this.getOrLoadBoardState(boardId);
+    const key = boardStateKey(boardId);
+    let result = await atomicUpdateObject(key, objectId, JSON.stringify(updates));
 
-    const objectIndex = cachedState.objects.findIndex(
-      (obj) => obj.id === objectId
-    );
-
-    if (objectIndex === -1) {
-      throw new AppError(404, 'Object not found on board');
+    if (result === -2) {
+      await this.loadBoardToRedis(boardId);
+      result = await atomicUpdateObject(key, objectId, JSON.stringify(updates));
     }
 
-    // LWW merge: spread existing fields, overwrite with incoming updates
-    cachedState.objects[objectIndex] = {
-      ...cachedState.objects[objectIndex],
-      ...updates,
-    } as CachedBoardState['objects'][number];
-
-    await this.saveBoardStateToRedis(boardId, cachedState);
+    if (result === -1) {
+      throw new AppError(404, 'Object not found on board');
+    }
   },
 
   /**
@@ -479,18 +490,17 @@ export const boardService = {
    * Does NOT write to Postgres — auto-save handles that.
    */
   async removeObjectFromRedis(boardId: string, objectId: string): Promise<void> {
-    const cachedState = await this.getOrLoadBoardState(boardId);
+    const key = boardStateKey(boardId);
+    let result = await atomicRemoveObject(key, objectId);
 
-    const originalLength = cachedState.objects.length;
-    cachedState.objects = cachedState.objects.filter(
-      (obj) => obj.id !== objectId
-    );
-
-    if (cachedState.objects.length === originalLength) {
-      throw new AppError(404, 'Object not found on board');
+    if (result === -2) {
+      await this.loadBoardToRedis(boardId);
+      result = await atomicRemoveObject(key, objectId);
     }
 
-    await this.saveBoardStateToRedis(boardId, cachedState);
+    if (result === -1) {
+      throw new AppError(404, 'Object not found on board');
+    }
   },
 
   /**

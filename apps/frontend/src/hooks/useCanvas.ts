@@ -707,15 +707,19 @@ function setupDragState(
   function deleteObject(obj: fabric.Object): void {
     if (obj.data?.pinned) return;
 
-    // Teleport flags use flagId, not id — handle separately via REST API
+    // Teleport flags use flagId, not id — handle separately via REST API.
+    // Only remove from canvas AFTER server confirms (prevents ghost deletes on 403).
     if (obj.data?.type === 'teleportFlag') {
       const flagId = obj.data?.flagId as string | undefined;
       const boardId = useBoardStore.getState().boardId;
       const token = useBoardStore.getState().cachedAuthToken;
       if (flagId && boardId && token) {
-        canvas.remove(obj);
-        useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+        useFlagStore.getState().deleteFlag(boardId, flagId, token).then(() => {
+          canvas.remove(obj);
+          canvas.requestRenderAll();
+        }).catch((err) => {
           console.error('[drag-to-trash] Flag delete failed:', err);
+          useUIStore.getState().showToast('Cannot delete this flag — you are not the creator or board owner');
         });
       }
       return;
@@ -796,15 +800,20 @@ function setupDragState(
         for (const obj of objects) {
           if (obj.data?.pinned) continue;
 
-          // Teleport flags use flagId — handle separately via REST API
+          // Teleport flags use flagId — handle separately via REST API.
+          // Only remove from canvas AFTER server confirms.
           if (obj.data?.type === 'teleportFlag') {
             const flagId = obj.data?.flagId as string | undefined;
             const boardId = useBoardStore.getState().boardId;
             const token = useBoardStore.getState().cachedAuthToken;
             if (flagId && boardId && token) {
-              canvas.remove(obj);
-              useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+              const flagObj = obj; // capture reference for async callback
+              useFlagStore.getState().deleteFlag(boardId, flagId, token).then(() => {
+                canvas.remove(flagObj);
+                canvas.requestRenderAll();
+              }).catch((err) => {
                 console.error('[drag-to-trash] Flag delete failed:', err);
+                useUIStore.getState().showToast('Cannot delete this flag — you are not the creator or board owner');
               });
             }
             continue;

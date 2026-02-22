@@ -1,7 +1,18 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
+
+vi.mock('../../src/utils/redisAtomicOps', () => ({
+  atomicAddObject: vi.fn(),
+  atomicUpdateObject: vi.fn(),
+  atomicRemoveObject: vi.fn(),
+  atomicBatchAddObjects: vi.fn(),
+  atomicBatchUpdateObjects: vi.fn(),
+  atomicBatchRemoveObjects: vi.fn(),
+}));
+
 import { boardService } from '../../src/services/boardService';
 import prisma from '../../src/models/index';
 import { instrumentedRedis as redis } from '../../src/utils/instrumentedRedis';
+import { atomicAddObject, atomicUpdateObject, atomicRemoveObject } from '../../src/utils/redisAtomicOps';
 import { AppError } from '../../src/middleware/errorHandler';
 import { makeBoard, makeBoardObject, makeCachedBoardState } from '../mocks/factories';
 
@@ -14,10 +25,6 @@ beforeAll(() => {
   }
 });
 
-// Helper: serialize a CachedBoardState the same way boardService does
-function serializeState(state: ReturnType<typeof makeCachedBoardState>): string {
-  return JSON.stringify(state);
-}
 
 describe('boardService.createBoard', () => {
   beforeEach(() => {
@@ -479,36 +486,31 @@ describe('boardService.addObjectInRedis', () => {
     vi.clearAllMocks();
   });
 
-  it('appends the object to the cached state and saves it back', async () => {
-    const existingObj = makeBoardObject({ id: 'obj-existing' });
-    const state = makeCachedBoardState({ objects: [existingObj] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
-    vi.mocked(redis.set).mockResolvedValue('OK');
+  it('calls atomicAddObject and succeeds when return code is 0', async () => {
+    vi.mocked(atomicAddObject).mockResolvedValue(0);
 
     const newObj = { id: 'obj-new', type: 'sticky', x: 200, y: 200 };
     await boardService.addObjectInRedis('board-1', newObj);
 
-    const setCall = vi.mocked(redis.set).mock.calls[0];
-    const savedState = JSON.parse(setCall[1] as string);
-    expect(savedState.objects).toHaveLength(2);
-    expect(savedState.objects.some((o: { id: string }) => o.id === 'obj-new')).toBe(true);
+    expect(atomicAddObject).toHaveBeenCalledWith(
+      'board:board-1:state',
+      JSON.stringify(newObj),
+      expect.any(Number)
+    );
   });
 
-  it('throws 409 AppError when object with same ID already exists in cache', async () => {
-    const existingObj = makeBoardObject({ id: 'dup-obj' });
-    const state = makeCachedBoardState({ objects: [existingObj] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
+  it('throws 409 AppError when atomicAddObject returns -1 (duplicate)', async () => {
+    vi.mocked(atomicAddObject).mockResolvedValue(-1);
 
     await expect(
       boardService.addObjectInRedis('board-1', { id: 'dup-obj', type: 'sticky' })
     ).rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_OBJECT' });
   });
 
-  it('loads from Postgres and adds object when Redis cache is empty', async () => {
-    // First redis.get returns null (no cache), triggers loadBoardToRedis
-    vi.mocked(redis.get)
-      .mockResolvedValueOnce(null) // getBoardStateFromRedis: no cache
-      .mockResolvedValueOnce(null); // after load, getBoardStateFromRedis again is not called; loadBoardToRedis writes directly
+  it('loads from Postgres and retries when atomicAddObject returns -2 (no state)', async () => {
+    vi.mocked(atomicAddObject)
+      .mockResolvedValueOnce(-2)  // first call: no state
+      .mockResolvedValueOnce(0);  // retry: success
     vi.mocked(prisma.board.findUnique).mockResolvedValue({
       objects: [],
       version: 1,
@@ -518,11 +520,10 @@ describe('boardService.addObjectInRedis', () => {
     const newObj = { id: 'obj-fresh', type: 'sticky' };
     await boardService.addObjectInRedis('board-1', newObj);
 
-    // redis.set should have been called at least once (once for load, once for add)
+    // Should have been called twice (initial + retry)
+    expect(atomicAddObject).toHaveBeenCalledTimes(2);
+    // loadBoardToRedis should have written to Redis
     expect(redis.set).toHaveBeenCalled();
-    const lastSetCall = vi.mocked(redis.set).mock.calls[vi.mocked(redis.set).mock.calls.length - 1];
-    const savedState = JSON.parse(lastSetCall[1] as string);
-    expect(savedState.objects.some((o: { id: string }) => o.id === 'obj-fresh')).toBe(true);
   });
 });
 
@@ -531,42 +532,39 @@ describe('boardService.updateObjectInRedis', () => {
     vi.resetAllMocks();
   });
 
-  it('merges updates into the existing object (LWW)', async () => {
-    const obj = makeBoardObject({ id: 'obj-1', text: 'original', x: 50 });
-    const state = makeCachedBoardState({ objects: [obj] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
-    vi.mocked(redis.set).mockResolvedValue('OK');
+  it('calls atomicUpdateObject and succeeds when return code is 0', async () => {
+    vi.mocked(atomicUpdateObject).mockResolvedValue(0);
 
     await boardService.updateObjectInRedis('board-1', 'obj-1', { text: 'updated' });
 
-    const setCall = vi.mocked(redis.set).mock.calls[0];
-    const savedState = JSON.parse(setCall[1] as string);
-    const updatedObj = savedState.objects.find((o: { id: string }) => o.id === 'obj-1');
-    expect(updatedObj.text).toBe('updated');
-    expect(updatedObj.x).toBe(50); // original field preserved
+    expect(atomicUpdateObject).toHaveBeenCalledWith(
+      'board:board-1:state',
+      'obj-1',
+      JSON.stringify({ text: 'updated' })
+    );
   });
 
-  it('throws 404 AppError when object does not exist in cached state', async () => {
-    const state = makeCachedBoardState({ objects: [] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
+  it('throws 404 AppError when atomicUpdateObject returns -1 (not found)', async () => {
+    vi.mocked(atomicUpdateObject).mockResolvedValue(-1);
 
     await expect(
       boardService.updateObjectInRedis('board-1', 'nonexistent-obj', { text: 'hi' })
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it('saves the updated state back to Redis', async () => {
-    const obj = makeBoardObject({ id: 'obj-1' });
-    const state = makeCachedBoardState({ objects: [obj] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
+  it('loads from Postgres and retries when atomicUpdateObject returns -2 (no state)', async () => {
+    vi.mocked(atomicUpdateObject)
+      .mockResolvedValueOnce(-2)  // first call: no state
+      .mockResolvedValueOnce(0);  // retry: success
+    vi.mocked(prisma.board.findUnique).mockResolvedValue({
+      objects: [],
+      version: 1,
+    } as never);
     vi.mocked(redis.set).mockResolvedValue('OK');
 
     await boardService.updateObjectInRedis('board-1', 'obj-1', { color: '#FF0000' });
 
-    expect(redis.set).toHaveBeenCalledWith(
-      'board:board-1:state',
-      expect.any(String)
-    );
+    expect(atomicUpdateObject).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -575,46 +573,38 @@ describe('boardService.removeObjectFromRedis', () => {
     vi.clearAllMocks();
   });
 
-  it('removes the object from the cached state', async () => {
-    const obj1 = makeBoardObject({ id: 'obj-1' });
-    const obj2 = makeBoardObject({ id: 'obj-2' });
-    const state = makeCachedBoardState({ objects: [obj1, obj2] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
-    vi.mocked(redis.set).mockResolvedValue('OK');
+  it('calls atomicRemoveObject and succeeds when return code is 0', async () => {
+    vi.mocked(atomicRemoveObject).mockResolvedValue(0);
 
     await boardService.removeObjectFromRedis('board-1', 'obj-1');
 
-    const setCall = vi.mocked(redis.set).mock.calls[0];
-    const savedState = JSON.parse(setCall[1] as string);
-    expect(savedState.objects).toHaveLength(1);
-    expect(savedState.objects[0].id).toBe('obj-2');
+    expect(atomicRemoveObject).toHaveBeenCalledWith(
+      'board:board-1:state',
+      'obj-1'
+    );
   });
 
-  it('throws 404 AppError when object is not in cached state', async () => {
-    const obj = makeBoardObject({ id: 'obj-1' });
-    const state = makeCachedBoardState({ objects: [obj] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
+  it('throws 404 AppError when atomicRemoveObject returns -1 (not found)', async () => {
+    vi.mocked(atomicRemoveObject).mockResolvedValue(-1);
 
     await expect(
       boardService.removeObjectFromRedis('board-1', 'nonexistent')
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it('saves the updated (smaller) state back to Redis', async () => {
-    const obj = makeBoardObject({ id: 'obj-to-remove' });
-    const state = makeCachedBoardState({ objects: [obj] });
-    vi.mocked(redis.get).mockResolvedValue(serializeState(state));
+  it('loads from Postgres and retries when atomicRemoveObject returns -2 (no state)', async () => {
+    vi.mocked(atomicRemoveObject)
+      .mockResolvedValueOnce(-2)  // first call: no state
+      .mockResolvedValueOnce(0);  // retry: success
+    vi.mocked(prisma.board.findUnique).mockResolvedValue({
+      objects: [],
+      version: 1,
+    } as never);
     vi.mocked(redis.set).mockResolvedValue('OK');
 
     await boardService.removeObjectFromRedis('board-1', 'obj-to-remove');
 
-    expect(redis.set).toHaveBeenCalledWith(
-      'board:board-1:state',
-      expect.any(String)
-    );
-    const setCall = vi.mocked(redis.set).mock.calls[0];
-    const savedState = JSON.parse(setCall[1] as string);
-    expect(savedState.objects).toHaveLength(0);
+    expect(atomicRemoveObject).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -647,13 +637,13 @@ describe('boardService.saveThumbnail', () => {
     vi.clearAllMocks();
   });
 
-  it('saves thumbnail when no cooldown restriction exists', async () => {
+  it('saves thumbnail when owner and no cooldown restriction', async () => {
     vi.mocked(prisma.board.findUnique).mockResolvedValue(
-      { thumbnailUpdatedAt: null } as never
+      { ownerId: 'user-1', thumbnailUpdatedAt: null } as never
     );
     vi.mocked(prisma.board.update).mockResolvedValue({} as never);
 
-    const result = await boardService.saveThumbnail('board-1', 'data:image/jpeg;base64,...');
+    const result = await boardService.saveThumbnail('board-1', 'user-1', 'data:image/jpeg;base64,...');
 
     expect(result).toEqual({ success: true });
     expect(prisma.board.update).toHaveBeenCalledWith({
@@ -662,13 +652,32 @@ describe('boardService.saveThumbnail', () => {
     });
   });
 
+  it('throws 404 when board does not exist', async () => {
+    vi.mocked(prisma.board.findUnique).mockResolvedValue(null);
+
+    await expect(
+      boardService.saveThumbnail('nonexistent', 'user-1', 'data:...')
+    ).rejects.toThrow(expect.objectContaining({ statusCode: 404 }));
+  });
+
+  it('throws 403 when user is not the board owner', async () => {
+    vi.mocked(prisma.board.findUnique).mockResolvedValue(
+      { ownerId: 'owner-user', thumbnailUpdatedAt: null } as never
+    );
+
+    await expect(
+      boardService.saveThumbnail('board-1', 'other-user', 'data:...')
+    ).rejects.toThrow(expect.objectContaining({ statusCode: 403 }));
+    expect(prisma.board.update).not.toHaveBeenCalled();
+  });
+
   it('returns cooldown reason when thumbnail was updated less than 5 minutes ago', async () => {
     const recentUpdate = new Date(Date.now() - 2 * 60 * 1000); // 2 minutes ago
     vi.mocked(prisma.board.findUnique).mockResolvedValue(
-      { thumbnailUpdatedAt: recentUpdate } as never
+      { ownerId: 'user-1', thumbnailUpdatedAt: recentUpdate } as never
     );
 
-    const result = await boardService.saveThumbnail('board-1', 'data:...');
+    const result = await boardService.saveThumbnail('board-1', 'user-1', 'data:...');
 
     expect(result).toEqual({ success: false, reason: 'cooldown' });
     expect(prisma.board.update).not.toHaveBeenCalled();
@@ -677,22 +686,22 @@ describe('boardService.saveThumbnail', () => {
   it('saves thumbnail when last update was more than 5 minutes ago', async () => {
     const oldUpdate = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
     vi.mocked(prisma.board.findUnique).mockResolvedValue(
-      { thumbnailUpdatedAt: oldUpdate } as never
+      { ownerId: 'user-1', thumbnailUpdatedAt: oldUpdate } as never
     );
     vi.mocked(prisma.board.update).mockResolvedValue({} as never);
 
-    const result = await boardService.saveThumbnail('board-1', 'data:image/jpeg;base64,...');
+    const result = await boardService.saveThumbnail('board-1', 'user-1', 'data:image/jpeg;base64,...');
 
     expect(result).toEqual({ success: true });
   });
 
   it('stores the thumbnailVersion when provided', async () => {
     vi.mocked(prisma.board.findUnique).mockResolvedValue(
-      { thumbnailUpdatedAt: null } as never
+      { ownerId: 'user-1', thumbnailUpdatedAt: null } as never
     );
     vi.mocked(prisma.board.update).mockResolvedValue({} as never);
 
-    await boardService.saveThumbnail('board-1', 'data:...', 42);
+    await boardService.saveThumbnail('board-1', 'user-1', 'data:...', 42);
 
     const updateCall = vi.mocked(prisma.board.update).mock.calls[0][0];
     expect(updateCall.data).toMatchObject({ thumbnailVersion: 42 });
@@ -700,11 +709,11 @@ describe('boardService.saveThumbnail', () => {
 
   it('does not set thumbnailVersion when version is not provided', async () => {
     vi.mocked(prisma.board.findUnique).mockResolvedValue(
-      { thumbnailUpdatedAt: null } as never
+      { ownerId: 'user-1', thumbnailUpdatedAt: null } as never
     );
     vi.mocked(prisma.board.update).mockResolvedValue({} as never);
 
-    await boardService.saveThumbnail('board-1', 'data:...');
+    await boardService.saveThumbnail('board-1', 'user-1', 'data:...');
 
     const updateCall = vi.mocked(prisma.board.update).mock.calls[0][0];
     expect(updateCall.data).not.toHaveProperty('thumbnailVersion');

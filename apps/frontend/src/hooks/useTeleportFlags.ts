@@ -100,7 +100,12 @@ export function useTeleportFlags() {
       const newX = target.left ?? 0;
       const newY = target.top ?? 0;
 
-      // Update local store
+      // Remember original position for rollback on auth failure
+      const flag = useFlagStore.getState().flags.find((f) => f.id === flagId);
+      const origX = flag?.x ?? newX;
+      const origY = flag?.y ?? newY;
+
+      // Update local store optimistically
       useFlagStore.getState().updateFlagLocal(flagId, { x: newX, y: newY });
 
       // Persist to API
@@ -117,6 +122,12 @@ export function useTeleportFlags() {
         );
       } catch (err) {
         console.error('[useTeleportFlags] updateFlag position error:', err);
+        // Rollback: restore original position on canvas and in store
+        useFlagStore.getState().updateFlagLocal(flagId, { x: origX, y: origY });
+        target.set({ left: origX, top: origY });
+        target.setCoords();
+        canvas.requestRenderAll();
+        useUIStore.getState().showToast('Cannot move this flag — you are not the creator or board owner');
       }
     };
 

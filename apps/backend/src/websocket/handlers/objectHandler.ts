@@ -15,12 +15,18 @@ import {
   type ObjectsBatchCreatedPayload,
   type ObjectsBatchDeletedPayload,
 } from 'shared';
-import { boardService } from '../../services/boardService';
+import { boardService, boardStateKey } from '../../services/boardService';
 import { editLockService } from '../../services/editLockService';
 import { auditService, AuditAction } from '../../services/auditService';
 import { AppError } from '../../middleware/errorHandler';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
+import {
+  atomicBatchAddObjects,
+  atomicBatchUpdateObjects,
+  atomicBatchRemoveObjects,
+} from '../../utils/redisAtomicOps';
+import { MAX_OBJECTS_PER_BOARD } from 'shared';
 import type { AuthenticatedSocket } from '../server';
 
 /**
@@ -296,26 +302,24 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
     try {
       const now = new Date().toISOString();
+      const key = boardStateKey(boardId);
 
-      // Single Redis read, apply all position updates, single Redis write
-      const cachedState = await boardService.getOrLoadBoardState(boardId);
+      // Build updates array for atomic batch update
+      const updates = moves.map((move) => ({
+        id: move.objectId,
+        x: move.x,
+        y: move.y,
+        lastEditedBy: userId,
+        updatedAt: now,
+      }));
 
-      for (const move of moves) {
-        const objIndex = cachedState.objects.findIndex(
-          (obj) => obj.id === move.objectId
-        );
-        if (objIndex === -1) continue;
+      let result = await atomicBatchUpdateObjects(key, JSON.stringify(updates));
 
-        cachedState.objects[objIndex] = {
-          ...cachedState.objects[objIndex],
-          x: move.x,
-          y: move.y,
-          lastEditedBy: userId,
-          updatedAt: now,
-        } as unknown as typeof cachedState.objects[number];
+      if (result === -2) {
+        // State not in Redis — load from Postgres and retry
+        await boardService.loadBoardToRedis(boardId);
+        result = await atomicBatchUpdateObjects(key, JSON.stringify(updates));
       }
-
-      await boardService.saveBoardStateToRedis(boardId, cachedState);
 
       // Single broadcast to all other users
       const batchPayload: ObjectsBatchMovedPayload = {
@@ -367,25 +371,32 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
     try {
       const now = new Date();
-      const createdObjects = [];
+      const key = boardStateKey(boardId);
 
-      // Single Redis read, add all objects, single Redis write
-      const cachedState = await boardService.getOrLoadBoardState(boardId);
+      // Build enriched objects with metadata
+      const createdObjects = objects.map((object) => ({
+        ...object,
+        createdBy: userId,
+        lastEditedBy: userId,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      }));
 
-      for (const object of objects) {
-        const boardObject = {
-          ...object,
-          createdBy: userId,
-          lastEditedBy: userId,
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-        };
+      let result = await atomicBatchAddObjects(key, JSON.stringify(createdObjects), MAX_OBJECTS_PER_BOARD);
 
-        cachedState.objects.push(boardObject as unknown as typeof cachedState.objects[number]);
-        createdObjects.push(boardObject);
+      if (result === -2) {
+        await boardService.loadBoardToRedis(boardId);
+        result = await atomicBatchAddObjects(key, JSON.stringify(createdObjects), MAX_OBJECTS_PER_BOARD);
       }
 
-      await boardService.saveBoardStateToRedis(boardId, cachedState);
+      if (result === -3) {
+        socket.emit(WebSocketEvent.BOARD_ERROR, {
+          code: 'OBJECT_LIMIT',
+          message: `Object limit reached (max ${MAX_OBJECTS_PER_BOARD})`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
 
       // Single broadcast to ALL users in the room (including sender for confirmation)
       const batchPayload: ObjectsBatchCreatedPayload = {
@@ -452,15 +463,14 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
     }
 
     try {
-      // Single Redis read, remove all objects, single Redis write
-      const cachedState = await boardService.getOrLoadBoardState(boardId);
-      const objectIdSet = new Set(objectIds);
+      const key = boardStateKey(boardId);
 
-      cachedState.objects = cachedState.objects.filter(
-        (obj) => !objectIdSet.has(obj.id)
-      );
+      let result = await atomicBatchRemoveObjects(key, JSON.stringify(objectIds));
 
-      await boardService.saveBoardStateToRedis(boardId, cachedState);
+      if (result === -2) {
+        await boardService.loadBoardToRedis(boardId);
+        result = await atomicBatchRemoveObjects(key, JSON.stringify(objectIds));
+      }
 
       // Single broadcast to everyone EXCEPT sender
       const batchPayload: ObjectsBatchDeletedPayload = {

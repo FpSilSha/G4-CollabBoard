@@ -3,6 +3,8 @@ import { useUIStore, Tool, type ShapeTool } from '../../stores/uiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import { ColorPicker } from '../canvas/ColorPicker';
 import { ToolOptionsPanel } from '../toolbar/ToolOptionsPanel';
+import { getSocketRef } from '../../stores/socketRef';
+import { WebSocketEvent } from 'shared';
 import styles from './Sidebar.module.css';
 
 /**
@@ -301,6 +303,34 @@ function ZOrderControls() {
     }
 
     canvas.requestRenderAll();
+
+    // Persist z-index changes: assign sequential zIndex to all canvas objects
+    // and emit batch_update for the objects whose zIndex changed.
+    const socket = getSocketRef();
+    const boardId = useBoardStore.getState().boardId;
+    if (socket?.connected && boardId) {
+      const allObjects = canvas.getObjects();
+      const moves: Array<{ objectId: string; zIndex: number }> = [];
+      allObjects.forEach((obj, idx) => {
+        if (!obj.data?.id || obj.data?.type === 'teleportFlag') return;
+        const prevZ = obj.data?.zIndex as number | undefined;
+        if (prevZ !== idx) {
+          obj.data.zIndex = idx;
+          moves.push({ objectId: obj.data.id, zIndex: idx });
+        }
+      });
+      if (moves.length > 0) {
+        // Emit individual updates for each changed object (z-index only)
+        for (const m of moves) {
+          socket.emit(WebSocketEvent.OBJECT_UPDATE, {
+            boardId,
+            objectId: m.objectId,
+            updates: { zIndex: m.zIndex },
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
   };
 
   return (
