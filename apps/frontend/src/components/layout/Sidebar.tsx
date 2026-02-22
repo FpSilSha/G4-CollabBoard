@@ -439,7 +439,7 @@ function StickyIcon() {
       strokeWidth="2"
     >
       <rect x="3" y="3" width="18" height="18" rx="1" />
-      <path d="M15 3v6h6" />
+      <path d="M15 21v-6h6" />
     </svg>
   );
 }
