@@ -103,7 +103,7 @@ describe('errorHandler middleware', () => {
       process.env.NODE_ENV = originalEnv;
     });
 
-    it('exposes the real error message in development', () => {
+    it('always returns generic message in development (real message in debug header)', () => {
       const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'development';
 
@@ -116,13 +116,14 @@ describe('errorHandler middleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       const jsonArg = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
-      expect(jsonArg.message).toBe('Cannot read property of undefined');
+      expect(jsonArg.message).toBe('An unexpected error occurred');
+      expect(res.setHeader).toHaveBeenCalledWith('X-Debug-Error', 'Cannot read property of undefined');
 
       process.env.NODE_ENV = originalEnv;
     });
 
-    it('exposes the real error message in test environment', () => {
-      // process.env.NODE_ENV is 'test' in setup.ts — not 'production', so message shown
+    it('always returns generic message in test environment (real message in debug header)', () => {
+      // process.env.NODE_ENV is 'test' in setup.ts — not 'production', so debug header is set
       const err = new Error('Test error details');
       const req = makeReq();
       const res = makeRes();
@@ -131,7 +132,8 @@ describe('errorHandler middleware', () => {
       errorHandler(err, req, res, next);
 
       const jsonArg = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
-      expect(jsonArg.message).toBe('Test error details');
+      expect(jsonArg.message).toBe('An unexpected error occurred');
+      expect(res.setHeader).toHaveBeenCalledWith('X-Debug-Error', 'Test error details');
     });
 
     it('does not call next for any error type', () => {

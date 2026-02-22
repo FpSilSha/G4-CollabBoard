@@ -9,7 +9,11 @@ import { metricsService } from './services/metricsService';
 import { DEFAULT_PORT } from 'shared';
 import { startAutoSaveWorker, stopAutoSaveWorker } from './workers/autoSave';
 
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
+const rawPort = process.env.PORT;
+const port = rawPort ? parseInt(rawPort, 10) : DEFAULT_PORT;
+if (isNaN(port) || port < 0 || port > 65535) {
+  throw new Error(`Invalid PORT: "${rawPort}". Must be 0-65535.`);
+}
 
 const httpServer = createServer(app);
 
