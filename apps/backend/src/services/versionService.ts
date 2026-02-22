@@ -13,11 +13,11 @@ export const versionService = {
       throw new AppError(404, 'Board not found');
     }
 
-    if (board.ownerId !== userId) {
-      throw new AppError(403, 'You do not have access to this board');
+    if (board.isDeleted) {
+      throw new AppError(404, 'Board has been deleted');
     }
 
-    // Version history is enabled for all users.
+    // Version history is accessible to any authenticated user with board access.
 
     const versions = await prisma.boardVersion.findMany({
       where: { boardId },

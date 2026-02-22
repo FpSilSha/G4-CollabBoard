@@ -60,9 +60,17 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// --- Metrics Endpoint (no auth — standard for metrics scraping) ---
-// Returns JSON for programmatic consumers, HTML dashboard for browsers.
-app.get('/metrics', async (req, res) => {
+// --- Metrics Endpoint ---
+// When METRICS_TOKEN is set, requires X-Metrics-Token header.
+// When unset (local dev), endpoint stays open.
+app.get('/metrics', (req, res, next) => {
+  const expectedToken = process.env.METRICS_TOKEN;
+  if (expectedToken && req.headers['x-metrics-token'] !== expectedToken) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  next();
+}, async (req, res) => {
   try {
     const snapshot = await metricsService.getAll();
 

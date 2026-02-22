@@ -35,6 +35,7 @@ export const userService = {
           name: displayName,
           avatar: generateAvatar(displayName),
           color: generateColorFromUserId(auth0Id),
+          subscriptionTier: 'ENTERPRISE', // All users get Enterprise until Stripe is integrated
         },
       });
     } else {

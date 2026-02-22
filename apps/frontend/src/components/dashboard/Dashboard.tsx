@@ -312,6 +312,10 @@ export function Dashboard() {
       </header>
 
       <main className={styles.main}>
+        <div className={styles.enterpriseBanner}>
+          🚀 Enterprise tier unlocked for all users until next major release. Enjoy!
+        </div>
+
         {/* Tab row */}
         <div className={styles.tabRow}>
           <button

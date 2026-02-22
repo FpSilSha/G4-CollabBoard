@@ -1,6 +1,6 @@
 import prisma from '../models/index';
 import { Prisma } from '@prisma/client';
-import { MAX_OBJECTS_PER_BOARD, type CachedBoardState, type BoardObject } from 'shared';
+import { MAX_OBJECTS_PER_BOARD, TIER_LIMITS, type CachedBoardState, type BoardObject } from 'shared';
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { metricsService } from './metricsService';
 import { AppError } from '../middleware/errorHandler';
@@ -100,6 +100,21 @@ export const boardService = {
   },
 
   async createBoard(userId: string, title: string) {
+    // Enforce tier-based board slot limit
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionTier: true },
+    });
+    if (!user) throw new AppError(404, 'User not found');
+
+    const tierLimits = TIER_LIMITS[user.subscriptionTier];
+    const activeBoards = await prisma.board.count({
+      where: { ownerId: userId, isDeleted: false },
+    });
+    if (activeBoards >= tierLimits.BOARD_SLOTS) {
+      throw new AppError(403, 'Board limit reached for your subscription tier', 'BOARD_LIMIT');
+    }
+
     // Find next available slot.
     // Include ALL boards (even soft-deleted) because the unique constraint
     // on (ownerId, slot) applies to all rows regardless of isDeleted status.

@@ -27,11 +27,18 @@ beforeAll(() => {
 
 
 describe('boardService.createBoard', () => {
+  /** Mock the user lookup + board count for tier enforcement. ENTERPRISE = Infinity slots. */
+  function mockTierCheck(tier = 'ENTERPRISE' as string, activeBoardCount = 0) {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ subscriptionTier: tier } as never);
+    vi.mocked(prisma.board.count).mockResolvedValue(activeBoardCount as never);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('creates a board with slot 0 when no boards exist', async () => {
+    mockTierCheck();
     vi.mocked(prisma.board.findMany).mockResolvedValue([]);
     vi.mocked(prisma.board.create).mockResolvedValue(
       makeBoard({ id: 'board-new', slot: 0, title: 'My Board' }) as never
@@ -46,6 +53,7 @@ describe('boardService.createBoard', () => {
   });
 
   it('uses next available slot when slots 0 and 1 are taken', async () => {
+    mockTierCheck();
     vi.mocked(prisma.board.findMany).mockResolvedValue([
       { slot: 0 },
       { slot: 1 },
@@ -62,6 +70,7 @@ describe('boardService.createBoard', () => {
   });
 
   it('finds the first gap in slot numbering', async () => {
+    mockTierCheck();
     // slots 0, 1, 3 exist — gap is at 2
     vi.mocked(prisma.board.findMany).mockResolvedValue([
       { slot: 0 },
@@ -78,6 +87,7 @@ describe('boardService.createBoard', () => {
   });
 
   it('returns the new board shape with empty objects', async () => {
+    mockTierCheck();
     vi.mocked(prisma.board.findMany).mockResolvedValue([]);
     vi.mocked(prisma.board.create).mockResolvedValue(
       makeBoard({ id: 'board-abc', title: 'Test', slot: 0 }) as never
@@ -88,6 +98,31 @@ describe('boardService.createBoard', () => {
     expect(result).toHaveProperty('id');
     expect(result).toHaveProperty('title');
     expect(result.objects).toEqual([]);
+  });
+
+  it('throws 404 when user not found', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+
+    await expect(boardService.createBoard('ghost-user', 'Board'))
+      .rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it('throws 403 BOARD_LIMIT when FREE tier user hits 3 boards', async () => {
+    mockTierCheck('FREE', 3);
+
+    await expect(boardService.createBoard('user-1', 'Fourth Board'))
+      .rejects.toMatchObject({ statusCode: 403, code: 'BOARD_LIMIT' });
+  });
+
+  it('allows ENTERPRISE tier user to create unlimited boards', async () => {
+    mockTierCheck('ENTERPRISE', 100);
+    vi.mocked(prisma.board.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.board.create).mockResolvedValue(
+      makeBoard({ slot: 100 }) as never
+    );
+
+    await expect(boardService.createBoard('user-1', 'Another Board'))
+      .resolves.toBeDefined();
   });
 });
 
