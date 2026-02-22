@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useBoardStore } from '../../stores/boardStore';
 import { getEditSession } from '../../stores/editSessionRef';
 import { getStickyChildren, darkenColor } from '../../utils/fabricHelpers';
-import { OBJECT_DEFAULTS } from 'shared';
+import { OBJECT_DEFAULTS, STICKY_SIZE_PRESETS } from 'shared';
+import type { StickySizeKey } from 'shared';
 import styles from './StickyEditModal.module.css';
 
 /**
@@ -43,8 +44,11 @@ export function StickyEditModal() {
     const { target, canvas } = session;
     const zoom = canvas.getZoom();
     const vpt = canvas.viewportTransform!;
-    const w = OBJECT_DEFAULTS.STICKY_WIDTH;
-    const h = OBJECT_DEFAULTS.STICKY_HEIGHT;
+    // Use actual sticky dimensions (may be S/M/L preset)
+    const sizeKey = target.data?.size as StickySizeKey | undefined;
+    const preset = sizeKey ? STICKY_SIZE_PRESETS[sizeKey] : null;
+    const w = target.width ?? preset?.width ?? OBJECT_DEFAULTS.STICKY_WIDTH;
+    const h = target.height ?? preset?.height ?? OBJECT_DEFAULTS.STICKY_HEIGHT;
     const foldSize = 24;
     const padding = OBJECT_DEFAULTS.STICKY_PADDING;
 
@@ -59,6 +63,13 @@ export function StickyEditModal() {
     const initialColor = (base.fill as string) ?? '#FDFD96';
     setGhostColor(initialColor);
 
+    // Determine char limit from size preset, or match by width
+    const charLimit = preset?.charLimit ?? (() => {
+      if (w <= 150) return STICKY_SIZE_PRESETS.small.charLimit;
+      if (w <= 200) return STICKY_SIZE_PRESETS.medium.charLimit;
+      return STICKY_SIZE_PRESETS.large.charLimit;
+    })();
+
     return {
       left: screenLeft,
       top: screenTop,
@@ -67,6 +78,7 @@ export function StickyEditModal() {
       foldSize: foldSize * zoom,
       padding: padding * zoom,
       fontSize: OBJECT_DEFAULTS.STICKY_FONT_SIZE * zoom,
+      charLimit,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingObjectId]);
@@ -258,8 +270,14 @@ export function StickyEditModal() {
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             rows={6}
+            maxLength={ghostInfo?.charLimit}
             spellCheck
           />
+          {ghostInfo && (
+            <div className={styles.charCount}>
+              {text.length}/{ghostInfo.charLimit}
+            </div>
+          )}
           <div className={styles.buttonRow}>
             <button className={styles.cancelButton} onClick={handleCancel}>
               Cancel

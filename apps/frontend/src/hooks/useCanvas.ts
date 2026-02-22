@@ -1143,8 +1143,10 @@ function setupFrameControlHandlers(
       target.data.locked = newLocked;
 
       if (newLocked) {
-        // Lock: find all qualifying objects and anchor them
-        const children = getObjectsInsideFrame(canvas, target);
+        // Lock: find all qualifying objects and anchor them.
+        // allowFrames=true enables one-level-deep frame nesting (inner frames
+        // are adopted only if they have no frame children of their own).
+        const children = getObjectsInsideFrame(canvas, target, true);
         for (const child of children) {
           child.data = { ...child.data, frameId: target.data.id };
           // Make children unselectable while locked inside the frame
@@ -1230,8 +1232,13 @@ function setupFrameControlHandlers(
 
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
 
-    // Move all anchored children by the same delta
+    // Move all anchored children by the same delta.
+    // For one-level-deep nesting, also move grandchildren:
+    // if a child is a nested frame, move objects anchored to it too.
+    const movedFrameIds = new Set<string>([frameId]);
     const allObjects = canvas.getObjects();
+
+    // First pass: move direct children, track nested frame IDs
     for (const obj of allObjects) {
       if (obj.data?.frameId === frameId) {
         obj.set({
@@ -1239,6 +1246,24 @@ function setupFrameControlHandlers(
           top: (obj.top ?? 0) + dy,
         });
         obj.setCoords();
+        // If this child is a frame, its children need moving too
+        if (obj.data?.type === 'frame') {
+          movedFrameIds.add(obj.data.id);
+        }
+      }
+    }
+
+    // Second pass: move grandchildren (objects inside nested frames)
+    if (movedFrameIds.size > 1) {
+      for (const obj of allObjects) {
+        const fid = obj.data?.frameId;
+        if (fid && movedFrameIds.has(fid) && fid !== frameId) {
+          obj.set({
+            left: (obj.left ?? 0) + dx,
+            top: (obj.top ?? 0) + dy,
+          });
+          obj.setCoords();
+        }
       }
     }
 
@@ -1253,15 +1278,34 @@ function setupFrameControlHandlers(
   const onMouseUp = () => {
     if (frameDragStart.size === 0) return;
 
-    // Emit final positions for all moved frames and their children
+    // Emit final positions for all moved frames, their children, and grandchildren
     for (const [frameId] of frameDragStart) {
       const allObjects = canvas.getObjects();
+      const movedFrameIds = new Set<string>([frameId]);
+
+      // First pass: emit for direct children, collect nested frame IDs
       for (const obj of allObjects) {
         if (obj.data?.frameId === frameId) {
           const x = obj.left ?? 0;
           const y = obj.top ?? 0;
           emitObjectUpdate(obj.data.id, { x, y });
           useBoardStore.getState().updateObject(obj.data.id, { x, y });
+          if (obj.data?.type === 'frame') {
+            movedFrameIds.add(obj.data.id);
+          }
+        }
+      }
+
+      // Second pass: emit for grandchildren (objects inside nested frames)
+      if (movedFrameIds.size > 1) {
+        for (const obj of allObjects) {
+          const fid = obj.data?.frameId;
+          if (fid && movedFrameIds.has(fid) && fid !== frameId) {
+            const x = obj.left ?? 0;
+            const y = obj.top ?? 0;
+            emitObjectUpdate(obj.data.id, { x, y });
+            useBoardStore.getState().updateObject(obj.data.id, { x, y });
+          }
         }
       }
     }
@@ -1280,6 +1324,7 @@ function setupFrameControlHandlers(
       const frameId = target.data.id;
       const frameBounds = target.getBoundingRect(true, true);
 
+      const releasedFrameIds: string[] = [];
       for (const obj of canvas.getObjects()) {
         if (obj.data?.frameId !== frameId) continue;
         const objBounds = obj.getBoundingRect(true, true);
@@ -1294,6 +1339,21 @@ function setupFrameControlHandlers(
           obj.set({ selectable: true, evented: true });
           emitObjectUpdate(obj.data.id, { frameId: null });
           useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          // If a nested frame was released, also release its children
+          if (obj.data?.type === 'frame') {
+            releasedFrameIds.push(obj.data.id);
+          }
+        }
+      }
+      // Release grandchildren of any nested frames that were un-anchored
+      if (releasedFrameIds.length > 0) {
+        for (const obj of canvas.getObjects()) {
+          if (obj.data?.frameId && releasedFrameIds.includes(obj.data.frameId)) {
+            obj.data = { ...obj.data, frameId: null };
+            obj.set({ selectable: true, evented: true });
+            emitObjectUpdate(obj.data.id, { frameId: null });
+            useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          }
         }
       }
       return;
@@ -1332,6 +1392,18 @@ function setupFrameControlHandlers(
       target.set({ selectable: true, evented: true });
       emitObjectUpdate(target.data.id, { frameId: null });
       useBoardStore.getState().updateObject(target.data.id, { frameId: null });
+
+      // If the un-anchored child is a nested frame, also release its children
+      if (target.data?.type === 'frame') {
+        for (const obj of canvas.getObjects()) {
+          if (obj.data?.frameId === target.data.id) {
+            obj.data = { ...obj.data, frameId: null };
+            obj.set({ selectable: true, evented: true });
+            emitObjectUpdate(obj.data.id, { frameId: null });
+            useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          }
+        }
+      }
     }
   };
 

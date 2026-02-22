@@ -18,6 +18,7 @@ import {
   createArrow,
   createStar,
   createTriangle,
+  createDiamond,
   createFlagMarker,
   fabricToBoardObject,
   getStickyChildren,
@@ -805,8 +806,10 @@ function createFabricObject(
   color: string
 ): fabric.Object | null {
   switch (tool) {
-    case 'sticky':
-      return createStickyNote({ x, y, color });
+    case 'sticky': {
+      const stickySize = useUIStore.getState().stickySize;
+      return createStickyNote({ x, y, color, size: stickySize });
+    }
     case 'rectangle':
       return createRectangle({ x, y, color });
     case 'circle':
@@ -817,6 +820,8 @@ function createFabricObject(
       return createStar({ x, y, color });
     case 'triangle':
       return createTriangle({ x, y, color });
+    case 'diamond':
+      return createDiamond({ x, y, color });
     case 'text': {
       const uiState = useUIStore.getState();
       return createTextElement({

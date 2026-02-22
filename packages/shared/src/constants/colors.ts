@@ -140,3 +140,12 @@ export const OBJECT_DEFAULTS = {
   STICKY_FONT_SIZE: 14,
   STICKY_PADDING: 10,
 } as const;
+
+/** Sticky note size presets: dimensions and character limits per size. */
+export const STICKY_SIZE_PRESETS = {
+  small:  { width: 150, height: 150, charLimit: 120 },
+  medium: { width: 200, height: 200, charLimit: 250 },
+  large:  { width: 300, height: 300, charLimit: 500 },
+} as const;
+
+export type StickySizeKey = keyof typeof STICKY_SIZE_PRESETS;
