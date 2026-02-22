@@ -142,6 +142,7 @@ export function Header() {
           />
         ) : (
           <div className={styles.boardTitleRow}>
+            <span className={styles.boardTitleLabel}>Title:</span>
             <h1 className={styles.boardTitle}>{boardTitle}</h1>
             {isOwner && (
               <button
@@ -252,13 +253,23 @@ function PresenceAvatars({
     const canvas = useBoardStore.getState().canvas;
     if (!canvas) return;
 
-    const cursor = usePresenceStore.getState().remoteCursors.get(userId);
-    if (!cursor || Date.now() - cursor.lastUpdate > 5000) {
-      useUIStore.getState().showToast(`${userName} has no active cursor`);
+    const presenceState = usePresenceStore.getState();
+    const cursor = presenceState.remoteCursors.get(userId);
+
+    // Prefer live cursor; fall back to last known position
+    if (cursor && Date.now() - cursor.lastUpdate <= 5000) {
+      teleportTo(canvas, cursor.x, cursor.y);
       return;
     }
 
-    teleportTo(canvas, cursor.x, cursor.y);
+    const lastKnown = presenceState.lastKnownPositions.get(userId);
+    if (lastKnown) {
+      teleportTo(canvas, lastKnown.x, lastKnown.y);
+      useUIStore.getState().showToast(`Teleported to ${userName}'s last known position`);
+      return;
+    }
+
+    useUIStore.getState().showToast(`${userName} has no known position`);
   };
 
   return (

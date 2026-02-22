@@ -51,7 +51,9 @@ export interface StickyNote extends BaseObject {
   height: number;
 }
 
-export type ShapeType = 'rectangle' | 'circle' | 'line' | 'arrow' | 'star' | 'triangle';
+export type ShapeType = 'rectangle' | 'circle' | 'line' | 'arrow' | 'star' | 'triangle' | 'diamond';
+
+export type StickySize = 'small' | 'medium' | 'large';
 
 export interface Shape extends BaseObject {
   type: 'shape';

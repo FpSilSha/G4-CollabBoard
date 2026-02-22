@@ -54,7 +54,7 @@ function extractBoardId(input: string): string | null {
  *
  * Two tabs:
  * - "Your Boards" — boards the user owns (with new-board card at end)
- * - "Linked Boards" — boards the user visited via another user's link
+ * - "Shared With You" — boards the user visited via another user's link
  *
  * Board cards show thumbnail snapshots when available.
  * No tier/enterprise limits — all users have full access.
@@ -319,12 +319,15 @@ export function Dashboard() {
             onClick={() => setTab('owned')}
           >
             Your Boards
+            {ownedBoards.length > 0 && (
+              <span className={styles.tabBadge}>{ownedBoards.length}</span>
+            )}
           </button>
           <button
             className={`${styles.tab} ${tab === 'linked' ? styles.tabActive : ''}`}
             onClick={() => setTab('linked')}
           >
-            Linked Boards
+            Shared With You
             {linkedBoards.length > 0 && (
               <span className={styles.tabBadge}>{linkedBoards.length}</span>
             )}
@@ -368,13 +371,14 @@ export function Dashboard() {
 
         {error && <p className={styles.error}>{error}</p>}
 
+        <div className={styles.boardGridScroll}>
         {activeBoards.length === 0 && tab === 'linked' && !error ? (
           <div className={styles.emptyState}>
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.4">
               <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
             </svg>
-            <p>No linked boards yet. Paste a board link above to get started.</p>
+            <p>No shared boards yet. Paste a board link above to get started.</p>
           </div>
         ) : (
           <div className={styles.boardGrid}>
@@ -558,6 +562,7 @@ export function Dashboard() {
             )}
           </div>
         )}
+        </div>
       </main>
     </div>
   );

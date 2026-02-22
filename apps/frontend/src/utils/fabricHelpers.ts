@@ -3,8 +3,9 @@ import {
   STICKY_NOTE_COLORS,
   SHAPE_COLORS,
   OBJECT_DEFAULTS,
+  STICKY_SIZE_PRESETS,
 } from 'shared';
-import type { BoardObject, LineEndpointStyle, LineStrokePattern, LineStrokeWeight } from 'shared';
+import type { BoardObject, LineEndpointStyle, LineStrokePattern, LineStrokeWeight, StickySizeKey } from 'shared';
 import { generateLocalId } from './idGenerator';
 
 /** Default font stack used for text elements and sticky notes. */
@@ -34,11 +35,16 @@ export function createStickyNote(options: {
   color?: string;
   text?: string;
   id?: string;
+  size?: StickySizeKey;
+  width?: number;
+  height?: number;
 }): fabric.Group {
   const id = options.id ?? generateLocalId();
   const color = options.color ?? STICKY_NOTE_COLORS[0];
-  const w = OBJECT_DEFAULTS.STICKY_WIDTH;
-  const h = OBJECT_DEFAULTS.STICKY_HEIGHT;
+  const sizeKey = options.size ?? 'medium';
+  const preset = STICKY_SIZE_PRESETS[sizeKey];
+  const w = options.width ?? preset.width;
+  const h = options.height ?? preset.height;
   const foldSize = 24;
   const padding = OBJECT_DEFAULTS.STICKY_PADDING;
 
@@ -75,15 +81,17 @@ export function createStickyNote(options: {
     }
   );
 
-  // 3. Text display inside the sticky
-  const textObj = new fabric.Text(options.text ?? '', {
+  // 3. Text display inside the sticky — Textbox enables word wrapping
+  const textObj = new fabric.Textbox(options.text ?? '', {
     left: padding,
     top: padding,
+    width: w - padding * 2,
     fontSize: OBJECT_DEFAULTS.STICKY_FONT_SIZE,
     fill: '#000000',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     selectable: false,
     evented: false,
+    splitByGrapheme: true, // Break long words that exceed box width
   });
 
   // Build the group
@@ -98,9 +106,9 @@ export function createStickyNote(options: {
       offsetY: 4,
     }),
     subTargetCheck: false,
-    // Disable scaling — sticky notes are fixed 200x200.
+    // Disable scaling — sticky notes use preset sizes (S/M/L).
     // Prevents stretch desync between users (child polygons don't resize
-    // with the group). Resizable stickies will be revisited as a design task.
+    // with the group).
     lockScalingX: true,
     lockScalingY: true,
     hasControls: false,
@@ -109,6 +117,7 @@ export function createStickyNote(options: {
       id,
       type: 'sticky',
       text: options.text ?? '',
+      size: sizeKey,
     },
   });
 
@@ -149,13 +158,13 @@ export function getObjectFillColor(obj: fabric.Object): string {
 export function getStickyChildren(group: fabric.Group): {
   base: fabric.Polygon;
   fold: fabric.Polygon;
-  text: fabric.Text;
+  text: fabric.Textbox;
 } {
   const objects = group.getObjects();
   return {
     base: objects[0] as fabric.Polygon,
     fold: objects[1] as fabric.Polygon,
-    text: objects[2] as fabric.Text,
+    text: objects[2] as fabric.Textbox,
   };
 }
 
@@ -176,10 +185,13 @@ export function updateStickyColor(group: fabric.Group, newColor: string): void {
 export function updateFrameColor(group: fabric.Group, newColor: string): void {
   const objects = group.getObjects();
   const borderRect = objects[0] as fabric.Rect;
-  // objects[1] = labelBg (background rect), objects[2] = label text
+  const labelBg = objects[1] as fabric.Rect;
   const label = objects[2] as fabric.Text;
   borderRect.set('stroke', newColor);
-  label.set('fill', newColor);
+  borderRect.set('fill', hexToRgba(newColor, 0.06));
+  // Label bg stays dark for all frame colors; text stays white
+  labelBg.set('fill', 'rgba(0, 0, 0, 0.6)');
+  label.set('fill', '#ffffff');
 }
 
 // ============================================================
@@ -397,6 +409,44 @@ export function createStar(options: {
   });
 }
 
+/**
+ * Creates a Fabric.js Polygon representing a diamond (rotated square).
+ * Four points: top, right, bottom, left.
+ */
+export function createDiamond(options: {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  id?: string;
+}): fabric.Polygon {
+  const id = options.id ?? generateLocalId();
+  const w = options.width ?? 200;  // wider than tall for flowchart-style diamonds
+  const h = options.height ?? 140;
+
+  const points = [
+    { x: w / 2, y: 0 },   // top
+    { x: w, y: h / 2 },   // right
+    { x: w / 2, y: h },   // bottom
+    { x: 0, y: h / 2 },   // left
+  ];
+
+  return new fabric.Polygon(points, {
+    left: options.x,
+    top: options.y,
+    fill: options.color ?? SHAPE_COLORS[0],
+    stroke: '#000000',
+    strokeWidth: 1,
+    strokeLineJoin: 'round',
+    data: {
+      id,
+      type: 'shape',
+      shapeType: 'diamond',
+    },
+  });
+}
+
 // ============================================================
 // Text Element Factory
 // ============================================================
@@ -467,11 +517,11 @@ export function createFrame(options: {
   const color = options.color ?? '#555555';
   const locked = options.locked ?? false;
 
-  // Dashed-border rectangle background
+  // Dashed-border rectangle with translucent tint matching frame color
   const border = new fabric.Rect({
     width: w,
     height: h,
-    fill: 'rgba(0, 0, 0, 0.02)',
+    fill: hexToRgba(color, 0.06),
     stroke: color,
     strokeWidth: 2,
     strokeDashArray: [8, 4],
@@ -485,13 +535,13 @@ export function createFrame(options: {
     left: 8,
     top: -20,
     fontSize: 13,
-    fill: color,
+    fill: '#ffffff',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     selectable: false,
     evented: false,
   });
 
-  // Semi-opaque background behind the title for readability
+  // Dark background behind the title for readability (consistent across all frame colors)
   const labelPadH = 6;
   const labelPadV = 2;
   const labelBg = new fabric.Rect({
@@ -499,7 +549,7 @@ export function createFrame(options: {
     top: -20 - labelPadV,
     width: label.width! + labelPadH * 2,
     height: (label.height ?? 16) + labelPadV * 2,
-    fill: 'rgba(0, 0, 0, 0.06)',
+    fill: 'rgba(0, 0, 0, 0.6)',
     rx: 3,
     ry: 3,
     selectable: false,
@@ -544,26 +594,50 @@ export function isObjectInsideFrame(
 }
 
 /**
+ * Check if a frame already has frame children on the canvas.
+ * Used to enforce one-level-deep nesting constraint.
+ */
+export function frameHasFrameChildren(canvas: fabric.Canvas, frameId: string): boolean {
+  return canvas.getObjects().some(
+    (o) => o.data?.type === 'frame' && o.data?.frameId === frameId
+  );
+}
+
+/**
+ * Check if a fabric object is a frame that is already a child of another frame.
+ */
+export function isFrameChild(obj: fabric.Object): boolean {
+  return obj.data?.type === 'frame' && !!obj.data?.frameId;
+}
+
+/**
  * Find all objects inside a frame that qualify for anchoring:
  * - Completely within frame bounds
  * - Higher z-index than the frame (rendered in front)
  * - Not a connector (connectors follow endpoint logic)
- * - Not another frame (no nesting)
+ * - Frames allowed only when allowFrames=true and nesting validation passes
  */
 export function getObjectsInsideFrame(
   canvas: fabric.Canvas,
-  frame: fabric.Group
+  frame: fabric.Group,
+  allowFrames?: boolean
 ): fabric.Object[] {
   const allObjects = canvas.getObjects();
-  const frameIndex = allObjects.indexOf(frame);
-  if (frameIndex === -1) return [];
+  const frameId = frame.data?.id;
+
+  // A child frame cannot adopt other frames
+  const parentIsChild = isFrameChild(frame);
 
   const result: fabric.Object[] = [];
-  for (let i = frameIndex + 1; i < allObjects.length; i++) {
-    const obj = allObjects[i];
+  for (const obj of allObjects) {
+    if (obj === frame) continue; // skip self
     if (!obj.data?.id) continue;
     if (obj.data.type === 'connector') continue;
-    if (obj.data.type === 'frame') continue;
+    if (obj.data.type === 'frame') {
+      if (!allowFrames || parentIsChild) continue;
+      // Skip if inner frame is already a child of a DIFFERENT frame
+      if (obj.data.frameId && obj.data.frameId !== frameId) continue;
+    }
     if (isObjectInsideFrame(obj, frame)) {
       result.push(obj);
     }
@@ -1566,12 +1640,12 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
     };
   }
 
-  // Default: rectangle or polygon shape (arrow, star, triangle)
-  if (data.type === 'shape' && (data.shapeType === 'arrow' || data.shapeType === 'star' || data.shapeType === 'triangle')) {
+  // Default: rectangle or polygon shape (arrow, star, triangle, diamond)
+  if (data.type === 'shape' && (data.shapeType === 'arrow' || data.shapeType === 'star' || data.shapeType === 'triangle' || data.shapeType === 'diamond')) {
     return {
       ...base,
       type: 'shape' as const,
-      shapeType: data.shapeType as 'arrow' | 'star' | 'triangle',
+      shapeType: data.shapeType as 'arrow' | 'star' | 'triangle' | 'diamond',
       width: (fabricObj.width ?? 150) * scaleX,
       height: (fabricObj.height ?? 150) * scaleY,
       color: (fabricObj.fill as string) ?? SHAPE_COLORS[0],
@@ -1610,6 +1684,8 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         color: obj.color,
         text: obj.text,
         id: obj.id,
+        width: obj.width,
+        height: obj.height,
       });
       break;
 
@@ -1657,6 +1733,17 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         });
         if (obj.rotation) triShape.set('angle', obj.rotation);
         fabricObj = triShape;
+      } else if (obj.shapeType === 'diamond') {
+        const diamondShape = createDiamond({
+          x: obj.x,
+          y: obj.y,
+          width: obj.width,
+          height: obj.height,
+          color: obj.color,
+          id: obj.id,
+        });
+        if (obj.rotation) diamondShape.set('angle', obj.rotation);
+        fabricObj = diamondShape;
       } else if (obj.shapeType === 'rectangle') {
         const rect = createRectangle({
           x: obj.x,
@@ -1751,6 +1838,18 @@ export function darkenColor(hex: string, percent: number): string {
   const g = Math.max(0, ((num >> 8) & 0xff) - Math.round(2.55 * percent));
   const b = Math.max(0, (num & 0xff) - Math.round(2.55 * percent));
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+/**
+ * Convert a hex color to an rgba() string with the given alpha.
+ * Used for frame tinted backgrounds and label overlays.
+ */
+export function hexToRgba(hex: string, alpha: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // ============================================================

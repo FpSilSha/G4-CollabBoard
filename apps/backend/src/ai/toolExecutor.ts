@@ -4,12 +4,14 @@ import {
   AI_COLORS,
   AI_BROADCAST_USER_ID,
   MAX_OBJECTS_PER_BOARD,
+  STICKY_SIZE_PRESETS,
   type ViewportBounds,
   type AIOperation,
   type BoardObject,
   type ObjectCreatedPayload,
   type ObjectUpdatedPayload,
   type ObjectDeletedPayload,
+  type StickySizeKey,
 } from 'shared';
 import { boardService } from '../services/boardService';
 import { teleportFlagService } from '../services/teleportFlagService';
@@ -67,15 +69,26 @@ async function executeCreateStickyNote(
   await assertBoardNotFull(boardId);
   const id = uuidv4();
   const now = new Date();
+
+  // Resolve sticky size preset
+  const sizeKey = ((input.size as string) || 'medium') as StickySizeKey;
+  const preset = STICKY_SIZE_PRESETS[sizeKey] ?? STICKY_SIZE_PRESETS.medium;
+
+  // Truncate text to fit the size preset's character limit
+  let text = input.text as string;
+  if (text.length > preset.charLimit) {
+    text = text.slice(0, preset.charLimit);
+  }
+
   const object: Record<string, unknown> = {
     id,
     type: 'sticky',
-    text: input.text as string,
+    text,
     x: input.x as number,
     y: input.y as number,
     color: (input.color as string) || AI_COLORS.STICKY_YELLOW,
-    width: (input.width as number) || 200,
-    height: (input.height as number) || 150,
+    width: (input.width as number) || preset.width,
+    height: (input.height as number) || preset.height,
     frameId: (input.frameId as string) || null,
     createdBy: userId,
     lastEditedBy: userId,
@@ -168,6 +181,36 @@ async function executeCreateFrame(
   userId: string
 ): Promise<ToolExecutionResult> {
   await assertBoardNotFull(boardId);
+
+  // Validate parentFrameId if provided (one-level nesting)
+  const parentFrameId = input.parentFrameId as string | undefined;
+  let resolvedFrameId: string | null = null;
+
+  if (parentFrameId) {
+    const cachedState = await boardService.getOrLoadBoardState(boardId);
+    const parentObj = getObjectById(cachedState.objects, parentFrameId);
+    if (!parentObj) {
+      return {
+        output: { success: false, error: `Parent frame '${parentFrameId}' not found on board` },
+        operation: { type: 'create', objectType: 'frame', objectId: '', details: { error: 'parent not found' } },
+      };
+    }
+    if (parentObj.type !== 'frame') {
+      return {
+        output: { success: false, error: `Object '${parentFrameId}' is not a frame (it's a ${parentObj.type})` },
+        operation: { type: 'create', objectType: 'frame', objectId: '', details: { error: 'parent not a frame' } },
+      };
+    }
+    // Ensure parent is not itself a child frame (one-level-deep only)
+    if (parentObj.frameId) {
+      return {
+        output: { success: false, error: `Frame '${parentFrameId}' is already nested inside another frame. Only one level of nesting is allowed.` },
+        operation: { type: 'create', objectType: 'frame', objectId: '', details: { error: 'exceeds nesting depth' } },
+      };
+    }
+    resolvedFrameId = parentFrameId;
+  }
+
   const id = uuidv4();
   const now = new Date();
   const object: Record<string, unknown> = {
@@ -180,7 +223,7 @@ async function executeCreateFrame(
     height: input.height as number,
     color: (input.color as string) || AI_COLORS.FRAME_DEFAULT,
     locked: false,
-    frameId: null,
+    frameId: resolvedFrameId,
     createdBy: userId,
     lastEditedBy: userId,
     createdVia: 'ai',
@@ -198,18 +241,23 @@ async function executeCreateFrame(
   };
   trackedEmit(getIO().to(boardId), WebSocketEvent.OBJECT_CREATED, payload);
 
+  const msg = resolvedFrameId
+    ? `Created frame '${input.title}' at (${input.x}, ${input.y}), size ${input.width}x${input.height}, nested inside frame ${resolvedFrameId}`
+    : `Created frame '${input.title}' at (${input.x}, ${input.y}), size ${input.width}x${input.height}`;
+
   return {
     output: {
       objectId: id,
       success: true,
       type: 'frame',
-      message: `Created frame '${input.title}' at (${input.x}, ${input.y}), size ${input.width}x${input.height}`,
+      parentFrameId: resolvedFrameId,
+      message: msg,
     },
     operation: {
       type: 'create',
       objectType: 'frame',
       objectId: id,
-      details: { title: input.title, x: input.x, y: input.y, width: input.width, height: input.height },
+      details: { title: input.title, x: input.x, y: input.y, width: input.width, height: input.height, parentFrameId: resolvedFrameId },
     },
   };
 }

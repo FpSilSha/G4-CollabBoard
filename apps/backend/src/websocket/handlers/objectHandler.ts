@@ -18,6 +18,7 @@ import {
 import { boardService } from '../../services/boardService';
 import { editLockService } from '../../services/editLockService';
 import { auditService, AuditAction } from '../../services/auditService';
+import { AppError } from '../../middleware/errorHandler';
 import { logger } from '../../utils/logger';
 import { trackedEmit } from '../wsMetrics';
 import type { AuthenticatedSocket } from '../server';
@@ -179,6 +180,16 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to update object';
+
+      // Race condition: object:update arrives after a batch delete already
+      // removed the object from Redis. This is expected (Fabric.js fires
+      // object:modified and drag-to-trash nearly simultaneously). Silently
+      // ignore — the object is already gone, no need to alarm the client.
+      if (err instanceof AppError && err.statusCode === 404) {
+        logger.debug(`object:update skipped (already deleted): ${objectId} on board ${boardId}`);
+        return;
+      }
+
       socket.emit(WebSocketEvent.BOARD_ERROR, {
         code: 'UPDATE_FAILED',
         message,
@@ -239,6 +250,13 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
       logger.info(`Object ${objectId} deleted from board ${boardId} by ${userId}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to delete object';
+
+      // Already deleted by a concurrent batch delete — idempotent, not an error.
+      if (err instanceof AppError && err.statusCode === 404) {
+        logger.debug(`object:delete skipped (already deleted): ${objectId} on board ${boardId}`);
+        return;
+      }
+
       socket.emit(WebSocketEvent.BOARD_ERROR, {
         code: 'DELETE_FAILED',
         message,
@@ -379,15 +397,19 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
       trackedEmit(io.to(boardId), WebSocketEvent.OBJECTS_BATCH_CREATED, batchPayload);
 
-      for (const object of objects) {
-        auditService.log({
-          userId,
-          action: AuditAction.OBJECT_CREATE,
-          entityType: 'object',
-          entityId: object.id,
-          metadata: { boardId, objectType: object.type, batch: true },
-        });
-      }
+      // Single audit entry for the entire batch (avoids N concurrent DB writes)
+      auditService.log({
+        userId,
+        action: AuditAction.OBJECT_CREATE,
+        entityType: 'object',
+        entityId: boardId,
+        metadata: {
+          boardId,
+          batch: true,
+          count: objects.length,
+          objectIds: objects.map(o => o.id),
+        },
+      });
 
       logger.info(`Batch created ${objects.length} objects on board ${boardId} by ${userId}`);
     } catch (err: unknown) {
@@ -450,15 +472,14 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
       trackedEmit(socket.to(boardId), WebSocketEvent.OBJECTS_BATCH_DELETED, batchPayload);
 
-      for (const objectId of objectIds) {
-        auditService.log({
-          userId,
-          action: AuditAction.OBJECT_DELETE,
-          entityType: 'object',
-          entityId: objectId,
-          metadata: { boardId, batch: true },
-        });
-      }
+      // Single audit entry for the entire batch (avoids N concurrent DB writes)
+      auditService.log({
+        userId,
+        action: AuditAction.OBJECT_DELETE,
+        entityType: 'object',
+        entityId: boardId,
+        metadata: { boardId, batch: true, objectIds, count: objectIds.length },
+      });
 
       logger.info(`Batch deleted ${objectIds.length} objects from board ${boardId} by ${userId}`);
     } catch (err: unknown) {

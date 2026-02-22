@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_OBJECTS_PER_BOARD } from '../constants/limits';
 
 /**
  * Zod schemas for WebSocket event payloads.
@@ -105,7 +106,7 @@ export const ObjectsBatchMovePayloadSchema = z.object({
     objectId: z.string().min(1),
     x: coordinate,
     y: coordinate,
-  })).min(1).max(50), // Reasonable cap
+  })).min(1).max(MAX_OBJECTS_PER_BOARD), // Users can drag-select all visible objects
   timestamp: z.number().int().positive(),
 });
 
@@ -124,6 +125,6 @@ export const ObjectsBatchCreatePayloadSchema = z.object({
 // Sends all object IDs in a single message to avoid rate-limit issues
 export const ObjectsBatchDeletePayloadSchema = z.object({
   boardId: z.string().uuid(),
-  objectIds: z.array(z.string().min(1)).min(1).max(200), // Cap at 200 per batch
+  objectIds: z.array(z.string().min(1)).min(1).max(MAX_OBJECTS_PER_BOARD), // Users can select-all + delete
   timestamp: z.number().int().positive(),
 });

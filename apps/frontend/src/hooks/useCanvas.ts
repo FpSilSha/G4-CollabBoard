@@ -789,8 +789,10 @@ function setupDragState(
         const objects = (target as fabric.ActiveSelection).getObjects().slice();
         canvas.discardActiveObject();
 
-        // Collect IDs for batch delete, then remove from canvas
+        // Collect objects to remove, then batch-process
         const deletedIds: string[] = [];
+        const objectsToRemove: fabric.Object[] = [];
+
         for (const obj of objects) {
           if (obj.data?.pinned) continue;
 
@@ -821,12 +823,19 @@ function setupDragState(
             }
           }
 
-          canvas.remove(obj);
+          objectsToRemove.push(obj);
           if (objectId) {
-            useBoardStore.getState().removeObject(objectId);
             deletedIds.push(objectId);
           }
         }
+
+        // Batch remove from canvas
+        for (const obj of objectsToRemove) {
+          canvas.remove(obj);
+        }
+
+        // Single Zustand state update for all removals (avoids N re-renders)
+        useBoardStore.getState().removeObjects(deletedIds);
 
         // Send all deletes in a single batch message
         if (deletedIds.length > 0) {
@@ -1134,26 +1143,80 @@ function setupFrameControlHandlers(
       target.data.locked = newLocked;
 
       if (newLocked) {
-        // Lock: find all qualifying objects and anchor them
-        const children = getObjectsInsideFrame(canvas, target);
+        // Lock: find all qualifying objects inside bounds and anchor them.
+        // allowFrames=true enables one-level-deep frame nesting.
+        const children = getObjectsInsideFrame(canvas, target, true);
+
+        // First pass: identify child frames so we can exclude their
+        // existing children (grandchildren) from being re-parented.
+        const adoptedFrameIds = new Set<string>();
         for (const child of children) {
+          if (child.data?.type === 'frame') {
+            adoptedFrameIds.add(child.data.id);
+          }
+        }
+
+        // Second pass: adopt objects as direct children of this frame,
+        // but skip objects that already belong to an adopted child frame
+        // (they should keep their existing frameId → child frame).
+        for (const child of children) {
+          // If this object already belongs to an adopted child frame, don't re-parent it
+          if (child.data?.frameId && adoptedFrameIds.has(child.data.frameId)) {
+            // Just lock it visually — it keeps its existing frameId
+            child.set({ selectable: false, evented: false });
+            continue;
+          }
+
           child.data = { ...child.data, frameId: target.data.id };
-          // Make children unselectable while locked inside the frame
           child.set({ selectable: false, evented: false });
-          // Emit frameId update for each child
           emitObjectUpdate(child.data.id, { frameId: target.data.id });
-          // Update in boardStore
           useBoardStore.getState().updateObject(child.data.id, { frameId: target.data.id });
+
+          // If the child is a frame, promote it above the parent in z-order
+          // so it renders in front (frames default to back).
+          if (child.data?.type === 'frame') {
+            const parentIdx = canvas.getObjects().indexOf(target);
+            const childIdx = canvas.getObjects().indexOf(child);
+            if (childIdx < parentIdx) {
+              canvas.moveTo(child, parentIdx);
+            }
+          }
+        }
+
+        // Also lock any grandchildren that weren't caught by getObjectsInsideFrame
+        // (e.g. grandchildren that are inside the child frame but were too small
+        // to overlap with the parent's bounds check).
+        if (adoptedFrameIds.size > 0) {
+          for (const obj of canvas.getObjects()) {
+            if (obj.data?.frameId && adoptedFrameIds.has(obj.data.frameId)) {
+              obj.set({ selectable: false, evented: false });
+            }
+          }
         }
       } else {
-        // Unlock: clear frameId from all children and restore selectability
+        // Unlock: release direct children only.
+        // If a child frame was locked before, keep it locked with its children.
         const allObjects = canvas.getObjects();
         for (const obj of allObjects) {
-          if (obj.data?.frameId === target.data.id) {
-            obj.data = { ...obj.data, frameId: null };
-            obj.set({ selectable: true, evented: true });
-            emitObjectUpdate(obj.data.id, { frameId: null });
-            useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          if (obj.data?.frameId !== target.data.id) continue;
+
+          // If this child is a frame that is itself locked, keep it locked
+          // and don't release its own children — just detach from parent.
+          const isLockedChildFrame = obj.data?.type === 'frame' && obj.data?.locked;
+
+          obj.data = { ...obj.data, frameId: null };
+          obj.set({ selectable: true, evented: true });
+          emitObjectUpdate(obj.data.id, { frameId: null });
+          useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+
+          // If the child frame was locked, restore its children's unselectable state
+          if (isLockedChildFrame) {
+            const childFrameId = obj.data.id;
+            for (const grandchild of allObjects) {
+              if (grandchild.data?.frameId === childFrameId) {
+                grandchild.set({ selectable: false, evented: false });
+              }
+            }
           }
         }
       }
@@ -1221,8 +1284,13 @@ function setupFrameControlHandlers(
 
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
 
-    // Move all anchored children by the same delta
+    // Move all anchored children by the same delta.
+    // For one-level-deep nesting, also move grandchildren:
+    // if a child is a nested frame, move objects anchored to it too.
+    const movedFrameIds = new Set<string>([frameId]);
     const allObjects = canvas.getObjects();
+
+    // First pass: move direct children, track nested frame IDs
     for (const obj of allObjects) {
       if (obj.data?.frameId === frameId) {
         obj.set({
@@ -1230,6 +1298,24 @@ function setupFrameControlHandlers(
           top: (obj.top ?? 0) + dy,
         });
         obj.setCoords();
+        // If this child is a frame, its children need moving too
+        if (obj.data?.type === 'frame') {
+          movedFrameIds.add(obj.data.id);
+        }
+      }
+    }
+
+    // Second pass: move grandchildren (objects inside nested frames)
+    if (movedFrameIds.size > 1) {
+      for (const obj of allObjects) {
+        const fid = obj.data?.frameId;
+        if (fid && movedFrameIds.has(fid) && fid !== frameId) {
+          obj.set({
+            left: (obj.left ?? 0) + dx,
+            top: (obj.top ?? 0) + dy,
+          });
+          obj.setCoords();
+        }
       }
     }
 
@@ -1244,15 +1330,34 @@ function setupFrameControlHandlers(
   const onMouseUp = () => {
     if (frameDragStart.size === 0) return;
 
-    // Emit final positions for all moved frames and their children
+    // Emit final positions for all moved frames, their children, and grandchildren
     for (const [frameId] of frameDragStart) {
       const allObjects = canvas.getObjects();
+      const movedFrameIds = new Set<string>([frameId]);
+
+      // First pass: emit for direct children, collect nested frame IDs
       for (const obj of allObjects) {
         if (obj.data?.frameId === frameId) {
           const x = obj.left ?? 0;
           const y = obj.top ?? 0;
           emitObjectUpdate(obj.data.id, { x, y });
           useBoardStore.getState().updateObject(obj.data.id, { x, y });
+          if (obj.data?.type === 'frame') {
+            movedFrameIds.add(obj.data.id);
+          }
+        }
+      }
+
+      // Second pass: emit for grandchildren (objects inside nested frames)
+      if (movedFrameIds.size > 1) {
+        for (const obj of allObjects) {
+          const fid = obj.data?.frameId;
+          if (fid && movedFrameIds.has(fid) && fid !== frameId) {
+            const x = obj.left ?? 0;
+            const y = obj.top ?? 0;
+            emitObjectUpdate(obj.data.id, { x, y });
+            useBoardStore.getState().updateObject(obj.data.id, { x, y });
+          }
         }
       }
     }
@@ -1271,6 +1376,7 @@ function setupFrameControlHandlers(
       const frameId = target.data.id;
       const frameBounds = target.getBoundingRect(true, true);
 
+      const releasedFrameIds: string[] = [];
       for (const obj of canvas.getObjects()) {
         if (obj.data?.frameId !== frameId) continue;
         const objBounds = obj.getBoundingRect(true, true);
@@ -1285,6 +1391,21 @@ function setupFrameControlHandlers(
           obj.set({ selectable: true, evented: true });
           emitObjectUpdate(obj.data.id, { frameId: null });
           useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          // If a nested frame was released, also release its children
+          if (obj.data?.type === 'frame') {
+            releasedFrameIds.push(obj.data.id);
+          }
+        }
+      }
+      // Release grandchildren of any nested frames that were un-anchored
+      if (releasedFrameIds.length > 0) {
+        for (const obj of canvas.getObjects()) {
+          if (obj.data?.frameId && releasedFrameIds.includes(obj.data.frameId)) {
+            obj.data = { ...obj.data, frameId: null };
+            obj.set({ selectable: true, evented: true });
+            emitObjectUpdate(obj.data.id, { frameId: null });
+            useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          }
         }
       }
       return;
@@ -1323,6 +1444,18 @@ function setupFrameControlHandlers(
       target.set({ selectable: true, evented: true });
       emitObjectUpdate(target.data.id, { frameId: null });
       useBoardStore.getState().updateObject(target.data.id, { frameId: null });
+
+      // If the un-anchored child is a nested frame, also release its children
+      if (target.data?.type === 'frame') {
+        for (const obj of canvas.getObjects()) {
+          if (obj.data?.frameId === target.data.id) {
+            obj.data = { ...obj.data, frameId: null };
+            obj.set({ selectable: true, evented: true });
+            emitObjectUpdate(obj.data.id, { frameId: null });
+            useBoardStore.getState().updateObject(obj.data.id, { frameId: null });
+          }
+        }
+      }
     }
   };
 

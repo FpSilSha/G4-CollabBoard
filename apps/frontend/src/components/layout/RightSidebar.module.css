@@ -59,7 +59,7 @@
   width: 28px;
   height: 48px;
   background: var(--sidebar-bg);
-  border: 1px solid var(--sidebar-border);
+  border: 2px solid var(--text-tertiary);
   border-right: none;
   border-radius: 8px 0 0 8px;
   color: var(--text-secondary);

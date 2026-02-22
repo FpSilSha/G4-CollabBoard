@@ -39,6 +39,9 @@ interface PresenceState {
   updateRemoteCursor: (userId: string, x: number, y: number, name: string, color: string) => void;
   removeRemoteCursor: (userId: string) => void;
   clearRemoteCursors: () => void;
+
+  // --- Last known cursor positions (persists after cursor de-render) ---
+  lastKnownPositions: Map<string, { x: number; y: number }>;
 }
 
 export const usePresenceStore = create<PresenceState>((set) => ({
@@ -77,10 +80,12 @@ export const usePresenceStore = create<PresenceState>((set) => ({
     set((state) => {
       const next = new Map(state.remoteUsers);
       next.delete(userId);
-      // Also remove cursor when user leaves
+      // Also remove cursor and last known position when user leaves
       const nextCursors = new Map(state.remoteCursors);
       nextCursors.delete(userId);
-      return { remoteUsers: next, remoteCursors: nextCursors };
+      const nextPositions = new Map(state.lastKnownPositions);
+      nextPositions.delete(userId);
+      return { remoteUsers: next, remoteCursors: nextCursors, lastKnownPositions: nextPositions };
     }),
   clearRemoteUsers: () => set({ remoteUsers: new Map() }),
 
@@ -90,13 +95,21 @@ export const usePresenceStore = create<PresenceState>((set) => ({
     set((state) => {
       const next = new Map(state.remoteCursors);
       next.set(userId, { userId, name, color, x, y, lastUpdate: Date.now() });
-      return { remoteCursors: next };
+      // Also persist last known position (survives cursor de-render)
+      const nextPositions = new Map(state.lastKnownPositions);
+      nextPositions.set(userId, { x, y });
+      return { remoteCursors: next, lastKnownPositions: nextPositions };
     }),
   removeRemoteCursor: (userId) =>
     set((state) => {
       const next = new Map(state.remoteCursors);
       next.delete(userId);
+      // NOTE: Do NOT clear lastKnownPositions here — that's the whole point.
+      // Last known position persists even after cursor goes stale.
       return { remoteCursors: next };
     }),
   clearRemoteCursors: () => set({ remoteCursors: new Map() }),
+
+  // Last known cursor positions (persists after cursor de-render)
+  lastKnownPositions: new Map(),
 }));

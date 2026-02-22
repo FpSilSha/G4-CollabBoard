@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { PASTEL_COLORS } from 'shared';
-import type { BoardObject, ColorPaletteKey, LineEndpointStyle, LineStrokePattern, LineStrokeWeight } from 'shared';
+import type { BoardObject, ColorPaletteKey, LineEndpointStyle, LineStrokePattern, LineStrokeWeight, StickySizeKey } from 'shared';
 import { useBoardStore } from './boardStore';
 
 /**
@@ -15,10 +15,10 @@ import { useBoardStore } from './boardStore';
  * - 'connector': click-and-drag to create a connector (snaps to objects)
  * - 'dropper': click an object to sample its fill color
  */
-export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'line' | 'connector' | 'dropper' | 'placeFlag' | 'arrow' | 'star' | 'triangle';
+export type Tool = 'select' | 'sticky' | 'rectangle' | 'circle' | 'text' | 'frame' | 'line' | 'connector' | 'dropper' | 'placeFlag' | 'arrow' | 'star' | 'triangle' | 'diamond';
 
 /** Shape sub-tools available in the shape options panel. */
-export type ShapeTool = 'rectangle' | 'circle' | 'triangle' | 'star' | 'arrow';
+export type ShapeTool = 'rectangle' | 'circle' | 'triangle' | 'star' | 'arrow' | 'diamond';
 
 /** Maximum number of custom color slots (2 rows of 5) */
 const MAX_CUSTOM_COLORS = 10;
@@ -117,6 +117,10 @@ interface UIState {
   // Shape sub-tool (which shape is selected in the shape options panel)
   activeShapeTool: ShapeTool;
   setActiveShapeTool: (shape: ShapeTool) => void;
+
+  // Sticky note size preset (S/M/L — persists between creates)
+  stickySize: StickySizeKey;
+  setStickySize: (size: StickySizeKey) => void;
 
   // Text tool styling defaults (persist between creates)
   textFontSize: number;
@@ -257,6 +261,9 @@ export const useUIStore = create<UIState>((set) => ({
 
   activeShapeTool: 'rectangle' as ShapeTool,
   setActiveShapeTool: (shape) => set({ activeShapeTool: shape, activeTool: shape }),
+
+  stickySize: 'medium' as StickySizeKey,
+  setStickySize: (size) => set({ stickySize: size }),
 
   textFontSize: 24,
   setTextFontSize: (size) => set({ textFontSize: size }),

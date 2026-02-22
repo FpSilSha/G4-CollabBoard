@@ -141,3 +141,11 @@
 .confirmButton:hover {
   background: #0066dd;
 }
+
+/* --- Character count indicator below textarea --- */
+.charCount {
+  font-size: 11px;
+  color: #999999;
+  text-align: right;
+  margin-top: -12px;
+}

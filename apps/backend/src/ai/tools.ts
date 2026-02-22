@@ -20,8 +20,9 @@ export const AI_TOOLS: Anthropic.Tool[] = [
         x:       { type: 'number', description: 'X coordinate on the board' },
         y:       { type: 'number', description: 'Y coordinate on the board' },
         color:   { type: 'string', description: 'Hex color for background. Defaults: yellow=#FFEB3B, pink=#F48FB1, blue=#90CAF9, green=#A5D6A7, orange=#FFCC80, purple=#CE93D8' },
-        width:   { type: 'number', description: 'Width in pixels. Default: 200' },
-        height:  { type: 'number', description: 'Height in pixels. Default: 150' },
+        size:    { type: 'string', enum: ['small', 'medium', 'large'], description: 'Size preset. small=150x150 (120 chars max), medium=200x200 (250 chars max), large=300x300 (500 chars max). Default: medium' },
+        width:   { type: 'number', description: 'Width in pixels. Overrides size preset if provided.' },
+        height:  { type: 'number', description: 'Height in pixels. Overrides size preset if provided.' },
         frameId: { type: 'string', description: 'Optional. ID of a frame to place this sticky note inside. The sticky note will be logically grouped with the frame.' },
       },
       required: ['text', 'x', 'y'],
@@ -34,7 +35,7 @@ export const AI_TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
-        shapeType: { type: 'string', enum: ['rectangle', 'circle', 'triangle', 'line', 'arrow', 'star'], description: 'Type of shape. Triangle creates an equilateral triangle. Arrow creates a thick directional arrow polygon. Star creates a 5-point star.' },
+        shapeType: { type: 'string', enum: ['rectangle', 'circle', 'triangle', 'diamond', 'line', 'arrow', 'star'], description: 'Type of shape. Triangle creates an equilateral triangle. Diamond creates a rotated square (rhombus) for flowcharts. Arrow creates a thick directional arrow polygon. Star creates a 5-point star.' },
         x:         { type: 'number', description: 'X coordinate' },
         y:         { type: 'number', description: 'Y coordinate' },
         width:     { type: 'number', description: 'Width in pixels' },
@@ -58,6 +59,7 @@ export const AI_TOOLS: Anthropic.Tool[] = [
         width:  { type: 'number', description: 'Width in pixels' },
         height: { type: 'number', description: 'Height in pixels' },
         color:  { type: 'string', description: 'Border/header color as hex. Default: #E0E0E0' },
+        parentFrameId: { type: 'string', description: 'Optional. ID of a parent frame to nest this frame inside. Creates one-level-deep nesting. The parent must exist and must NOT itself be a child of another frame.' },
       },
       required: ['title', 'x', 'y', 'width', 'height'],
     },

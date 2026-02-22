@@ -1,9 +1,10 @@
 .container {
-  min-height: 100vh;
+  height: 100vh;
   background: var(--canvas-bg);
   color: var(--text-primary);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ============================
@@ -81,7 +82,10 @@
   max-width: 1100px;
   width: 100%;
   margin: 0 auto;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* allow flex child to shrink below content size */
 }
 
 /* ============================
@@ -201,13 +205,21 @@
 }
 
 /* ============================
-   Board Grid
+   Board Grid (scrollable container)
    ============================ */
+
+.boardGridScroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0; /* allow flex child to shrink */
+  padding-right: 4px; /* breathing room for scrollbar */
+}
 
 .boardGrid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 16px;
+  padding-top: 4px; /* room for hover translateY(-2px) on top row */
 }
 
 .boardCard {

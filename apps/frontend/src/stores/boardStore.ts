@@ -34,6 +34,7 @@ interface BoardState {
   addObject: (obj: BoardObject) => void;
   updateObject: (id: string, updates: Partial<BoardObject>) => void;
   removeObject: (id: string) => void;
+  removeObjects: (ids: string[]) => void;
   clearObjects: () => void;
   setObjects: (objects: BoardObject[]) => void;
 
@@ -120,6 +121,13 @@ export const useBoardStore = create<BoardState>((set) => ({
     set((state) => {
       const next = new Map(state.objects);
       next.delete(id);
+      return { objects: next };
+    }),
+  removeObjects: (ids) =>
+    set((state) => {
+      if (ids.length === 0) return state;
+      const next = new Map(state.objects);
+      for (const id of ids) next.delete(id);
       return { objects: next };
     }),
   clearObjects: () => set({ objects: new Map() }),
