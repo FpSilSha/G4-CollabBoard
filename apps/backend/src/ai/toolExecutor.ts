@@ -12,6 +12,7 @@ import {
   type ObjectDeletedPayload,
 } from 'shared';
 import { boardService } from '../services/boardService';
+import { teleportFlagService } from '../services/teleportFlagService';
 import { getIO } from '../websocket/server';
 import { trackedEmit } from '../websocket/wsMetrics';
 import { logger } from '../utils/logger';
@@ -392,6 +393,56 @@ async function executeCreateLine(
       objectType: 'line',
       objectId: id,
       details: { x: input.x, y: input.y, x2: input.x2, y2: input.y2 },
+    },
+  };
+}
+
+const FLAG_COLORS = [
+  '#E6194B', '#3CB44B', '#4363D8', '#FFE119',
+  '#F58231', '#911EB4', '#42D4F4', '#F032E6',
+];
+
+async function executeCreateFlag(
+  input: Record<string, unknown>,
+  boardId: string,
+  userId: string
+): Promise<ToolExecutionResult> {
+  const label = input.label as string;
+  const x = input.x as number;
+  const y = input.y as number;
+
+  // Pick color: use provided or cycle through palette
+  let color = input.color as string | undefined;
+  if (!color) {
+    // Use a simple hash of the label to pick a color deterministically
+    const hash = label.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    color = FLAG_COLORS[hash % FLAG_COLORS.length];
+  }
+
+  const flag = await teleportFlagService.createFlag(boardId, userId, {
+    label, x, y, color,
+  });
+
+  // Broadcast flag creation to all clients
+  trackedEmit(getIO().to(boardId), WebSocketEvent.FLAG_CREATED, {
+    boardId,
+    flag,
+    userId,
+    timestamp: Date.now(),
+  });
+
+  return {
+    output: {
+      flagId: flag.id,
+      success: true,
+      type: 'flag',
+      message: `Created teleport flag '${label}' at (${x}, ${y})`,
+    },
+    operation: {
+      type: 'create',
+      objectType: 'flag',
+      objectId: flag.id,
+      details: { label, x, y, color },
     },
   };
 }
@@ -789,6 +840,8 @@ export const toolExecutor = {
           return await executeCreateLine(typedInput, boardId, userId);
         case 'createTextElement':
           return await executeCreateTextElement(typedInput, boardId, userId);
+        case 'createFlag':
+          return await executeCreateFlag(typedInput, boardId, userId);
 
         // Manipulation tools
         case 'moveObject':

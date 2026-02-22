@@ -1,13 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 // ============================================================
-// Anthropic Tool Definitions — 14 tools across 5 categories
+// Anthropic Tool Definitions — 16 tools across 5 categories
 // ============================================================
 
 export const AI_TOOLS: Anthropic.Tool[] = [
 
   // ═══════════════════════════════════════
-  // CREATION TOOLS (5)
+  // CREATION TOOLS (7)
   // ═══════════════════════════════════════
 
   {
@@ -34,7 +34,7 @@ export const AI_TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
-        shapeType: { type: 'string', enum: ['rectangle', 'circle', 'line', 'arrow', 'star'], description: 'Type of shape. Arrow creates a thick directional arrow polygon. Star creates a 5-point star.' },
+        shapeType: { type: 'string', enum: ['rectangle', 'circle', 'triangle', 'line', 'arrow', 'star'], description: 'Type of shape. Triangle creates an equilateral triangle. Arrow creates a thick directional arrow polygon. Star creates a 5-point star.' },
         x:         { type: 'number', description: 'X coordinate' },
         y:         { type: 'number', description: 'Y coordinate' },
         width:     { type: 'number', description: 'Width in pixels' },
@@ -110,6 +110,21 @@ export const AI_TOOLS: Anthropic.Tool[] = [
         strokeWeight:   { type: 'string', enum: ['normal', 'bold', 'double', 'triple'], description: 'Line weight. Default: normal' },
       },
       required: ['x', 'y', 'x2', 'y2'],
+    },
+  },
+
+  {
+    name: 'createFlag',
+    description: 'Create a teleport flag on the board. Flags are persistent markers that appear in the right sidebar and as visual pins on the canvas. Users can click a flag to instantly jump to that location. Use for marking important areas, navigation waypoints, or labeling key sections of the board.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        label: { type: 'string', description: 'Display label for the flag (e.g., "Sprint Planning", "Design Zone")' },
+        x:     { type: 'number', description: 'X coordinate on the board' },
+        y:     { type: 'number', description: 'Y coordinate on the board' },
+        color: { type: 'string', description: 'Hex color for the flag. Defaults cycle through: #F44336 (red), #2196F3 (blue), #4CAF50 (green), #FF9800 (orange), #9C27B0 (purple), #00BCD4 (cyan)' },
+      },
+      required: ['label', 'x', 'y'],
     },
   },
 
@@ -262,6 +277,7 @@ export type AIToolName =
   | 'createConnector'
   | 'createLine'
   | 'createTextElement'
+  | 'createFlag'
   | 'moveObject'
   | 'resizeObject'
   | 'updateText'
