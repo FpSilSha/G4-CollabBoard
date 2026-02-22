@@ -9,6 +9,13 @@ import type {
 // AI Chat Store (Zustand)
 // ============================================================
 
+/** Tracks a remote user's AI activity on the board. */
+interface RemoteAIActivity {
+  userId: string;
+  command: string;
+  timestamp: number;
+}
+
 interface AIState {
   // Panel state
   isOpen: boolean;
@@ -37,6 +44,11 @@ interface AIState {
 
   // Process a full response from /ai/execute
   handleResponse: (response: AICommandResponse) => void;
+
+  // Remote AI activity — other users using AI on this board
+  remoteAIActivity: Map<string, RemoteAIActivity>;
+  setRemoteAIThinking: (userId: string, command: string, timestamp: number) => void;
+  clearRemoteAIActivity: (userId: string) => void;
 }
 
 let messageIdCounter = 0;
@@ -82,6 +94,20 @@ export const useAIStore = create<AIState>((set, get) => ({
     set({
       aiEnabled: status.enabled,
       budgetRemainingCents: status.budgetRemainingCents ?? null,
+    }),
+
+  remoteAIActivity: new Map(),
+  setRemoteAIThinking: (userId, command, timestamp) =>
+    set((s) => {
+      const next = new Map(s.remoteAIActivity);
+      next.set(userId, { userId, command, timestamp });
+      return { remoteAIActivity: next };
+    }),
+  clearRemoteAIActivity: (userId) =>
+    set((s) => {
+      const next = new Map(s.remoteAIActivity);
+      next.delete(userId);
+      return { remoteAIActivity: next };
     }),
 
   handleResponse: (response) => {

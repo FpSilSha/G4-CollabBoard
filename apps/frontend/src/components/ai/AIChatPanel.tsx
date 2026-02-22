@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import type { AICommandResponse, AIStatusResponse } from 'shared';
+import type { AICommandResponse, AIStatusResponse, AIOperation } from 'shared';
 import { useAIStore, nextMessageId } from '../../stores/aiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import styles from './AIChatPanel.module.css';
@@ -42,11 +42,11 @@ export function AIChatPanel() {
   const messages = useAIStore((s) => s.messages);
   const isProcessing = useAIStore((s) => s.isProcessing);
   const aiEnabled = useAIStore((s) => s.aiEnabled);
-  const budgetRemainingCents = useAIStore((s) => s.budgetRemainingCents);
   const addMessage = useAIStore((s) => s.addMessage);
   const setProcessing = useAIStore((s) => s.setProcessing);
   const handleResponse = useAIStore((s) => s.handleResponse);
   const setStatus = useAIStore((s) => s.setStatus);
+  const setOpen = useAIStore((s) => s.setOpen);
 
   const boardId = useBoardStore((s) => s.boardId);
   const { getAccessTokenSilently } = useAuth0();
@@ -176,19 +176,22 @@ export function AIChatPanel() {
 
   if (!isOpen) return null;
 
-  // Budget display
-  const budgetDisplay = budgetRemainingCents != null
-    ? `$${(budgetRemainingCents / 100).toFixed(2)} remaining`
-    : null;
-
   return (
     <div className={styles.panel}>
       {/* Header */}
       <div className={styles.header}>
         <span className={styles.headerTitle}>Tacky - AI Assistant</span>
-        {budgetDisplay && (
-          <span className={styles.headerBudget}>{budgetDisplay}</span>
-        )}
+        <button
+          className={styles.closeButton}
+          onClick={() => setOpen(false)}
+          title="Close"
+          aria-label="Close AI chat panel"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="6" y1="6" x2="18" y2="18" />
+            <line x1="18" y1="6" x2="6" y2="18" />
+          </svg>
+        </button>
       </div>
 
       {/* Messages */}
@@ -220,9 +223,7 @@ export function AIChatPanel() {
               <div key={msg.id} className={className}>
                 {msg.content}
                 {msg.operations && msg.operations.length > 0 && (
-                  <div className={styles.opsBadge}>
-                    {msg.operations.length} operation{msg.operations.length !== 1 ? 's' : ''}
-                  </div>
+                  <OpsBadge operations={msg.operations} />
                 )}
               </div>
             );
@@ -252,6 +253,52 @@ export function AIChatPanel() {
           >
             {isProcessing ? '...' : 'Send'}
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Expandable Operations Badge
+// ────────────────────────────────────────────────────────────
+
+function OpsBadge({ operations }: { operations: AIOperation[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const count = operations.length;
+
+  return (
+    <div className={styles.opsContainer}>
+      <button
+        className={styles.opsBadge}
+        onClick={() => setExpanded(!expanded)}
+        title={expanded ? 'Collapse operations' : 'Expand operations'}
+      >
+        <span>{count} operation{count !== 1 ? 's' : ''}</span>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          className={expanded ? styles.opsChevronUp : styles.opsChevronDown}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {expanded && (
+        <div className={styles.opsDetails}>
+          {operations.map((op, i) => (
+            <div key={i} className={styles.opsRow}>
+              <span className={styles.opsType}>{op.type}</span>
+              <span className={styles.opsTarget}>
+                {op.objectType || 'object'}
+                {op.count && op.count > 1 ? ` ×${op.count}` : ''}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

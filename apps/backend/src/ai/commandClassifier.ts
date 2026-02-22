@@ -3,11 +3,11 @@
 // ============================================================
 //
 // Zero-cost, heuristic-based classification. No API call needed.
-// Simple single-action commands → Haiku 3.5 (cheap & fast).
-// Multi-step / complex commands → Sonnet 4 (smart & capable).
+// Simple single-action commands → Haiku (5 turns, cheap & fast).
+// Multi-step / complex commands → Sonnet (7 turns, smart & capable).
 //
-// Safety net: aiService escalates from Haiku → Sonnet mid-loop
-// if the model requests multiple tool-use turns.
+// Safety net: if Haiku fails with zero successful operations,
+// aiService retries the entire command with Sonnet from scratch.
 
 export type CommandComplexity = 'simple' | 'complex';
 

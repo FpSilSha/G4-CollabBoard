@@ -78,8 +78,9 @@ export function ColorPicker() {
         if (wasEditing) activeObj.enterEditing();
       } else if (objType === 'frame' && activeObj instanceof fabric.Group) {
         updateFrameColor(activeObj, color);
-      } else if (objType === 'connector') {
+      } else if (objType === 'connector' || objType === 'line') {
         activeObj.set('stroke', color);
+        activeObj.dirty = true; // Force custom _render() to pick up new color
       } else {
         activeObj.set('fill', color);
       }

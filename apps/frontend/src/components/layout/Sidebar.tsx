@@ -1,7 +1,8 @@
 import { fabric } from 'fabric';
-import { useUIStore, Tool } from '../../stores/uiStore';
+import { useUIStore, Tool, type ShapeTool } from '../../stores/uiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import { ColorPicker } from '../canvas/ColorPicker';
+import { ToolOptionsPanel } from '../toolbar/ToolOptionsPanel';
 import styles from './Sidebar.module.css';
 
 /**
@@ -18,9 +19,13 @@ import styles from './Sidebar.module.css';
  * The sidebar can be collapsed to free up canvas space. When collapsed,
  * a small "lip" tab sticks out from the left edge for re-opening.
  */
+/** Shape tool names used to highlight the Shape button when any shape sub-tool is active. */
+const SHAPE_TOOLS = new Set<Tool>(['rectangle', 'circle', 'triangle', 'star', 'arrow']);
+
 export function Sidebar() {
   const activeTool = useUIStore((s) => s.activeTool);
   const setActiveTool = useUIStore((s) => s.setActiveTool);
+  const activeShapeTool = useUIStore((s) => s.activeShapeTool);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
 
@@ -53,6 +58,7 @@ export function Sidebar() {
             <ToolButton
               icon={<PointerIcon />}
               label="Select (V)"
+              shortcut="V"
               tool="select"
               activeTool={activeTool}
               onClick={setActiveTool}
@@ -60,76 +66,81 @@ export function Sidebar() {
             <ToolButton
               icon={<DropperIcon />}
               label="Color Picker (I)"
+              shortcut="I"
               tool="dropper"
               activeTool={activeTool}
               onClick={setActiveTool}
             />
           </div>
 
-          {/* --- Object Creation --- */}
+          {/* --- Object Creation (2-column grid) --- */}
           <div className={styles.toolGroup}>
-            <DraggableToolButton
-              icon={<StickyIcon />}
-              label="Sticky Note (S)"
-              tool="sticky"
-              activeTool={activeTool}
-              onClick={setActiveTool}
-              onDragStart={(e) => handleDragStart(e, 'sticky')}
-            />
-            <DraggableToolButton
-              icon={<RectangleIcon />}
-              label="Rectangle (R)"
-              tool="rectangle"
-              activeTool={activeTool}
-              onClick={setActiveTool}
-              onDragStart={(e) => handleDragStart(e, 'rectangle')}
-            />
-            <DraggableToolButton
-              icon={<CircleIcon />}
-              label="Circle (C)"
-              tool="circle"
-              activeTool={activeTool}
-              onClick={setActiveTool}
-              onDragStart={(e) => handleDragStart(e, 'circle')}
-            />
-            <DraggableToolButton
-              icon={<TextIcon />}
-              label="Text (T)"
-              tool="text"
-              activeTool={activeTool}
-              onClick={setActiveTool}
-              onDragStart={(e) => handleDragStart(e, 'text')}
-            />
-            <DraggableToolButton
-              icon={<FrameIcon />}
-              label="Frame (F)"
-              tool="frame"
-              activeTool={activeTool}
-              onClick={setActiveTool}
-              onDragStart={(e) => handleDragStart(e, 'frame')}
-            />
-            <DraggableToolButton
-              icon={<LineIcon />}
-              label="Arrow Line (N)"
-              tool="line"
-              activeTool={activeTool}
-              onClick={setActiveTool}
-              onDragStart={(e) => handleDragStart(e, 'line')}
-            />
-            <DraggableToolButton
-              icon={<ConnectorIcon />}
-              label="Connector (L)"
-              tool="connector"
-              activeTool={activeTool}
-              onClick={setActiveTool}
-              onDragStart={(e) => handleDragStart(e, 'connector')}
-            />
+            <div className={styles.toolGrid}>
+              <DraggableToolButton
+                icon={<StickyIcon />}
+                label="Sticky Note (S)"
+                shortcut="S"
+                tool="sticky"
+                activeTool={activeTool}
+                onClick={setActiveTool}
+                onDragStart={(e) => handleDragStart(e, 'sticky')}
+              />
+              <DraggableToolButton
+                icon={<RectangleIcon />}
+                label="Shape (R)"
+                shortcut="R"
+                tool={activeShapeTool}
+                activeTool={activeTool}
+                isActive={SHAPE_TOOLS.has(activeTool)}
+                onClick={() => setActiveTool(activeShapeTool)}
+                onDragStart={(e) => handleDragStart(e, activeShapeTool)}
+              />
+              <DraggableToolButton
+                icon={<TextIcon />}
+                label="Text (T)"
+                shortcut="T"
+                tool="text"
+                activeTool={activeTool}
+                onClick={setActiveTool}
+                onDragStart={(e) => handleDragStart(e, 'text')}
+              />
+              <DraggableToolButton
+                icon={<FrameIcon />}
+                label="Frame (F)"
+                shortcut="F"
+                tool="frame"
+                activeTool={activeTool}
+                onClick={setActiveTool}
+                onDragStart={(e) => handleDragStart(e, 'frame')}
+              />
+              <DraggableToolButton
+                icon={<LineIcon />}
+                label="Line (N)"
+                shortcut="N"
+                tool="line"
+                activeTool={activeTool}
+                onClick={setActiveTool}
+                onDragStart={(e) => handleDragStart(e, 'line')}
+              />
+              <DraggableToolButton
+                icon={<ConnectorIcon />}
+                label="Connector (L)"
+                shortcut="L"
+                tool="connector"
+                activeTool={activeTool}
+                onClick={setActiveTool}
+                onDragStart={(e) => handleDragStart(e, 'connector')}
+              />
+            </div>
           </div>
 
           {/* --- Color Picker --- */}
           <div className={styles.toolGroup}>
             <ColorPicker />
           </div>
+
+          {/* --- Contextual Tool Options (Line/Text panels) --- */}
+          <ToolOptionsPanel />
 
           {/* --- Z-Order Controls (visible only when objects are selected) --- */}
           <ZOrderControls />
@@ -146,6 +157,7 @@ export function Sidebar() {
 function ToolButton(props: {
   icon: React.ReactNode;
   label: string;
+  shortcut?: string;
   tool: Tool;
   activeTool: Tool;
   onClick: (tool: Tool) => void;
@@ -159,6 +171,9 @@ function ToolButton(props: {
       aria-label={props.label}
     >
       {props.icon}
+      {props.shortcut && (
+        <span className={styles.shortcutLabel}>({props.shortcut})</span>
+      )}
     </button>
   );
 }
@@ -166,12 +181,14 @@ function ToolButton(props: {
 function DraggableToolButton(props: {
   icon: React.ReactNode;
   label: string;
+  shortcut?: string;
   tool: Tool;
   activeTool: Tool;
-  onClick: (tool: Tool) => void;
+  isActive?: boolean;
+  onClick: ((tool: Tool) => void) | (() => void);
   onDragStart: (e: React.DragEvent) => void;
 }) {
-  const isActive = props.tool === props.activeTool;
+  const isActive = props.isActive ?? (props.tool === props.activeTool);
   return (
     <div
       className={`${styles.draggableItem} ${isActive ? styles.active : ''}`}
@@ -184,6 +201,9 @@ function DraggableToolButton(props: {
       tabIndex={0}
     >
       {props.icon}
+      {props.shortcut && (
+        <span className={styles.shortcutLabel}>({props.shortcut})</span>
+      )}
     </div>
   );
 }
@@ -487,7 +507,37 @@ function FrameIcon() {
   );
 }
 
-/** Arrow line — diagonal line with arrowhead at the end */
+/** Thick directional arrow shape (polygon) */
+function ArrowShapeIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+    >
+      <polygon points="2,10 14,10 14,5 22,12 14,19 14,14 2,14" />
+    </svg>
+  );
+}
+
+/** Five-point star */
+function StarIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+    >
+      <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
+    </svg>
+  );
+}
+
+/** Plain diagonal line (no arrowhead — styling handled by Line options panel) */
 function LineIcon() {
   return (
     <svg
@@ -497,9 +547,9 @@ function LineIcon() {
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
+      strokeLinecap="round"
     >
       <line x1="5" y1="19" x2="19" y2="5" />
-      <polyline points="13 5 19 5 19 11" />
     </svg>
   );
 }

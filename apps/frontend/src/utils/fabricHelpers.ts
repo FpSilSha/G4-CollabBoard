@@ -4,8 +4,11 @@ import {
   SHAPE_COLORS,
   OBJECT_DEFAULTS,
 } from 'shared';
-import type { BoardObject } from 'shared';
+import type { BoardObject, LineEndpointStyle, LineStrokePattern, LineStrokeWeight } from 'shared';
 import { generateLocalId } from './idGenerator';
+
+/** Default font stack used for text elements and sticky notes. */
+export const DEFAULT_SYSTEM_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
 // ============================================================
 // Sticky Note Factory (Group-based)
@@ -130,7 +133,7 @@ export function getObjectFillColor(obj: fabric.Object): string {
     const borderRect = obj.getObjects()[0] as fabric.Rect;
     return (borderRect.stroke as string) ?? '#555555';
   }
-  if (obj.data?.type === 'connector') {
+  if (obj.data?.type === 'connector' || obj.data?.type === 'line') {
     return (obj.stroke as string) ?? '#FFFFFF';
   }
   if (obj.fill && typeof obj.fill === 'string') {
@@ -225,7 +228,7 @@ export function createCircle(options: {
 }): fabric.Circle {
   const id = options.id ?? generateLocalId();
   const radius = options.radius ?? OBJECT_DEFAULTS.SHAPE_HEIGHT / 2;
-  return new fabric.Circle({
+  const circle = new fabric.Circle({
     left: options.x,
     top: options.y,
     radius,
@@ -236,6 +239,160 @@ export function createCircle(options: {
       id,
       type: 'shape',
       shapeType: 'circle',
+    },
+  });
+
+  // Override drawBorders to render a circular selection border instead of rectangular
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (circle as any).drawBorders = function (
+    ctx: CanvasRenderingContext2D,
+    styleOverride?: Record<string, unknown>
+  ): fabric.Object {
+    const borderColor = (styleOverride?.borderColor as string) || this.borderColor || '#007AFF';
+    const borderWidth = (this.borderScaleFactor || 2);
+    const padding = this.padding || 4;
+
+    // Get the rendered radius accounting for scale
+    const scaleX = this.scaleX || 1;
+    const scaleY = this.scaleY || 1;
+    const rx = this.radius! * scaleX + padding + borderWidth / 2;
+    const ry = this.radius! * scaleY + padding + borderWidth / 2;
+
+    ctx.save();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = borderWidth;
+    ctx.setLineDash([4, 3]);
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+    return this;
+  };
+
+  return circle;
+}
+
+/**
+ * Creates a Fabric.js Polygon representing an equilateral-ish triangle.
+ */
+export function createTriangle(options: {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  id?: string;
+}): fabric.Polygon {
+  const id = options.id ?? generateLocalId();
+  const w = options.width ?? OBJECT_DEFAULTS.SHAPE_WIDTH;
+  const h = options.height ?? OBJECT_DEFAULTS.SHAPE_HEIGHT;
+
+  const points = [
+    { x: w / 2, y: 0 },
+    { x: w, y: h },
+    { x: 0, y: h },
+  ];
+
+  return new fabric.Polygon(points, {
+    left: options.x,
+    top: options.y,
+    fill: options.color ?? SHAPE_COLORS[0],
+    stroke: '#000000',
+    strokeWidth: 1,
+    strokeLineJoin: 'round',
+    data: {
+      id,
+      type: 'shape',
+      shapeType: 'triangle',
+    },
+  });
+}
+
+/**
+ * Creates a Fabric.js Polygon representing a thick directional arrow shape.
+ * This is a shape (not a connector) — a filled polygon with shaft + arrowhead.
+ */
+export function createArrow(options: {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  id?: string;
+}): fabric.Polygon {
+  const id = options.id ?? generateLocalId();
+  const w = options.width ?? 150;
+  const h = options.height ?? 80;
+  const headStart = w * 0.6;
+  const shaftHalf = h * 0.25;
+
+  const points = [
+    { x: 0, y: h / 2 - shaftHalf },
+    { x: headStart, y: h / 2 - shaftHalf },
+    { x: headStart, y: 0 },
+    { x: w, y: h / 2 },
+    { x: headStart, y: h },
+    { x: headStart, y: h / 2 + shaftHalf },
+    { x: 0, y: h / 2 + shaftHalf },
+  ];
+
+  return new fabric.Polygon(points, {
+    left: options.x,
+    top: options.y,
+    fill: options.color ?? SHAPE_COLORS[0],
+    stroke: '#000000',
+    strokeWidth: 1,
+    strokeLineJoin: 'round',
+    data: {
+      id,
+      type: 'shape',
+      shapeType: 'arrow',
+    },
+  });
+}
+
+/**
+ * Creates a Fabric.js Polygon representing a 5-point star.
+ */
+export function createStar(options: {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color?: string;
+  id?: string;
+}): fabric.Polygon {
+  const id = options.id ?? generateLocalId();
+  const size = options.width ?? 150;
+  const outerR = size / 2;
+  const innerR = outerR * 0.38;
+  const cx = outerR;
+  const cy = outerR;
+
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    // Rotate -90° (- π/2) so the top point faces up
+    const angle = (Math.PI / 5) * i - Math.PI / 2;
+    points.push({
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+    });
+  }
+
+  return new fabric.Polygon(points, {
+    left: options.x,
+    top: options.y,
+    fill: options.color ?? SHAPE_COLORS[0],
+    stroke: '#000000',
+    strokeWidth: 1,
+    strokeLineJoin: 'round',
+    data: {
+      id,
+      type: 'shape',
+      shapeType: 'star',
     },
   });
 }
@@ -254,6 +411,7 @@ export function createTextElement(options: {
   text?: string;
   fontSize?: number;
   color?: string;
+  fontFamily?: string;
   id?: string;
 }): fabric.IText {
   const id = options.id ?? generateLocalId();
@@ -262,7 +420,7 @@ export function createTextElement(options: {
     top: options.y,
     fontSize: options.fontSize ?? 24,
     fill: options.color ?? '#000000',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: options.fontFamily ?? DEFAULT_SYSTEM_FONT,
     lockUniScaling: true,
     data: {
       id,
@@ -1007,6 +1165,258 @@ function setupConnectorEndpointControls(line: fabric.Line): void {
 }
 
 // ============================================================
+// Standalone Line Factory
+// ============================================================
+
+/**
+ * Creates a Fabric.js Line representing a standalone line (NOT a connector).
+ * Supports arrowheads at one or both ends, dashed pattern, and bold/double/triple stroke weight.
+ * Double and triple lines are rendered as parallel strokes within a single Fabric.js object.
+ */
+export function createLine(options: {
+  x: number;
+  y: number;
+  x2: number;
+  y2: number;
+  color?: string;
+  endpointStyle?: LineEndpointStyle;
+  strokePattern?: LineStrokePattern;
+  strokeWeight?: LineStrokeWeight;
+  id?: string;
+}): fabric.Line {
+  const id = options.id ?? generateLocalId();
+  const color = options.color ?? '#FFFFFF';
+  const endpointStyle = options.endpointStyle ?? 'none';
+  const strokePattern = options.strokePattern ?? 'solid';
+  const strokeWeight = options.strokeWeight ?? 'normal';
+
+  const baseStrokeWidth = strokeWeight === 'bold' ? 4 : 2;
+
+  // Padding around the selection border must encompass the parallel line offsets
+  const selectionPadding = strokeWeight === 'triple' ? 14 : strokeWeight === 'double' ? 10 : 6;
+
+  const line = new fabric.Line(
+    [options.x, options.y, options.x2, options.y2],
+    {
+      stroke: color,
+      strokeWidth: baseStrokeWidth,
+      strokeDashArray: strokePattern === 'dashed' ? [12, 8] : undefined,
+      fill: '',
+      lockScalingX: true,
+      lockScalingY: true,
+      padding: selectionPadding,
+      data: {
+        id,
+        type: 'line',
+        endpointStyle,
+        strokePattern,
+        strokeWeight,
+      },
+    }
+  );
+
+  // Custom _render for arrowheads and double/triple strokes
+  setupLineRender(line);
+
+  // Add draggable endpoint controls (same pattern as connector, but no lock button)
+  setupLineEndpointControls(line);
+
+  return line;
+}
+
+/**
+ * Override _render for standalone lines to support:
+ * - Arrowheads at one or both endpoints (on ALL parallel lines for double/triple)
+ * - Double/triple parallel lines with wider spacing
+ * - Dynamic style reading from data (so style changes via options panel take effect)
+ *
+ * ALL rendering is done manually — we never call the original _render, because
+ * Fabric.js's built-in line render doesn't update strokeWidth/strokeDashArray
+ * when data changes at runtime. Instead, we always read from this.data and
+ * draw everything ourselves.
+ */
+function setupLineRender(line: fabric.Line): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (line as any)._render = function (ctx: CanvasRenderingContext2D) {
+    const data = this.data ?? {};
+    const weight: LineStrokeWeight = data.strokeWeight ?? 'normal';
+    const endpoint: LineEndpointStyle = data.endpointStyle ?? 'none';
+    const pattern: LineStrokePattern = data.strokePattern ?? 'solid';
+
+    const pts = this.calcLinePoints();
+    const p1x = pts.x1;
+    const p1y = pts.y1;
+    const p2x = pts.x2;
+    const p2y = pts.y2;
+
+    const strokeColor = this.stroke || '#FFFFFF';
+    // Determine per-strand width based on weight
+    const strandWidth = weight === 'bold' ? 4 : 2;
+
+    // Calculate perpendicular offset direction for parallel lines
+    const lineAngle = Math.atan2(p2y - p1y, p2x - p1x);
+    const perpX = -Math.sin(lineAngle);
+    const perpY = Math.cos(lineAngle);
+
+    // Determine which offsets to use based on weight
+    let offsets: number[];
+    switch (weight) {
+      case 'double':
+        offsets = [-5, 5];
+        break;
+      case 'triple':
+        offsets = [-8, 0, 8];
+        break;
+      default:
+        offsets = [0]; // normal or bold: single centered line
+    }
+
+    // Arrowhead helper — draws a filled triangle at the tip
+    const headLength = 12;
+    const drawArrowhead = (tipX: number, tipY: number, fromX: number, fromY: number) => {
+      const arrowAngle = Math.atan2(tipY - fromY, tipX - fromX);
+      ctx.save();
+      ctx.translate(tipX, tipY);
+      ctx.rotate(arrowAngle);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-headLength, -headLength * 0.4);
+      ctx.lineTo(-headLength, headLength * 0.4);
+      ctx.closePath();
+      ctx.fillStyle = strokeColor;
+      ctx.fill();
+      ctx.restore();
+    };
+
+    // Draw each strand (parallel line) with its own stroke + arrowheads
+    ctx.save();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = strandWidth;
+    ctx.lineCap = 'round';
+    if (pattern === 'dashed') {
+      ctx.setLineDash([12, 8]);
+    } else {
+      ctx.setLineDash([]);
+    }
+
+    for (const offset of offsets) {
+      const ox = perpX * offset;
+      const oy = perpY * offset;
+      const sx = p1x + ox;
+      const sy = p1y + oy;
+      const ex = p2x + ox;
+      const ey = p2y + oy;
+
+      // Draw the line strand
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+
+      // Draw arrowheads on THIS strand
+      if (endpoint === 'arrow-end' || endpoint === 'arrow-both') {
+        drawArrowhead(ex, ey, sx, sy);
+      }
+      if (endpoint === 'arrow-both') {
+        drawArrowhead(sx, sy, ex, ey);
+      }
+    }
+
+    ctx.restore();
+  };
+
+  line.objectCaching = false;
+}
+
+/**
+ * Adds custom Fabric.js endpoint controls (p1/p2) to a standalone line.
+ * Similar to connector endpoint controls but without lock button.
+ */
+function setupLineEndpointControls(line: fabric.Line): void {
+  const endpointRadius = 7;
+
+  const renderEndpoint = (
+    ctx: CanvasRenderingContext2D,
+    left: number,
+    top: number
+  ) => {
+    ctx.save();
+    ctx.translate(left, top);
+    ctx.beginPath();
+    ctx.arc(0, 0, endpointRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#222222';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  const makePositionHandler = (endpoint: 'p1' | 'p2') => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return function (_dim: any, finalMatrix: any, fabricObj: any) {
+      const lineObj = fabricObj as fabric.Line;
+      if (typeof lineObj.calcLinePoints !== 'function') {
+        return fabric.util.transformPoint(new fabric.Point(0, 0), finalMatrix);
+      }
+      const pts = lineObj.calcLinePoints();
+      const pt = endpoint === 'p1'
+        ? new fabric.Point(pts.x1, pts.y1)
+        : new fabric.Point(pts.x2, pts.y2);
+      const objectMatrix = lineObj.calcTransformMatrix();
+      const viewportMatrix = lineObj.canvas!.viewportTransform!;
+      const totalMatrix = fabric.util.multiplyTransformMatrices(viewportMatrix, objectMatrix);
+      return fabric.util.transformPoint(pt, totalMatrix);
+    };
+  };
+
+  const makeActionHandler = (endpoint: 'p1' | 'p2') => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return function (_eventData: any, transform: any, x: number, y: number) {
+      const lineObj = transform.target as fabric.Line;
+      if (typeof lineObj.calcLinePoints !== 'function') return false;
+      if (endpoint === 'p1') {
+        lineObj.set({ x1: x, y1: y });
+      } else {
+        lineObj.set({ x2: x, y2: y });
+      }
+      return true;
+    };
+  };
+
+  // Instance-specific controls (don't pollute the prototype)
+  line.controls = { ...line.controls };
+
+  line.controls.p1 = new fabric.Control({
+    positionHandler: makePositionHandler('p1'),
+    actionHandler: makeActionHandler('p1'),
+    cursorStyle: 'crosshair',
+    render: renderEndpoint,
+    sizeX: endpointRadius * 2,
+    sizeY: endpointRadius * 2,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'modifyLine' as any,
+  });
+
+  line.controls.p2 = new fabric.Control({
+    positionHandler: makePositionHandler('p2'),
+    actionHandler: makeActionHandler('p2'),
+    cursorStyle: 'crosshair',
+    render: renderEndpoint,
+    sizeX: endpointRadius * 2,
+    sizeY: endpointRadius * 2,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    actionName: 'modifyLine' as any,
+  });
+
+  // Hide all default controls
+  const defaultControls = ['tl', 'tr', 'bl', 'br', 'ml', 'mr', 'mt', 'mb', 'mtr'];
+  for (const key of defaultControls) {
+    line.setControlVisible(key, false);
+  }
+}
+
+// ============================================================
 // Lookup Helper
 // ============================================================
 
@@ -1086,12 +1496,14 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
 
   if (data.type === 'text') {
     const itext = fabricObj as fabric.IText;
+    const fontFamily = itext.fontFamily;
     return {
       ...base,
       type: 'text' as const,
       text: itext.text ?? '',
       fontSize: itext.fontSize ?? 24,
       color: (itext.fill as string) ?? '#000000',
+      fontFamily: fontFamily && fontFamily !== DEFAULT_SYSTEM_FONT ? fontFamily : undefined,
       rotation: fabricObj.angle ?? 0,
       scaleX: scaleX !== 1 ? scaleX : undefined,
       scaleY: scaleY !== 1 ? scaleY : undefined,
@@ -1113,6 +1525,22 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
       height: (fabricObj.height ?? 300) * scaleY,
       color: frameColor,
       locked: data.locked ?? false,
+    };
+  }
+
+  if (data.type === 'line') {
+    const lineObj = fabricObj as fabric.Line;
+    return {
+      ...base,
+      x: lineObj.x1 ?? 0,
+      y: lineObj.y1 ?? 0,
+      type: 'line' as const,
+      color: (lineObj.stroke as string) ?? '#FFFFFF',
+      x2: lineObj.x2 ?? 0,
+      y2: lineObj.y2 ?? 0,
+      endpointStyle: data.endpointStyle ?? 'none',
+      strokePattern: data.strokePattern ?? 'solid',
+      strokeWeight: data.strokeWeight ?? 'normal',
     };
   }
 
@@ -1138,7 +1566,19 @@ export function fabricToBoardObject(fabricObj: fabric.Object, userId?: string): 
     };
   }
 
-  // Default: rectangle shape
+  // Default: rectangle or polygon shape (arrow, star, triangle)
+  if (data.type === 'shape' && (data.shapeType === 'arrow' || data.shapeType === 'star' || data.shapeType === 'triangle')) {
+    return {
+      ...base,
+      type: 'shape' as const,
+      shapeType: data.shapeType as 'arrow' | 'star' | 'triangle',
+      width: (fabricObj.width ?? 150) * scaleX,
+      height: (fabricObj.height ?? 150) * scaleY,
+      color: (fabricObj.fill as string) ?? SHAPE_COLORS[0],
+      rotation: fabricObj.angle ?? 0,
+    };
+  }
+
   return {
     ...base,
     type: 'shape' as const,
@@ -1184,6 +1624,39 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         });
         if (obj.rotation) circle.set('angle', obj.rotation);
         fabricObj = circle;
+      } else if (obj.shapeType === 'arrow') {
+        const arrowShape = createArrow({
+          x: obj.x,
+          y: obj.y,
+          width: obj.width,
+          height: obj.height,
+          color: obj.color,
+          id: obj.id,
+        });
+        if (obj.rotation) arrowShape.set('angle', obj.rotation);
+        fabricObj = arrowShape;
+      } else if (obj.shapeType === 'star') {
+        const starShape = createStar({
+          x: obj.x,
+          y: obj.y,
+          width: obj.width,
+          height: obj.height,
+          color: obj.color,
+          id: obj.id,
+        });
+        if (obj.rotation) starShape.set('angle', obj.rotation);
+        fabricObj = starShape;
+      } else if (obj.shapeType === 'triangle') {
+        const triShape = createTriangle({
+          x: obj.x,
+          y: obj.y,
+          width: obj.width,
+          height: obj.height,
+          color: obj.color,
+          id: obj.id,
+        });
+        if (obj.rotation) triShape.set('angle', obj.rotation);
+        fabricObj = triShape;
       } else if (obj.shapeType === 'rectangle') {
         const rect = createRectangle({
           x: obj.x,
@@ -1205,6 +1678,7 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         text: obj.text,
         fontSize: obj.fontSize,
         color: obj.color,
+        fontFamily: obj.fontFamily,
         id: obj.id,
       });
       if (obj.rotation) textEl.set('angle', obj.rotation);
@@ -1224,6 +1698,20 @@ export function boardObjectToFabric(obj: BoardObject): fabric.Object | null {
         height: obj.height,
         color: obj.color,
         locked: obj.locked,
+        id: obj.id,
+      });
+      break;
+
+    case 'line':
+      fabricObj = createLine({
+        x: obj.x,
+        y: obj.y,
+        x2: obj.x2,
+        y2: obj.y2,
+        color: obj.color,
+        endpointStyle: obj.endpointStyle,
+        strokePattern: obj.strokePattern,
+        strokeWeight: obj.strokeWeight,
         id: obj.id,
       });
       break;

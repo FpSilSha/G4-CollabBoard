@@ -22,7 +22,7 @@ export const UpdateBoardSchema = z.object({
 // --- Object Schemas ---
 
 const BaseObjectFields = {
-  type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text']),
+  type: z.enum(['sticky', 'shape', 'frame', 'connector', 'text', 'line']),
   x: coordinate,
   y: coordinate,
   frameId: z.string().uuid().nullable().default(null),
@@ -40,7 +40,7 @@ export const StickyNoteCreateSchema = z.object({
 export const ShapeCreateSchema = z.object({
   ...BaseObjectFields,
   type: z.literal('shape'),
-  shapeType: z.enum(['rectangle', 'circle', 'line']),
+  shapeType: z.enum(['rectangle', 'circle', 'line', 'arrow', 'star', 'triangle']),
   width: dimension,
   height: dimension,
   color: hexColor,
@@ -76,6 +76,18 @@ export const TextElementCreateSchema = z.object({
   text: z.string().max(10000).default(''),
   fontSize: z.number().min(8).max(200),
   color: hexColor,
+  fontFamily: z.string().max(200).optional(),
+});
+
+export const LineCreateSchema = z.object({
+  ...BaseObjectFields,
+  type: z.literal('line'),
+  x2: coordinate,
+  y2: coordinate,
+  color: hexColor,
+  endpointStyle: z.enum(['none', 'arrow-end', 'arrow-both']).default('none'),
+  strokePattern: z.enum(['solid', 'dashed']).default('solid'),
+  strokeWeight: z.enum(['normal', 'bold', 'double', 'triple']).default('normal'),
 });
 
 export const BoardObjectCreateSchema = z.discriminatedUnion('type', [
@@ -84,6 +96,7 @@ export const BoardObjectCreateSchema = z.discriminatedUnion('type', [
   FrameCreateSchema,
   ConnectorCreateSchema,
   TextElementCreateSchema,
+  LineCreateSchema,
 ]);
 
 // Partial update schema (for object:update events)
@@ -99,7 +112,7 @@ export const ObjectUpdateSchema = z.object({
   rotation: rotation.optional(),
   fontSize: z.number().min(8).max(200).optional(),
   title: z.string().max(255).optional(),
-  shapeType: z.enum(['rectangle', 'circle', 'line']).optional(),
+  shapeType: z.enum(['rectangle', 'circle', 'line', 'arrow', 'star', 'triangle']).optional(),
   style: z.enum(['line', 'arrow']).optional(),
   fromObjectId: z.string().optional(),
   toObjectId: z.string().optional(),
@@ -107,6 +120,12 @@ export const ObjectUpdateSchema = z.object({
   toAnchor: anchorPoint.nullable().optional(),
   frameId: z.string().uuid().nullable().optional(),
   locked: z.boolean().optional(),
+  // Line styling
+  endpointStyle: z.enum(['none', 'arrow-end', 'arrow-both']).optional(),
+  strokePattern: z.enum(['solid', 'dashed']).optional(),
+  strokeWeight: z.enum(['normal', 'bold', 'double', 'triple']).optional(),
+  // Text font
+  fontFamily: z.string().max(200).optional(),
 });
 
 // --- Teleport Flag Schemas ---

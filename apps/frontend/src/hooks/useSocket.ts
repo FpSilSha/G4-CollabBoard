@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth0 } from '@auth0/auth0-react';
-import { WebSocketEvent, WEBSOCKET_CONFIG, type AuthSuccessPayload } from 'shared';
+import { WebSocketEvent, WEBSOCKET_CONFIG, type AuthSuccessPayload, type AIThinkingPayload, type AICompletePayload } from 'shared';
 import { usePresenceStore } from '../stores/presenceStore';
 import { useBoardStore } from '../stores/boardStore';
+import { useAIStore } from '../stores/aiStore';
 import { setSocketRef } from '../stores/socketRef';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
@@ -35,6 +36,7 @@ export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectingRef = useRef(false); // guard against double-connect
+  const displacedRef = useRef(false);  // true once session:replaced received
   const { getAccessTokenSilently, isAuthenticated, user } = useAuth0();
 
   // Store getAccessTokenSilently in a ref so the socket's auth callback
@@ -124,13 +126,44 @@ export function useSocket() {
           setLocalUser(payload.userId, payload.name, payload.color);
         });
 
+        // --- Session displaced by another tab/browser ---
+        // Server sends this right before force-disconnecting when the same
+        // user authenticates from a second connection.
+        socket.on('session:replaced', () => {
+          console.warn('[useSocket] Session displaced by another connection');
+          // Disable auto-reconnect so we don't fight the new session
+          socket.io.opts.reconnection = false;
+          setConnectionStatus('displaced');
+          stopHeartbeat();
+          displacedRef.current = true;
+        });
+
+        // --- AI activity broadcasts (other users using Tacky) ---
+        socket.on(WebSocketEvent.AI_THINKING, (payload: AIThinkingPayload) => {
+          // Skip our own AI activity — we already show it locally
+          const localUserId = usePresenceStore.getState().localUserId;
+          if (payload.userId === localUserId) return;
+          useAIStore.getState().setRemoteAIThinking(payload.userId, payload.command, payload.timestamp);
+        });
+
+        socket.on(WebSocketEvent.AI_COMPLETE, (payload: AICompletePayload) => {
+          const localUserId = usePresenceStore.getState().localUserId;
+          if (payload.userId === localUserId) return;
+          useAIStore.getState().clearRemoteAIActivity(payload.userId);
+        });
+
         socket.on('disconnect', () => {
-          setConnectionStatus('disconnected');
+          // Don't overwrite 'displaced' with 'disconnected'
+          if (!displacedRef.current) {
+            setConnectionStatus('disconnected');
+          }
           stopHeartbeat();
         });
 
         socket.on('connect_error', (err) => {
-          setConnectionStatus('disconnected');
+          if (!displacedRef.current) {
+            setConnectionStatus('disconnected');
+          }
           connectingRef.current = false;
           console.error('Socket connection error:', err.message);
         });

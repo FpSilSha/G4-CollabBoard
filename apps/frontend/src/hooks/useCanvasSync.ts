@@ -252,11 +252,11 @@ export function useCanvasSync(
       throttledObjectMove.cancel();
       throttledBatchMove.cancel();
 
-      // Sync connector coords BEFORE serialization. Fabric.js Line only
+      // Sync Line/Connector coords BEFORE serialization. Fabric.js Line only
       // updates left/top on move but leaves x1/y1/x2/y2 stale. This must
       // happen before emitFinalState so the correct endpoint coordinates
       // are sent to the server.
-      if (target.data?.type === 'connector' && target instanceof fabric.Line) {
+      if ((target.data?.type === 'connector' || target.data?.type === 'line') && target instanceof fabric.Line) {
         syncConnectorCoordsAfterMove(target);
       }
 
@@ -271,8 +271,8 @@ export function useCanvasSync(
         for (const child of (target as fabric.ActiveSelection).getObjects()) {
           if (!child.data?.id) continue;
 
-          // Sync connector children too
-          if (child.data?.type === 'connector' && child instanceof fabric.Line) {
+          // Sync connector/line children too
+          if ((child.data?.type === 'connector' || child.data?.type === 'line') && child instanceof fabric.Line) {
             syncConnectorCoordsAfterMove(child);
           }
 
@@ -565,6 +565,19 @@ export function useCanvasSync(
         if (u.text !== undefined) (fabricObj as fabric.IText).set('text', u.text as string);
         if (u.color) fabricObj.set('fill', u.color as string);
         if (u.fontSize !== undefined) (fabricObj as fabric.IText).set('fontSize', u.fontSize as number);
+        if (u.fontFamily !== undefined) (fabricObj as fabric.IText).set('fontFamily', u.fontFamily as string);
+      } else if (objType === 'line') {
+        // Standalone line
+        if (u.color) fabricObj.set('stroke', u.color as string);
+        const lineObj = fabricObj as fabric.Line;
+        if (u.x2 !== undefined) lineObj.set('x2', u.x2 as number);
+        if (u.y2 !== undefined) lineObj.set('y2', u.y2 as number);
+        // Sync styling in data and trigger re-render
+        if (u.endpointStyle !== undefined) fabricObj.data.endpointStyle = u.endpointStyle;
+        if (u.strokePattern !== undefined) fabricObj.data.strokePattern = u.strokePattern;
+        if (u.strokeWeight !== undefined) fabricObj.data.strokeWeight = u.strokeWeight;
+        // Force custom _render() to pick up changes
+        fabricObj.dirty = true;
       } else if (objType === 'frame' && fabricObj instanceof fabric.Group) {
         // Frame: update border color + label color together
         if (u.color) {

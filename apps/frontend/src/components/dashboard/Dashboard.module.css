@@ -31,6 +31,24 @@
   gap: 12px;
 }
 
+.adminLink {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 6px 14px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  background: #ffffff;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.adminLink:hover {
+  background: var(--btn-hover);
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
 .userName {
   font-size: 14px;
   color: var(--text-secondary);

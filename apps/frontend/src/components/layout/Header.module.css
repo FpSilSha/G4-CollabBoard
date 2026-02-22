@@ -201,6 +201,11 @@
   color: #c62828;
 }
 
+.connectionBadge.displaced {
+  background: rgba(255, 152, 0, 0.18);
+  color: #e65100;
+}
+
 /* ============================
    Presence Avatars
    ============================ */
@@ -243,6 +248,17 @@
   font-weight: 700;
   color: #000000;
   user-select: none;
+}
+
+/* Pulsing ring when a remote user is using Tacky AI */
+.avatar.avatarAI {
+  box-shadow: 0 0 0 2px var(--sidebar-bg), 0 0 0 4px #7C4DFF;
+  animation: aiPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--sidebar-bg), 0 0 0 3px #7C4DFF; }
+  50% { box-shadow: 0 0 0 2px var(--sidebar-bg), 0 0 0 5px rgba(124, 77, 255, 0.4); }
 }
 
 .avatarOverflow {

@@ -79,7 +79,6 @@ export const auditService = {
 
   /**
    * Purge audit logs older than 90 days.
-   * Per spec: 90-day retention policy.
    */
   async purgeExpired(): Promise<number> {
     const cutoff = new Date();
@@ -91,6 +90,83 @@ export const auditService = {
 
     logger.info(`Purged ${result.count} audit logs older than 90 days`);
     return result.count;
+  },
+
+  /**
+   * Query recent AI errors from audit logs.
+   * Returns failed AI executions with full metadata, ordered by most recent.
+   */
+  async getAIErrors(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    errors: Array<{
+      id: string;
+      userId: string;
+      boardId: string;
+      command: string;
+      errorCode: string;
+      errorMessage: string;
+      operationCount: number;
+      turnsUsed: number;
+      inputTokens: number;
+      outputTokens: number;
+      costCents: number;
+      model: string;
+      traceId: string | null;
+      timestamp: string;
+    }>;
+    total: number;
+  }> {
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+
+    // Count total matching errors
+    const total = await prisma.auditLog.count({
+      where: {
+        action: 'ai.execute',
+        metadata: {
+          path: ['success'],
+          equals: false,
+        },
+      },
+    });
+
+    // Fetch error records
+    const records = await prisma.auditLog.findMany({
+      where: {
+        action: 'ai.execute',
+        metadata: {
+          path: ['success'],
+          equals: false,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: offset,
+    });
+
+    const errors = records.map((record) => {
+      const meta = (record.metadata as Record<string, unknown>) ?? {};
+      return {
+        id: record.id,
+        userId: record.userId,
+        boardId: record.entityId,
+        command: (meta.command as string) ?? '',
+        errorCode: (meta.errorCode as string) ?? 'UNKNOWN',
+        errorMessage: (meta.errorMessage as string) ?? '',
+        operationCount: (meta.operationCount as number) ?? 0,
+        turnsUsed: (meta.turnsUsed as number) ?? 0,
+        inputTokens: (meta.inputTokens as number) ?? 0,
+        outputTokens: (meta.outputTokens as number) ?? 0,
+        costCents: (meta.costCents as number) ?? 0,
+        model: (meta.model as string) ?? '',
+        traceId: (meta.traceId as string) ?? null,
+        timestamp: record.createdAt.toISOString(),
+      };
+    });
+
+    return { errors, total };
   },
 
   /**

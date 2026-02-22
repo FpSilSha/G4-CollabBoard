@@ -69,27 +69,26 @@ export function useKeyboardShortcuts(
           break;
 
         case 'r':
-          // If an object is selected, toggle rotation mode; otherwise rectangle tool
+          // If an object is selected, toggle rotation mode; otherwise shape tool
           if (canvas) {
             const activeForRotation = canvas.getActiveObject();
             if (activeForRotation && activeForRotation.type !== 'activeSelection') {
               e.preventDefault();
               toggleRotationMode(canvas, activeForRotation);
             } else {
-              useUIStore.getState().setActiveTool('rectangle');
+              // Activate whichever shape sub-tool is currently selected
+              useUIStore.getState().setActiveTool(useUIStore.getState().activeShapeTool);
             }
           } else {
-            useUIStore.getState().setActiveTool('rectangle');
+            useUIStore.getState().setActiveTool(useUIStore.getState().activeShapeTool);
           }
           break;
 
         case 'c':
-          // Ctrl+C = copy, plain C = circle tool
+          // Ctrl+C = copy, plain C = no longer a tool shortcut (circle is in shape panel)
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             handleCopy();
-          } else {
-            useUIStore.getState().setActiveTool('circle');
           }
           break;
 
@@ -529,6 +528,11 @@ function handlePaste(socket: Socket | null): void {
         fromAnchor: null,
         toAnchor: null,
       } : {}),
+      // Lines: offset both endpoints
+      ...(entry.type === 'line' ? {
+        x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
+        y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
+      } : {}),
       frameId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -553,6 +557,10 @@ function handlePaste(socket: Socket | null): void {
       x: entry.x + PASTE_OFFSET,
       y: entry.y + PASTE_OFFSET,
       ...(entry.type === 'connector' ? {
+        x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
+        y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
+      } : {}),
+      ...(entry.type === 'line' ? {
         x2: (entry as { x2: number }).x2 + PASTE_OFFSET,
         y2: (entry as { y2: number }).y2 + PASTE_OFFSET,
       } : {}),

@@ -204,6 +204,15 @@ export function useThumbnailCapture(
       canvas.setViewportTransform([1, 0, 0, 1, panX, panY]);
       canvas.renderAll();
 
+      // Temporarily set a solid background for JPEG export.
+      // Canvas backgroundColor is 'transparent' (the CSS container provides
+      // the visual background), but JPEG has no alpha channel — transparent
+      // pixels render as black. Set it to the actual canvas bg, capture,
+      // then restore.
+      const savedBg = canvas.backgroundColor;
+      canvas.backgroundColor = '#F0F2F5'; // matches --canvas-bg
+      canvas.renderAll();
+
       // Capture at ~300px wide
       const multiplier = 300 / Math.max(canvasW, 1);
       const thumbnail = canvas.toDataURL({
@@ -212,7 +221,8 @@ export function useThumbnailCapture(
         multiplier,
       });
 
-      // Restore viewport immediately (no visible flicker — paint happens later)
+      // Restore viewport + background immediately (no visible flicker)
+      canvas.backgroundColor = savedBg;
       canvas.setViewportTransform(savedVpt as unknown as number[]);
       canvas.setZoom(savedZoom);
       canvas.renderAll();

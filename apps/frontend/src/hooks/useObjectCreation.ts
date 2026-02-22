@@ -14,6 +14,10 @@ import {
   createTextElement,
   createFrame,
   createConnector,
+  createLine,
+  createArrow,
+  createStar,
+  createTriangle,
   createFlagMarker,
   fabricToBoardObject,
   getStickyChildren,
@@ -51,6 +55,9 @@ export function useObjectCreation(
     if (!canvas) return;
 
     const handleMouseDown = (opt: fabric.IEvent) => {
+      // Only left-click triggers object placement (ignore right-click, middle-click)
+      if ((opt.e as MouseEvent).button !== 0) return;
+
       const tool = useUIStore.getState().activeTool;
       const color = useUIStore.getState().activeColor;
 
@@ -292,6 +299,8 @@ export function useObjectCreation(
      * by discarding any active object immediately after.
      */
     const handleDropperClick = (opt: fabric.IEvent) => {
+      // Only left-click triggers dropper sampling
+      if ((opt.e as MouseEvent).button !== 0) return;
       if (useUIStore.getState().activeTool !== 'dropper') return;
       if (!opt.target) return;
 
@@ -306,8 +315,8 @@ export function useObjectCreation(
         // For frames, sample the border color (stroke of child rect)
         const borderRect = target.getObjects()[0];
         fill = borderRect.stroke as string;
-      } else if (target.data?.type === 'connector') {
-        // For connectors, sample the stroke color
+      } else if (target.data?.type === 'connector' || target.data?.type === 'line') {
+        // For connectors and lines, sample the stroke color
         fill = target.stroke as string;
       } else {
         fill = target.fill as string | undefined;
@@ -399,6 +408,8 @@ export function useObjectCreation(
     };
 
     const handleConnectorMouseDown = (opt: fabric.IEvent) => {
+      // Only left-click initiates connector creation
+      if ((opt.e as MouseEvent).button !== 0) return;
       if (useUIStore.getState().activeTool !== 'connector') return;
 
       const pointer = canvas.getPointer(opt.e);
@@ -576,6 +587,8 @@ export function useObjectCreation(
     let lineStartY = 0;
 
     const handleLineMouseDown = (opt: fabric.IEvent) => {
+      // Only left-click initiates line creation
+      if ((opt.e as MouseEvent).button !== 0) return;
       if (useUIStore.getState().activeTool !== 'line') return;
       if (opt.target) return;
 
@@ -619,23 +632,26 @@ export function useObjectCreation(
         return;
       }
 
-      // Create an arrow-style connector (no object attachment)
-      const color = useUIStore.getState().activeColor;
-      const arrowLine = createConnector({
+      // Create a standalone Line object with styling from uiStore
+      const uiState = useUIStore.getState();
+      const color = uiState.activeColor;
+      const lineObj = createLine({
         x: lineStartX,
         y: lineStartY,
         x2: endX,
         y2: endY,
         color,
-        style: 'arrow',
+        endpointStyle: uiState.lineEndpointStyle,
+        strokePattern: uiState.lineStrokePattern,
+        strokeWeight: uiState.lineStrokeWeight,
       });
 
-      canvas.add(arrowLine);
-      canvas.setActiveObject(arrowLine);
+      canvas.add(lineObj);
+      canvas.setActiveObject(lineObj);
       canvas.requestRenderAll();
 
       const userId = usePresenceStore.getState().localUserId;
-      const boardObj = fabricToBoardObject(arrowLine, userId ?? undefined);
+      const boardObj = fabricToBoardObject(lineObj, userId ?? undefined);
       addObject(boardObj);
 
       emitObjectCreate(socketRef.current, boardObj);
@@ -795,8 +811,22 @@ function createFabricObject(
       return createRectangle({ x, y, color });
     case 'circle':
       return createCircle({ x, y, color });
-    case 'text':
-      return createTextElement({ x, y, color: '#000000' });
+    case 'arrow':
+      return createArrow({ x, y, color });
+    case 'star':
+      return createStar({ x, y, color });
+    case 'triangle':
+      return createTriangle({ x, y, color });
+    case 'text': {
+      const uiState = useUIStore.getState();
+      return createTextElement({
+        x,
+        y,
+        color: '#000000',
+        fontSize: uiState.textFontSize,
+        fontFamily: uiState.textFontFamily,
+      });
+    }
     case 'frame':
       return createFrame({ x, y, color });
     case 'connector':

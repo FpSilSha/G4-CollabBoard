@@ -62,6 +62,7 @@ function EntryPreview({ objects }: { objects: import('shared').BoardObject[] }) 
         <span className={styles.typeLabel}>
           {getTypeLabel(obj.type, 'shapeType' in obj ? obj.shapeType : undefined)}
         </span>
+        {obj.type === 'line' && <LineDetailBadges obj={obj} />}
       </>
     );
   }
@@ -78,10 +79,13 @@ function getTypeLabel(type: string, shapeType?: string): string {
     case 'sticky': return 'Sticky note';
     case 'shape':
       if (shapeType === 'circle') return 'Circle';
+      if (shapeType === 'arrow') return 'Arrow';
+      if (shapeType === 'star') return 'Star';
       if (shapeType === 'line') return 'Line';
       return 'Rectangle';
     case 'frame': return 'Frame';
     case 'connector': return 'Connector';
+    case 'line': return 'Line';
     case 'text': return 'Text';
     default: return 'Object';
   }
@@ -108,6 +112,20 @@ function ObjectPreviewIcon({ type, color, shapeType }: { type: string; color: st
           </svg>
         );
       }
+      if (shapeType === 'arrow') {
+        return (
+          <svg width={size} height={size} viewBox="0 0 20 20">
+            <polygon points="2,8 12,8 12,4 18,10 12,16 12,12 2,12" fill={fill} />
+          </svg>
+        );
+      }
+      if (shapeType === 'star') {
+        return (
+          <svg width={size} height={size} viewBox="0 0 20 20">
+            <polygon points="10,1 12.5,7 19,7.5 14,12 15.5,18.5 10,15 4.5,18.5 6,12 1,7.5 7.5,7" fill={fill} />
+          </svg>
+        );
+      }
       return (
         <svg width={size} height={size} viewBox="0 0 20 20">
           <rect x="2" y="2" width="16" height="16" fill={fill} />
@@ -125,6 +143,12 @@ function ObjectPreviewIcon({ type, color, shapeType }: { type: string; color: st
           <line x1="3" y1="17" x2="17" y2="3" stroke={fill} strokeWidth="2" />
         </svg>
       );
+    case 'line':
+      return (
+        <svg width={size} height={size} viewBox="0 0 20 20">
+          <line x1="3" y1="17" x2="17" y2="3" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
     case 'text':
       return (
         <svg width={size} height={size} viewBox="0 0 20 20">
@@ -138,4 +162,85 @@ function ObjectPreviewIcon({ type, color, shapeType }: { type: string; color: st
         </svg>
       );
   }
+}
+
+/**
+ * Small inline badges next to "Line" label showing active styling.
+ * Only renders badges for non-default properties. Only shown for single-line copies.
+ */
+function LineDetailBadges({ obj }: { obj: import('shared').BoardObject }) {
+  if (obj.type !== 'line') return null;
+  const lineObj = obj as import('shared').Line;
+
+  const badges: React.ReactNode[] = [];
+
+  // Bold badge
+  if (lineObj.strokeWeight === 'bold') {
+    badges.push(
+      <span key="bold" className={styles.lineBadge} title="Bold">
+        <svg width="14" height="10" viewBox="0 0 14 10">
+          <line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  // Arrowhead badge
+  if (lineObj.endpointStyle === 'arrow-end') {
+    badges.push(
+      <span key="arrow" className={styles.lineBadge} title="Arrow">
+        <svg width="14" height="10" viewBox="0 0 14 10">
+          <line x1="1" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <polyline points="8,2 12,5 8,8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  } else if (lineObj.endpointStyle === 'arrow-both') {
+    badges.push(
+      <span key="arrow-both" className={styles.lineBadge} title="Arrows both">
+        <svg width="14" height="10" viewBox="0 0 14 10">
+          <line x1="4" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="1.5" />
+          <polyline points="6,2 2,5 6,8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points="8,2 12,5 8,8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  // Double/triple badge
+  if (lineObj.strokeWeight === 'double') {
+    badges.push(
+      <span key="double" className={styles.lineBadge} title="Double">
+        <svg width="14" height="10" viewBox="0 0 14 10">
+          <line x1="1" y1="3" x2="13" y2="3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  } else if (lineObj.strokeWeight === 'triple') {
+    badges.push(
+      <span key="triple" className={styles.lineBadge} title="Triple">
+        <svg width="14" height="10" viewBox="0 0 14 10">
+          <line x1="1" y1="2" x2="13" y2="2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+          <line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+          <line x1="1" y1="8" x2="13" y2="8" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  // Dashed badge
+  if (lineObj.strokePattern === 'dashed') {
+    badges.push(
+      <span key="dashed" className={styles.lineBadge} title="Dashed">
+        <svg width="14" height="10" viewBox="0 0 14 10">
+          <line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3 2" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (badges.length === 0) return null;
+
+  return <span className={styles.lineBadges}>{badges}</span>;
 }

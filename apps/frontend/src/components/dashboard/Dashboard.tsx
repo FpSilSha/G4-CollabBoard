@@ -303,6 +303,7 @@ export function Dashboard() {
       <header className={styles.header}>
         <h1 className={styles.logo}>G4 CollabBoard</h1>
         <div className={styles.headerRight}>
+          <Link to="/admin" className={styles.adminLink}>Admin Metrics</Link>
           <span className={styles.userName}>{user?.name || user?.email || 'User'}</span>
           <button className={styles.signOutButton} onClick={handleLogout}>
             Sign Out

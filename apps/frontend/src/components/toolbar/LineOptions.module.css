@@ -1,0 +1,52 @@
+/* Line options panel — endpoint style, stroke pattern, stroke weight */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.optionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 4px;
+}
+
+.optionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--border-radius);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--transition-speed) var(--transition-ease),
+    color var(--transition-speed) var(--transition-ease);
+}
+
+.optionBtn:hover {
+  background: var(--btn-hover);
+  color: var(--text-primary);
+}
+
+.optionBtn.active {
+  background: var(--focus-blue) !important;
+  color: #ffffff;
+}

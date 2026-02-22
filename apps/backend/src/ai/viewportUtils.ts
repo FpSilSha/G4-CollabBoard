@@ -15,8 +15,8 @@ export function isObjectInViewport(obj: BoardObject, viewport: ViewportBounds): 
   const vRight = viewport.x + viewport.width;
   const vBottom = viewport.y + viewport.height;
 
-  if (obj.type === 'connector') {
-    // Connector: check if either endpoint is in viewport
+  if (obj.type === 'connector' || obj.type === 'line') {
+    // Connector/Line: check if either endpoint is in viewport
     const startInView = obj.x >= viewport.x && obj.x <= vRight &&
                         obj.y >= viewport.y && obj.y <= vBottom;
     const endInView = obj.x2 >= viewport.x && obj.x2 <= vRight &&
@@ -47,8 +47,8 @@ export function distanceToViewportCenter(obj: BoardObject, viewport: ViewportBou
   let objCenterX: number;
   let objCenterY: number;
 
-  if (obj.type === 'connector') {
-    // Connector center = midpoint of line
+  if (obj.type === 'connector' || obj.type === 'line') {
+    // Connector/Line center = midpoint of line
     objCenterX = (obj.x + obj.x2) / 2;
     objCenterY = (obj.y + obj.y2) / 2;
   } else {
@@ -160,6 +160,16 @@ export function summarizeObject(obj: BoardObject): Record<string, unknown> {
         text: obj.text,
         fontSize: obj.fontSize,
         color: obj.color,
+      };
+    case 'line':
+      return {
+        ...base,
+        x2: obj.x2,
+        y2: obj.y2,
+        color: obj.color,
+        endpointStyle: obj.endpointStyle,
+        strokePattern: obj.strokePattern,
+        strokeWeight: obj.strokeWeight,
       };
     default:
       return base;

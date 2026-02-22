@@ -23,7 +23,7 @@ export interface BoardVersion {
 
 // --- Board Objects ---
 
-export type BoardObjectType = 'sticky' | 'shape' | 'frame' | 'connector' | 'text';
+export type BoardObjectType = 'sticky' | 'shape' | 'frame' | 'connector' | 'text' | 'line';
 
 export interface BaseObject {
   id: string;
@@ -51,7 +51,7 @@ export interface StickyNote extends BaseObject {
   height: number;
 }
 
-export type ShapeType = 'rectangle' | 'circle' | 'line';
+export type ShapeType = 'rectangle' | 'circle' | 'line' | 'arrow' | 'star' | 'triangle';
 
 export interface Shape extends BaseObject {
   type: 'shape';
@@ -70,6 +70,24 @@ export interface Frame extends BaseObject {
   color: string; // Border color
   locked: boolean; // Whether children are anchored
 }
+
+// --- Standalone Line styling ---
+
+export type LineEndpointStyle = 'none' | 'arrow-end' | 'arrow-both';
+export type LineStrokePattern = 'solid' | 'dashed';
+export type LineStrokeWeight = 'normal' | 'bold' | 'double' | 'triple';
+
+export interface Line extends BaseObject {
+  type: 'line';
+  x2: number;
+  y2: number;
+  color: string;
+  endpointStyle: LineEndpointStyle;
+  strokePattern: LineStrokePattern;
+  strokeWeight: LineStrokeWeight;
+}
+
+// --- Connector (relationship connector with object attachment) ---
 
 export type ConnectorStyle = 'line' | 'arrow';
 
@@ -111,12 +129,13 @@ export interface TextElement extends BaseObject {
   text: string;
   fontSize: number;
   color: string;
+  fontFamily?: string; // Web-safe font family (defaults to system font stack if omitted)
   rotation?: number; // Degrees
   scaleX?: number;   // Preserve resize (Fabric.js uses scale, not width/height for IText)
   scaleY?: number;
 }
 
-export type BoardObject = StickyNote | Shape | Frame | Connector | TextElement;
+export type BoardObject = StickyNote | Shape | Frame | Connector | TextElement | Line;
 
 // --- Teleport Flags ---
 

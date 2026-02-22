@@ -46,9 +46,25 @@
   color: var(--text-primary);
 }
 
-.headerBudget {
-  font-size: 11px;
+.closeButton {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--border-radius);
+  border: none;
+  background: transparent;
   color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--transition-speed) var(--transition-ease),
+    color var(--transition-speed) var(--transition-ease);
+}
+
+.closeButton:hover {
+  background: var(--btn-hover);
+  color: var(--text-primary);
 }
 
 /* Messages area */
@@ -103,16 +119,64 @@
   background: #FFF5F5;
 }
 
-/* Operations summary badge */
-.opsBadge {
-  display: inline-block;
+/* Operations summary badge (expandable) */
+.opsContainer {
   margin-top: 6px;
+}
+
+.opsBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 10px;
   background: rgba(0, 122, 255, 0.1);
   color: var(--focus-blue);
   font-size: 11px;
   font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-speed) var(--transition-ease);
+}
+
+.opsBadge:hover {
+  background: rgba(0, 122, 255, 0.18);
+}
+
+.opsChevronDown {
+  transition: transform 150ms ease;
+}
+
+.opsChevronUp {
+  transform: rotate(180deg);
+  transition: transform 150ms ease;
+}
+
+.opsDetails {
+  margin-top: 4px;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.opsRow {
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  padding: 1px 4px;
+}
+
+.opsType {
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  min-width: 44px;
+}
+
+.opsTarget {
+  color: var(--text-tertiary);
 }
 
 /* Empty state */

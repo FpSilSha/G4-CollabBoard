@@ -172,9 +172,36 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
   });
 
   // --- Connection Handler ---
-  io.on('connection', (socket: Socket) => {
+  io.on('connection', async (socket: Socket) => {
     const authSocket = socket as AuthenticatedSocket;
-    logger.info(`Socket connected: ${authSocket.data.userId} (${socket.id})`);
+    const userId = authSocket.data.userId;
+    logger.info(`Socket connected: ${userId} (${socket.id})`);
+
+    // --- Duplicate session enforcement ---
+    // If this userId already has an active socket, kick the old one.
+    // "Last login wins" — standard pattern (Discord, Figma, Slack).
+    try {
+      const allSockets = await io.fetchSockets();
+      for (const existing of allSockets) {
+        if (
+          existing.id !== socket.id &&
+          (existing as unknown as AuthenticatedSocket).data.userId === userId
+        ) {
+          logger.info(`Duplicate session for ${userId}: kicking old socket ${existing.id}`);
+          // Tell the old client WHY it's being disconnected (before severing)
+          existing.emit('session:replaced', {
+            reason: 'Another session was opened with this account',
+            timestamp: Date.now(),
+          });
+          // Server-initiated disconnect (close: true = sever transport)
+          existing.disconnect(true);
+        }
+      }
+    } catch (err: unknown) {
+      // Non-fatal: if fetchSockets fails, allow both connections
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      logger.warn(`Duplicate session check failed for ${userId}: ${msg}`);
+    }
 
     // --- Connection metrics ---
     metricsService.incrementWsConnection();
