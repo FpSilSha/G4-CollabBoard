@@ -1,7 +1,5 @@
 import { Server, Socket } from 'socket.io';
 import { Server as HttpServer } from 'http';
-import jwt from 'jsonwebtoken';
-import jwksRsa from 'jwks-rsa';
 import { WEBSOCKET_CONFIG, WebSocketEvent } from 'shared';
 import { presenceService } from '../services/presenceService';
 import { userService } from '../services/userService';
@@ -15,6 +13,7 @@ import { registerEditHandlers } from './handlers/editHandler';
 import { wsMetricsMiddleware, trackedEmit } from './wsMetrics';
 import { metricsService } from '../services/metricsService';
 import { auditService, AuditAction } from '../services/auditService';
+import { verifyAuth0Token } from '../utils/auth0';
 
 /**
  * Extended Socket type with authenticated user data.
@@ -27,47 +26,6 @@ export interface AuthenticatedSocket extends Socket {
     color: string;
     currentBoardId?: string;
   };
-}
-
-// JWKS client for Auth0 WebSocket token verification
-const jwksClient = jwksRsa({
-  jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
-  cache: true,
-  rateLimit: true,
-  jwksRequestsPerMinute: 5,
-});
-
-/**
- * Verify an Auth0 JWT token and return the decoded payload.
- */
-function verifyAuth0Token(token: string): Promise<jwt.JwtPayload> {
-  return new Promise((resolve, reject) => {
-    const decoded = jwt.decode(token, { complete: true });
-    if (!decoded || !decoded.header.kid) {
-      return reject(new Error('Invalid token format'));
-    }
-
-    jwksClient.getSigningKey(decoded.header.kid, (err, key) => {
-      if (err) return reject(err);
-
-      const signingKey = key?.getPublicKey();
-      if (!signingKey) return reject(new Error('No signing key found'));
-
-      jwt.verify(
-        token,
-        signingKey,
-        {
-          audience: process.env.AUTH0_AUDIENCE,
-          issuer: `https://${process.env.AUTH0_DOMAIN}/`,
-          algorithms: ['RS256'],
-        },
-        (verifyErr, payload) => {
-          if (verifyErr) return reject(verifyErr);
-          resolve(payload as jwt.JwtPayload);
-        }
-      );
-    });
-  });
 }
 
 /**
@@ -93,6 +51,9 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     pingTimeout: WEBSOCKET_CONFIG.PING_TIMEOUT,
     pingInterval: WEBSOCKET_CONFIG.PING_INTERVAL,
     transports: ['websocket', 'polling'],
+    perMessageDeflate: {
+      threshold: 1024, // Only compress messages larger than 1KB
+    },
   });
 
   // --- Authentication Middleware ---

@@ -10,7 +10,9 @@
     "prisma:generate": "prisma generate",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
-    "test:coverage": "vitest run --config vitest.config.ts --coverage"
+    "test:coverage": "vitest run --config vitest.config.ts --coverage",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -26,6 +28,8 @@
     "morgan": "^1.10.0",
     "shared": "*",
     "socket.io": "^4.6.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^3.22.0"
   },
   "devDependencies": {
@@ -34,6 +38,8 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/morgan": "^1.9.9",
     "@types/node": "^20.10.0",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
     "@vitest/coverage-v8": "^1.2.0",
     "prisma": "^5.8.0",
     "socket.io-client": "^4.8.3",

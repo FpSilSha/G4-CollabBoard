@@ -113,11 +113,15 @@ export function useSocket() {
           // Start heartbeat
           startHeartbeat(socket);
 
-          // If we had a board, re-join it (reconnection scenario)
+          // On reconnect: re-join the board only if still on a board route.
+          // If the user navigated away, clear the stale boardId instead.
           // Per .clauderules: reconnect = full re-render via board:state
           const boardId = useBoardStore.getState().boardId;
-          if (boardId) {
+          const isOnBoardRoute = window.location.pathname.startsWith('/board/');
+          if (boardId && isOnBoardRoute) {
             socket.emit(WebSocketEvent.BOARD_JOIN, { boardId });
+          } else if (boardId && !isOnBoardRoute) {
+            useBoardStore.getState().setBoardId(null);
           }
         });
 

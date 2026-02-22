@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from './Dashboard.module.css';
+import { useApiClient, ApiError } from '../../services/apiClient';
 
 interface BoardSummary {
   id: string;
@@ -23,13 +24,6 @@ interface BoardListResponse {
 }
 
 type DashboardTab = 'owned' | 'linked';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-const AUTH_PARAMS = {
-  authorizationParams: {
-    audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-  },
-};
 
 /** Strict UUID v4 pattern */
 const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -60,7 +54,8 @@ function extractBoardId(input: string): string | null {
  * No tier/enterprise limits — all users have full access.
  */
 export function Dashboard() {
-  const { getAccessTokenSilently, logout, user } = useAuth0();
+  const { logout, user } = useAuth0();
+  const api = useApiClient();
   const navigate = useNavigate();
   const [ownedBoards, setOwnedBoards] = useState<BoardSummary[]>([]);
   const [linkedBoards, setLinkedBoards] = useState<BoardSummary[]>([]);
@@ -89,12 +84,7 @@ export function Dashboard() {
 
     async function fetchBoards() {
       try {
-        const token = await getAccessTokenSilently(AUTH_PARAMS);
-        const res = await fetch(`${API_URL}/boards`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        const data: BoardListResponse = await res.json();
+        const data = await api.get<BoardListResponse>('/boards');
         if (!cancelled) {
           setOwnedBoards(data.ownedBoards.filter((b) => !b.isDeleted));
           setLinkedBoards(data.linkedBoards.filter((b) => !b.isDeleted));
@@ -123,20 +113,7 @@ export function Dashboard() {
     setCreating(true);
     setError(null);
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: 'Untitled Board' }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || 'Failed to create board');
-      }
-      const created = await res.json();
+      const created = await api.post<{ id: string; title?: string; slot?: number }>('/boards', { title: 'Untitled Board' });
 
       const newBoard: BoardSummary = {
         id: created.id,
@@ -157,7 +134,12 @@ export function Dashboard() {
       setRenameDraft('');
       setRenamingBoardId(created.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create board');
+      if (err instanceof ApiError) {
+        const body = err.body as { message?: string } | null;
+        setError(body?.message || 'Failed to create board');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to create board');
+      }
     } finally {
       setCreating(false);
     }
@@ -181,15 +163,7 @@ export function Dashboard() {
     );
 
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      await fetch(`${API_URL}/boards/${boardId}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: finalTitle }),
-      });
+      await api.patch(`/boards/${boardId}`, { title: finalTitle });
     } catch (err) {
       console.error('[Dashboard] Failed to rename board:', err);
     }
@@ -201,16 +175,13 @@ export function Dashboard() {
     setDeletingBoardId(null);
 
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards/${boardId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        console.error('[Dashboard] Failed to delete board:', res.status);
-      }
+      await api.del(`/boards/${boardId}`);
     } catch (err) {
-      console.error('[Dashboard] Failed to delete board:', err);
+      if (err instanceof ApiError) {
+        console.error('[Dashboard] Failed to delete board:', err.status);
+      } else {
+        console.error('[Dashboard] Failed to delete board:', err);
+      }
     }
   };
 
@@ -220,16 +191,13 @@ export function Dashboard() {
     setUnlinkingBoardId(null);
 
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards/${boardId}/link`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        console.error('[Dashboard] Failed to unlink board:', res.status);
-      }
+      await api.del(`/boards/${boardId}/link`);
     } catch (err) {
-      console.error('[Dashboard] Failed to unlink board:', err);
+      if (err instanceof ApiError) {
+        console.error('[Dashboard] Failed to unlink board:', err.status);
+      } else {
+        console.error('[Dashboard] Failed to unlink board:', err);
+      }
     }
   };
 
@@ -256,26 +224,22 @@ export function Dashboard() {
 
     setLinkLoading(true);
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards/${boardId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          setLinkError('Board not found. Check the link and try again.');
-        } else {
-          setLinkError(`Failed to load board (${res.status}).`);
-        }
-        return;
-      }
+      await api.get(`/boards/${boardId}`);
 
       // Board exists — navigate to it (auto-links via getBoard)
       setLinkInput('');
       navigate(`/board/${boardId}`);
     } catch (err) {
-      console.error('[Dashboard] Failed to add linked board:', err);
-      setLinkError('Network error. Try again.');
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          setLinkError('Board not found. Check the link and try again.');
+        } else {
+          setLinkError(`Failed to load board (${err.status}).`);
+        }
+      } else {
+        console.error('[Dashboard] Failed to add linked board:', err);
+        setLinkError('Network error. Try again.');
+      }
     } finally {
       setLinkLoading(false);
     }

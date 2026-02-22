@@ -3,14 +3,13 @@ import { fabric } from 'fabric';
 import { Link } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { CANVAS_CONFIG } from 'shared';
+import { useApiClient } from '../../services/apiClient';
 import { useBoardStore } from '../../stores/boardStore';
 import { usePresenceStore, type ConnectionStatus } from '../../stores/presenceStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useAIStore } from '../../stores/aiStore';
 import { teleportTo } from '../../utils/fabricHelpers';
 import styles from './Header.module.css';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 /**
  * Header bar at the top of the main area (right of sidebar).
@@ -32,7 +31,7 @@ export function Header() {
   const connectionStatus = usePresenceStore((s) => s.connectionStatus);
   const localUserId = usePresenceStore((s) => s.localUserId);
   const remoteUsers = usePresenceStore((s) => s.remoteUsers);
-  const { getAccessTokenSilently } = useAuth0();
+  const api = useApiClient();
 
   const isOwner = !!(boardOwnerId && localUserId && boardOwnerId === localUserId);
 
@@ -94,23 +93,11 @@ export function Header() {
     if (!boardId) return;
 
     try {
-      const token = await getAccessTokenSilently({
-        authorizationParams: {
-          audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-        },
-      });
-      await fetch(`${API_URL}/boards/${boardId}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: finalTitle }),
-      });
+      await api.patch(`/boards/${boardId}`, { title: finalTitle });
     } catch (err) {
       console.error('[Header] Failed to rename board:', err);
     }
-  }, [boardId, getAccessTokenSilently, setBoardTitle]);
+  }, [boardId, api, setBoardTitle]);
 
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {

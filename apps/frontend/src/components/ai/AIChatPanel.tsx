@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
 import type { AICommandResponse, AIStatusResponse, AIOperation } from 'shared';
+import { useApiClient, ApiError } from '../../services/apiClient';
 import { useAIStore, nextMessageId } from '../../stores/aiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import styles from './AIChatPanel.module.css';
@@ -49,7 +49,7 @@ export function AIChatPanel() {
   const setOpen = useAIStore((s) => s.setOpen);
 
   const boardId = useBoardStore((s) => s.boardId);
-  const { getAccessTokenSilently } = useAuth0();
+  const api = useApiClient();
 
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -75,28 +75,15 @@ export function AIChatPanel() {
 
     async function fetchStatus() {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const token = await getAccessTokenSilently({
-          authorizationParams: {
-            audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-          },
-        });
-
-        const res = await fetch(`${apiUrl}/ai/status`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (res.ok) {
-          const data: AIStatusResponse = await res.json();
-          setStatus(data);
-        }
+        const data = await api.get<AIStatusResponse>('/ai/status');
+        setStatus(data);
       } catch {
         // Non-fatal — keep optimistic defaults
       }
     }
 
     fetchStatus();
-  }, [isOpen, getAccessTokenSilently, setStatus]);
+  }, [isOpen, api, setStatus]);
 
   // Send command
   const handleSend = useCallback(async () => {
@@ -124,44 +111,26 @@ export function AIChatPanel() {
     setProcessing(true);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const token = await getAccessTokenSilently({
-        authorizationParams: {
-          audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-        },
-      });
-
       const viewport = getViewportBounds();
 
-      const res = await fetch(`${apiUrl}/ai/execute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          boardId,
-          command,
-          viewport,
-        }),
+      const data = await api.post<AICommandResponse>('/ai/execute', {
+        boardId,
+        command,
+        viewport,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        const errorMsg = errorData?.error?.message || errorData?.message || `Server error (${res.status})`;
-        useAIStore.getState().updateLastAssistantMessage(errorMsg);
-        setProcessing(false);
-        return;
-      }
-
-      const data: AICommandResponse = await res.json();
       handleResponse(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to reach the server';
-      useAIStore.getState().updateLastAssistantMessage(message);
+      if (err instanceof ApiError) {
+        const errorData = err.body as { error?: { message?: string }; message?: string } | null;
+        const errorMsg = errorData?.error?.message || errorData?.message || `Server error (${err.status})`;
+        useAIStore.getState().updateLastAssistantMessage(errorMsg);
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to reach the server';
+        useAIStore.getState().updateLastAssistantMessage(message);
+      }
       setProcessing(false);
     }
-  }, [inputValue, boardId, isProcessing, addMessage, setProcessing, handleResponse, getAccessTokenSilently]);
+  }, [inputValue, boardId, isProcessing, addMessage, setProcessing, handleResponse, api]);
 
   // Enter to send (Shift+Enter for newline)
   const handleKeyDown = useCallback(
