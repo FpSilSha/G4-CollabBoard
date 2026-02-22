@@ -24,6 +24,7 @@ const PASTE_OFFSET = 20;
  *   H - Home (return viewport to center)
  *   Delete / Backspace - Delete selected object
  *   Escape - Deselect all, return to select tool, cancel marching ants
+ *   Ctrl+A / Cmd+A - Select all objects on canvas
  *   Ctrl+C / Cmd+C - Copy selected objects (deselects, shows marching ants)
  *   Ctrl+V / Cmd+V - Paste clipboard at offset
  *
@@ -81,6 +82,44 @@ export function useKeyboardShortcuts(
             }
           } else {
             useUIStore.getState().setActiveTool(useUIStore.getState().activeShapeTool);
+          }
+          break;
+
+        case 'a':
+          // Ctrl+A = select all objects visible in the current viewport
+          if ((e.ctrlKey || e.metaKey) && canvas) {
+            e.preventDefault();
+            // Calculate viewport bounds in board coordinates
+            const vpt = canvas.viewportTransform;
+            if (vpt) {
+              const zoom = vpt[0];
+              const vpLeft = -vpt[4] / zoom;
+              const vpTop = -vpt[5] / zoom;
+              const vpRight = vpLeft + canvas.getWidth() / zoom;
+              const vpBottom = vpTop + canvas.getHeight() / zoom;
+
+              const visibleObjects = canvas.getObjects().filter((obj) => {
+                if (!obj.selectable || !obj.evented || obj.data?.isGrid) return false;
+                // Check if object overlaps with viewport
+                const objLeft = obj.left ?? 0;
+                const objTop = obj.top ?? 0;
+                const objWidth = (obj.width ?? 0) * (obj.scaleX ?? 1);
+                const objHeight = (obj.height ?? 0) * (obj.scaleY ?? 1);
+                return (
+                  objLeft + objWidth > vpLeft &&
+                  objLeft < vpRight &&
+                  objTop + objHeight > vpTop &&
+                  objTop < vpBottom
+                );
+              });
+
+              if (visibleObjects.length > 0) {
+                canvas.discardActiveObject();
+                const selection = new fabric.ActiveSelection(visibleObjects, { canvas });
+                canvas.setActiveObject(selection);
+                canvas.requestRenderAll();
+              }
+            }
           }
           break;
 
@@ -661,6 +700,9 @@ export function handleDeleteSelected(socket: Socket | null): void {
     // Collect all object IDs for a single batch delete message
     const deletedIds: string[] = [];
 
+    // Collect objects to remove, then batch-process
+    const objectsToRemove: fabric.Object[] = [];
+
     for (const obj of objects) {
       if (obj.data?.pinned) continue;
 
@@ -682,15 +724,21 @@ export function handleDeleteSelected(socket: Socket | null): void {
         detachConnectorsFromObject(canvas, objectId);
       }
 
-      canvas.remove(obj);
-
+      objectsToRemove.push(obj);
       if (objectId) {
-        useBoardStore.getState().removeObject(objectId);
         deletedIds.push(objectId);
       }
     }
 
-    // Send ALL deletes in a single batch message to avoid rate-limit issues
+    // Batch remove from canvas
+    for (const obj of objectsToRemove) {
+      canvas.remove(obj);
+    }
+
+    // Single Zustand state update for all removals (avoids 300+ re-renders)
+    useBoardStore.getState().removeObjects(deletedIds);
+
+    // Send ALL deletes in a single batch WS message
     if (deletedIds.length > 0 && boardId && socket?.connected) {
       socket.emit(WebSocketEvent.OBJECTS_BATCH_DELETE, {
         boardId,

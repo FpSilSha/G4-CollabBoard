@@ -789,8 +789,10 @@ function setupDragState(
         const objects = (target as fabric.ActiveSelection).getObjects().slice();
         canvas.discardActiveObject();
 
-        // Collect IDs for batch delete, then remove from canvas
+        // Collect objects to remove, then batch-process
         const deletedIds: string[] = [];
+        const objectsToRemove: fabric.Object[] = [];
+
         for (const obj of objects) {
           if (obj.data?.pinned) continue;
 
@@ -821,12 +823,19 @@ function setupDragState(
             }
           }
 
-          canvas.remove(obj);
+          objectsToRemove.push(obj);
           if (objectId) {
-            useBoardStore.getState().removeObject(objectId);
             deletedIds.push(objectId);
           }
         }
+
+        // Batch remove from canvas
+        for (const obj of objectsToRemove) {
+          canvas.remove(obj);
+        }
+
+        // Single Zustand state update for all removals (avoids N re-renders)
+        useBoardStore.getState().removeObjects(deletedIds);
 
         // Send all deletes in a single batch message
         if (deletedIds.length > 0) {

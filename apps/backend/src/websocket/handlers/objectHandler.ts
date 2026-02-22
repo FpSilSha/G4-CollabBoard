@@ -379,15 +379,19 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
       trackedEmit(io.to(boardId), WebSocketEvent.OBJECTS_BATCH_CREATED, batchPayload);
 
-      for (const object of objects) {
-        auditService.log({
-          userId,
-          action: AuditAction.OBJECT_CREATE,
-          entityType: 'object',
-          entityId: object.id,
-          metadata: { boardId, objectType: object.type, batch: true },
-        });
-      }
+      // Single audit entry for the entire batch (avoids N concurrent DB writes)
+      auditService.log({
+        userId,
+        action: AuditAction.OBJECT_CREATE,
+        entityType: 'object',
+        entityId: boardId,
+        metadata: {
+          boardId,
+          batch: true,
+          count: objects.length,
+          objectIds: objects.map(o => o.id),
+        },
+      });
 
       logger.info(`Batch created ${objects.length} objects on board ${boardId} by ${userId}`);
     } catch (err: unknown) {
@@ -450,15 +454,14 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
 
       trackedEmit(socket.to(boardId), WebSocketEvent.OBJECTS_BATCH_DELETED, batchPayload);
 
-      for (const objectId of objectIds) {
-        auditService.log({
-          userId,
-          action: AuditAction.OBJECT_DELETE,
-          entityType: 'object',
-          entityId: objectId,
-          metadata: { boardId, batch: true },
-        });
-      }
+      // Single audit entry for the entire batch (avoids N concurrent DB writes)
+      auditService.log({
+        userId,
+        action: AuditAction.OBJECT_DELETE,
+        entityType: 'object',
+        entityId: boardId,
+        metadata: { boardId, batch: true, objectIds, count: objectIds.length },
+      });
 
       logger.info(`Batch deleted ${objectIds.length} objects from board ${boardId} by ${userId}`);
     } catch (err: unknown) {
