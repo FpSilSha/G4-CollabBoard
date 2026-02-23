@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { BoardObject, Connector, TextElement } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
+import { createApiClient } from '../services/apiClient';
 
 /** 5-minute cooldown between thumbnail captures (matches backend). */
 const COOLDOWN_MS = 5 * 60 * 1000;
@@ -239,19 +240,14 @@ export function useThumbnailCapture(
       lastCaptureRef.current = now;
 
       // Fire-and-forget upload
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      fetch(`${apiUrl}/boards/${boardId}/thumbnail`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ thumbnail, version: boardVersion }),
-      }).then((res) => {
-        console.debug(`[Thumbnail] Upload response: ${res.status}`);
-      }).catch((err) => {
-        console.warn('[Thumbnail] Upload failed:', err);
-      });
+      const apiClient = createApiClient(() => Promise.resolve(token));
+      apiClient.put(`/boards/${boardId}/thumbnail`, { thumbnail, version: boardVersion })
+        .then(() => {
+          console.debug('[Thumbnail] Upload response: ok');
+        })
+        .catch((err) => {
+          console.warn('[Thumbnail] Upload failed:', err);
+        });
     } catch (err) {
       console.warn('[Thumbnail] Capture failed:', err);
     }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
+import { useApiClient } from '../../services/apiClient';
 import type { Socket } from 'socket.io-client';
 import { Sidebar } from '../layout/Sidebar';
 import { RightSidebar } from '../layout/RightSidebar';
@@ -52,6 +53,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
   const { getAccessTokenSilently } = useAuth0();
+  const api = useApiClient();
   const connectionStatus = usePresenceStore((s) => s.connectionStatus);
   const hasEverConnected = usePresenceStore((s) => s.hasEverConnected);
   const storeBoardId = useBoardStore((s) => s.boardId);
@@ -83,24 +85,15 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
     async function validateAndSetBoard() {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const token = await getAccessTokenSilently({
-          authorizationParams: {
-            audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-          },
-        });
+        const data = await api.get<{
+          id: string;
+          title?: string;
+          ownerId?: string;
+          maxObjectsPerBoard?: number;
+          version?: number;
+          thumbnailUpdatedAt?: string;
+        }>(`/boards/${boardId}`);
 
-        const res = await fetch(`${apiUrl}/boards/${boardId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!res.ok) {
-          // Board not found or deleted — redirect to dashboard
-          if (!cancelled) navigate('/', { replace: true });
-          return;
-        }
-
-        const data = await res.json();
         if (!cancelled) {
           setBoardId(data.id);
           setBoardTitle(data.title || 'Untitled Board');
@@ -117,6 +110,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
         }
       } catch (err) {
         console.error('Failed to validate board:', err);
+        // Board not found, deleted, or network error — redirect to dashboard
         if (!cancelled) navigate('/', { replace: true });
       }
     }

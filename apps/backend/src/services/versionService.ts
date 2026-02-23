@@ -4,7 +4,7 @@ import { PERSISTENCE_CONFIG } from 'shared';
 import { AppError } from '../middleware/errorHandler';
 
 export const versionService = {
-  async listVersions(boardId: string, userId: string) {
+  async listVersions(boardId: string, _userId: string) {
     const board = await prisma.board.findUnique({
       where: { id: boardId },
     });

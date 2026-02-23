@@ -2,18 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { requireAuth } from '../../src/middleware/auth';
 import { makeReq, makeRes, makeNext } from '../mocks/factories';
 
-// ─── Mock jwt and jwks-rsa ────────────────────────────────────────────────────
-// We cannot run real JWT verification without Auth0, so we mock the jwt module.
-vi.mock('jsonwebtoken', () => ({
-  default: {
-    verify: vi.fn(),
-  },
-}));
-
-vi.mock('jwks-rsa', () => ({
-  default: vi.fn(() => ({
-    getSigningKey: vi.fn(),
-  })),
+// ─── Mock the shared auth0 utility ───────────────────────────────────────────
+// FIX-012 moved JWT verification into a shared utils/auth0.ts module.
+// We mock that module so tests control what verifyAuth0Token resolves/rejects with,
+// without needing real JWKS keys or Auth0 network calls.
+vi.mock('../../src/utils/auth0', () => ({
+  verifyAuth0Token: vi.fn(),
 }));
 
 // ─── Mock auditService ────────────────────────────────────────────────────────
@@ -28,7 +22,10 @@ vi.mock('../../src/services/auditService', () => ({
   getClientIp: vi.fn(() => '127.0.0.1'),
 }));
 
-import jwt from 'jsonwebtoken';
+import { verifyAuth0Token } from '../../src/utils/auth0';
+
+/** Flush all pending Promise microtasks so async .then()/.catch() chains resolve. */
+const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 describe('requireAuth middleware', () => {
   beforeEach(() => {
@@ -51,8 +48,8 @@ describe('requireAuth middleware', () => {
         statusCode: 401,
       });
       expect(next).not.toHaveBeenCalled();
-      // jwt.verify must NOT be called — reject before token parsing
-      expect(jwt.verify).not.toHaveBeenCalled();
+      // verifyAuth0Token must NOT be called — reject before token parsing
+      expect(verifyAuth0Token).not.toHaveBeenCalled();
     });
 
     it('responds 401 when header does not start with "Bearer "', () => {
@@ -94,21 +91,19 @@ describe('requireAuth middleware', () => {
     });
   });
 
-  // ─── JWT verification callbacks ───────────────────────────────────────────
-  describe('JWT verification (mocked jwt.verify)', () => {
-    it('responds 401 when jwt.verify calls back with an error', () => {
-      vi.mocked(jwt.verify).mockImplementation((_token, _getKey, _options, callback) => {
-        (callback as (err: Error | null, decoded?: unknown) => void)(
-          new Error('jwt expired'),
-          undefined,
-        );
-      });
+  // ─── JWT verification via shared verifyAuth0Token ─────────────────────────
+  // FIX-012: requireAuth now delegates to the shared verifyAuth0Token() Promise.
+  // Tests control the outcome by resolving/rejecting that mock.
+  describe('JWT verification (mocked verifyAuth0Token)', () => {
+    it('responds 401 when verifyAuth0Token rejects (e.g. expired token)', async () => {
+      vi.mocked(verifyAuth0Token).mockRejectedValue(new Error('jwt expired'));
 
       const req = makeReq({ headers: { authorization: 'Bearer expired.token.here' } });
       const res = makeRes();
       const next = makeNext();
 
       requireAuth(req, res, next);
+      await flushPromises();
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
@@ -119,16 +114,15 @@ describe('requireAuth middleware', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('responds 401 when decoded payload is null', () => {
-      vi.mocked(jwt.verify).mockImplementation((_token, _getKey, _options, callback) => {
-        (callback as (err: null, decoded: unknown) => void)(null, null);
-      });
+    it('responds 401 when decoded payload is null', async () => {
+      vi.mocked(verifyAuth0Token).mockResolvedValue(null as never);
 
       const req = makeReq({ headers: { authorization: 'Bearer valid.looking.token' } });
       const res = makeRes();
       const next = makeNext();
 
       requireAuth(req, res, next);
+      await flushPromises();
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
@@ -138,16 +132,15 @@ describe('requireAuth middleware', () => {
       });
     });
 
-    it('responds 401 when decoded payload has no sub claim', () => {
-      vi.mocked(jwt.verify).mockImplementation((_token, _getKey, _options, callback) => {
-        (callback as (err: null, decoded: unknown) => void)(null, { email: 'test@example.com' });
-      });
+    it('responds 401 when decoded payload has no sub claim', async () => {
+      vi.mocked(verifyAuth0Token).mockResolvedValue({ email: 'test@example.com' } as never);
 
       const req = makeReq({ headers: { authorization: 'Bearer valid.looking.token' } });
       const res = makeRes();
       const next = makeNext();
 
       requireAuth(req, res, next);
+      await flushPromises();
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
@@ -157,16 +150,15 @@ describe('requireAuth middleware', () => {
       });
     });
 
-    it('responds 401 when sub claim is an empty string', () => {
-      vi.mocked(jwt.verify).mockImplementation((_token, _getKey, _options, callback) => {
-        (callback as (err: null, decoded: unknown) => void)(null, { sub: '' });
-      });
+    it('responds 401 when sub claim is an empty string', async () => {
+      vi.mocked(verifyAuth0Token).mockResolvedValue({ sub: '' } as never);
 
       const req = makeReq({ headers: { authorization: 'Bearer valid.looking.token' } });
       const res = makeRes();
       const next = makeNext();
 
       requireAuth(req, res, next);
+      await flushPromises();
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
@@ -176,22 +168,21 @@ describe('requireAuth middleware', () => {
       });
     });
 
-    it('calls next() and attaches user when payload is valid', () => {
+    it('calls next() and attaches user when payload is valid', async () => {
       const decodedPayload = {
         sub: 'auth0|user-123',
         email: 'user@example.com',
         name: 'Test User',
       };
 
-      vi.mocked(jwt.verify).mockImplementation((_token, _getKey, _options, callback) => {
-        (callback as (err: null, decoded: unknown) => void)(null, decodedPayload);
-      });
+      vi.mocked(verifyAuth0Token).mockResolvedValue(decodedPayload as never);
 
       const req = makeReq({ headers: { authorization: 'Bearer valid.token.here' } });
       const res = makeRes();
       const next = makeNext();
 
       requireAuth(req, res, next);
+      await flushPromises();
 
       expect(next).toHaveBeenCalledWith();
       expect(res.status).not.toHaveBeenCalled();
@@ -203,18 +194,17 @@ describe('requireAuth middleware', () => {
       expect(authedReq.user.name).toBe('Test User');
     });
 
-    it('attaches user with undefined email and name for M2M tokens', () => {
+    it('attaches user with undefined email and name for M2M tokens', async () => {
       const decodedPayload = { sub: 'client-id|machine' };
 
-      vi.mocked(jwt.verify).mockImplementation((_token, _getKey, _options, callback) => {
-        (callback as (err: null, decoded: unknown) => void)(null, decodedPayload);
-      });
+      vi.mocked(verifyAuth0Token).mockResolvedValue(decodedPayload as never);
 
       const req = makeReq({ headers: { authorization: 'Bearer m2m.token.here' } });
       const res = makeRes();
       const next = makeNext();
 
       requireAuth(req, res, next);
+      await flushPromises();
 
       expect(next).toHaveBeenCalledWith();
       const authedReq = req as unknown as { user: { sub: string; email?: string; name?: string } };
@@ -223,23 +213,17 @@ describe('requireAuth middleware', () => {
       expect(authedReq.user.name).toBeUndefined();
     });
 
-    it('calls jwt.verify with the token extracted from Bearer header', () => {
-      vi.mocked(jwt.verify).mockImplementation((_token, _getKey, _options, callback) => {
-        (callback as (err: Error) => void)(new Error('test'));
-      });
+    it('calls verifyAuth0Token with the token extracted from Bearer header', async () => {
+      vi.mocked(verifyAuth0Token).mockRejectedValue(new Error('test'));
 
       const req = makeReq({ headers: { authorization: 'Bearer my.special.token' } });
       const res = makeRes();
       const next = makeNext();
 
       requireAuth(req, res, next);
+      await flushPromises();
 
-      expect(jwt.verify).toHaveBeenCalledWith(
-        'my.special.token',
-        expect.any(Function),
-        expect.objectContaining({ algorithms: ['RS256'] }),
-        expect.any(Function),
-      );
+      expect(verifyAuth0Token).toHaveBeenCalledWith('my.special.token');
     });
   });
 });

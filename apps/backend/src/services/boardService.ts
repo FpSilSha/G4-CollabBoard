@@ -16,6 +16,16 @@ export function boardStateKey(boardId: string): string {
   return `board:${boardId}:state`;
 }
 
+/**
+ * Safely parse Prisma's opaque JSON value into a typed BoardObject array.
+ * Prisma returns JSON columns as `Prisma.JsonValue` which requires a cast.
+ * Validated by Zod schema on write, so the cast here is safe.
+ */
+function parseBoardObjects(json: Prisma.JsonValue): BoardObject[] {
+  if (!Array.isArray(json)) return [];
+  return json as unknown as BoardObject[];
+}
+
 export const boardService = {
   async listBoards(userId: string, includeDeleted = false) {
     const where: Record<string, unknown> = { ownerId: userId };
@@ -67,23 +77,28 @@ export const boardService = {
       .map((lb) => lb.board)
       .filter((b) => !b.isDeleted);
 
-    // Helper: get object count from Redis (fresh) or Postgres (fallback)
-    const getObjectCount = async (board: { id: string; objects: unknown }): Promise<number> => {
+    // Pipeline all Redis reads to avoid N sequential roundtrips
+    const allBoards = [...ownedBoards, ...linkedBoards];
+    const pipeline = redis.pipeline();
+    allBoards.forEach((b) => pipeline.get(boardStateKey(b.id)));
+    const results = await pipeline.exec();
+    const objectCounts = (results ?? []).map(([err, value]) => {
+      if (err || !value) return null;
       try {
-        const cached = await this.getBoardStateFromRedis(board.id);
-        if (cached) return cached.objects.length;
+        return JSON.parse(value as string) as CachedBoardState;
       } catch {
-        // Redis unavailable — fall through to Postgres count
+        return null;
       }
-      return Array.isArray(board.objects) ? (board.objects as unknown[]).length : 0;
-    };
+    });
 
-    const mapBoard = async (b: typeof ownedBoards[0], isOwned: boolean) => ({
+    const mapBoard = (b: typeof ownedBoards[0], isOwned: boolean, cachedState: CachedBoardState | null) => ({
       id: b.id,
       title: b.title,
       slot: b.slot,
       lastAccessedAt: b.lastAccessedAt,
-      objectCount: await getObjectCount(b),
+      objectCount: cachedState
+        ? cachedState.objects.length
+        : Array.isArray(b.objects) ? (b.objects as unknown[]).length : 0,
       isDeleted: b.isDeleted,
       thumbnail: b.thumbnail,
       isOwned,
@@ -94,8 +109,8 @@ export const boardService = {
     });
 
     return {
-      ownedBoards: await Promise.all(ownedBoards.map((b) => mapBoard(b, true))),
-      linkedBoards: await Promise.all(linkedBoards.map((b) => mapBoard(b, false))),
+      ownedBoards: ownedBoards.map((b, i) => mapBoard(b, true, objectCounts[i] ?? null)),
+      linkedBoards: linkedBoards.map((b, i) => mapBoard(b, false, objectCounts[ownedBoards.length + i] ?? null)),
     };
   },
 
@@ -420,7 +435,7 @@ export const boardService = {
     }
 
     const cachedState: CachedBoardState = {
-      objects: (board.objects as unknown as CachedBoardState['objects']) ?? [],
+      objects: parseBoardObjects(board.objects),
       postgresVersion: board.version,
       lastSyncedAt: Date.now(),
     };
@@ -561,7 +576,7 @@ export const boardService = {
 
       if (currentBoard) {
         const refreshedState: CachedBoardState = {
-          objects: (currentBoard.objects as unknown as CachedBoardState['objects']) ?? [],
+          objects: parseBoardObjects(currentBoard.objects),
           postgresVersion: currentBoard.version,
           lastSyncedAt: Date.now(),
         };

@@ -1,4 +1,3 @@
-import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { scanKeys } from '../utils/redisScan';
 import { boardService } from '../services/boardService';
 import { versionService } from '../services/versionService';
@@ -112,11 +111,14 @@ async function autoSaveTick(): Promise<void> {
 
     logger.debug(`Auto-save: processing ${activeBoardIds.length} active board(s)`);
 
-    // Process boards sequentially to avoid thundering-herd writes to Postgres
+    // Process boards in parallel batches to reduce auto-save latency at scale.
+    // BATCH_SIZE=10 prevents overwhelming Postgres/Redis with concurrent writes.
+    const BATCH_SIZE = 10;
     let successCount = 0;
-    for (const boardId of activeBoardIds) {
-      const saved = await saveBoard(boardId);
-      if (saved) successCount++;
+    for (let i = 0; i < activeBoardIds.length; i += BATCH_SIZE) {
+      const batch = activeBoardIds.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(batch.map(id => saveBoard(id)));
+      successCount += results.filter(Boolean).length;
     }
 
     if (successCount > 0) {

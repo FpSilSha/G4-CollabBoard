@@ -187,7 +187,7 @@ export const useUIStore = create<UIState>((set) => ({
   setIsPanning: (panning) => set({ isPanning: panning }),
 
   sidebarOpen: true,
-  setSidebarOpen: (open) => set((s) => ({ sidebarOpen: open, ...(open ? {} : { colorPickerOpen: false }) })),
+  setSidebarOpen: (open) => set((_s) => ({ sidebarOpen: open, ...(open ? {} : { colorPickerOpen: false }) })),
   toggleSidebar: () => set((s) => {
     const nextOpen = !s.sidebarOpen;
     return { sidebarOpen: nextOpen, ...(nextOpen ? {} : { colorPickerOpen: false }) };
