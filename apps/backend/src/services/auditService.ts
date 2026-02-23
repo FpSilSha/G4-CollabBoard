@@ -1,5 +1,6 @@
-import prisma from '../models/index';
 import { logger } from '../utils/logger';
+import { prismaAuditRepository } from '../repositories/auditRepository';
+import type { AuditRepository } from '../repositories/auditRepository';
 
 // ============================================================
 // Audit Action Constants
@@ -53,16 +54,16 @@ interface AuditEntry {
 // Audit Service
 // ============================================================
 
-export const auditService = {
-  /**
-   * Write an audit log entry. Fire-and-forget (non-blocking).
-   * Failures are logged but never thrown to avoid impacting
-   * the primary operation.
-   */
-  log(entry: AuditEntry): void {
-    prisma.auditLog
-      .create({
-        data: {
+export function createAuditService(repo: AuditRepository = prismaAuditRepository) {
+  return {
+    /**
+     * Write an audit log entry. Fire-and-forget (non-blocking).
+     * Failures are logged but never thrown to avoid impacting
+     * the primary operation.
+     */
+    log(entry: AuditEntry): void {
+      repo
+        .create({
           userId: entry.userId,
           action: entry.action,
           entityType: entry.entityType,
@@ -70,117 +71,110 @@ export const auditService = {
           metadata: entry.metadata ? JSON.parse(JSON.stringify(entry.metadata)) : undefined,
           ipAddress: entry.ipAddress ?? null,
           userAgent: entry.userAgent ?? null,
-        },
-      })
-      .catch((err: Error) => {
-        logger.error(`Audit log write failed: ${err.message}`);
-      });
-  },
+        })
+        .catch((err: Error) => {
+          logger.error(`Audit log write failed: ${err.message}`);
+        });
+    },
 
-  /**
-   * Purge audit logs older than 90 days.
-   */
-  async purgeExpired(): Promise<number> {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 90);
+    /**
+     * Purge audit logs older than 90 days.
+     */
+    async purgeExpired(): Promise<number> {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
 
-    const result = await prisma.auditLog.deleteMany({
-      where: { createdAt: { lt: cutoff } },
-    });
+      const result = await repo.deleteMany({ createdAt: { lt: cutoff } });
 
-    logger.info(`Purged ${result.count} audit logs older than 90 days`);
-    return result.count;
-  },
+      logger.info(`Purged ${result.count} audit logs older than 90 days`);
+      return result.count;
+    },
 
-  /**
-   * Query recent AI errors from audit logs.
-   * Returns failed AI executions with full metadata, ordered by most recent.
-   */
-  async getAIErrors(options?: {
-    limit?: number;
-    offset?: number;
-  }): Promise<{
-    errors: Array<{
-      id: string;
-      userId: string;
-      boardId: string;
-      command: string;
-      errorCode: string;
-      errorMessage: string;
-      operationCount: number;
-      turnsUsed: number;
-      inputTokens: number;
-      outputTokens: number;
-      costCents: number;
-      model: string;
-      traceId: string | null;
-      timestamp: string;
-    }>;
-    total: number;
-  }> {
-    const limit = options?.limit ?? 50;
-    const offset = options?.offset ?? 0;
+    /**
+     * Query recent AI errors from audit logs.
+     * Returns failed AI executions with full metadata, ordered by most recent.
+     */
+    async getAIErrors(options?: {
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      errors: Array<{
+        id: string;
+        userId: string;
+        boardId: string;
+        command: string;
+        errorCode: string;
+        errorMessage: string;
+        operationCount: number;
+        turnsUsed: number;
+        inputTokens: number;
+        outputTokens: number;
+        costCents: number;
+        model: string;
+        traceId: string | null;
+        timestamp: string;
+      }>;
+      total: number;
+    }> {
+      const limit = options?.limit ?? 50;
+      const offset = options?.offset ?? 0;
 
-    // Count total matching errors
-    const total = await prisma.auditLog.count({
-      where: {
+      const whereClause = {
         action: 'ai.execute',
         metadata: {
           path: ['success'],
           equals: false,
         },
-      },
-    });
-
-    // Fetch error records
-    const records = await prisma.auditLog.findMany({
-      where: {
-        action: 'ai.execute',
-        metadata: {
-          path: ['success'],
-          equals: false,
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    });
-
-    const errors = records.map((record) => {
-      const meta = (record.metadata as Record<string, unknown>) ?? {};
-      return {
-        id: record.id,
-        userId: record.userId,
-        boardId: record.entityId,
-        command: (meta.command as string) ?? '',
-        errorCode: (meta.errorCode as string) ?? 'UNKNOWN',
-        errorMessage: (meta.errorMessage as string) ?? '',
-        operationCount: (meta.operationCount as number) ?? 0,
-        turnsUsed: (meta.turnsUsed as number) ?? 0,
-        inputTokens: (meta.inputTokens as number) ?? 0,
-        outputTokens: (meta.outputTokens as number) ?? 0,
-        costCents: (meta.costCents as number) ?? 0,
-        model: (meta.model as string) ?? '',
-        traceId: (meta.traceId as string) ?? null,
-        timestamp: record.createdAt.toISOString(),
       };
-    });
 
-    return { errors, total };
-  },
+      // Count total matching errors
+      const total = await repo.count(whereClause);
 
-  /**
-   * Purge all audit logs for a specific user (GDPR deletion).
-   */
-  async purgeForUser(userId: string): Promise<number> {
-    const result = await prisma.auditLog.deleteMany({
-      where: { userId },
-    });
+      // Fetch error records
+      const records = await repo.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      });
 
-    logger.info(`Purged ${result.count} audit logs for user ${userId}`);
-    return result.count;
-  },
-};
+      const errors = records.map((record) => {
+        const meta = (record.metadata as Record<string, unknown>) ?? {};
+        return {
+          id: record.id,
+          userId: record.userId,
+          boardId: record.entityId,
+          command: (meta.command as string) ?? '',
+          errorCode: (meta.errorCode as string) ?? 'UNKNOWN',
+          errorMessage: (meta.errorMessage as string) ?? '',
+          operationCount: (meta.operationCount as number) ?? 0,
+          turnsUsed: (meta.turnsUsed as number) ?? 0,
+          inputTokens: (meta.inputTokens as number) ?? 0,
+          outputTokens: (meta.outputTokens as number) ?? 0,
+          costCents: (meta.costCents as number) ?? 0,
+          model: (meta.model as string) ?? '',
+          traceId: (meta.traceId as string) ?? null,
+          timestamp: record.createdAt.toISOString(),
+        };
+      });
+
+      return { errors, total };
+    },
+
+    /**
+     * Purge all audit logs for a specific user (GDPR deletion).
+     */
+    async purgeForUser(userId: string): Promise<number> {
+      const result = await repo.deleteMany({ userId });
+
+      logger.info(`Purged ${result.count} audit logs for user ${userId}`);
+      return result.count;
+    },
+  };
+}
+
+/** Default singleton for production use — consumers import this. */
+export const auditService = createAuditService();
 
 // ============================================================
 // Helpers
