@@ -509,7 +509,9 @@ function setupLineRender(line: fabric.Line): void {
     }
 
     // Arrowhead helper — draws a filled triangle at the tip
-    const headLength = 12;
+    // Scale arrowhead with strand width so bold lines get bold arrowheads
+    const headLength = weight === 'bold' ? 18 : 12;
+    const headWidth = weight === 'bold' ? 0.5 : 0.4;
     const drawArrowhead = (tipX: number, tipY: number, fromX: number, fromY: number) => {
       const arrowAngle = Math.atan2(tipY - fromY, tipX - fromX);
       ctx.save();
@@ -517,8 +519,8 @@ function setupLineRender(line: fabric.Line): void {
       ctx.rotate(arrowAngle);
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(-headLength, -headLength * 0.4);
-      ctx.lineTo(-headLength, headLength * 0.4);
+      ctx.lineTo(-headLength, -headLength * headWidth);
+      ctx.lineTo(-headLength, headLength * headWidth);
       ctx.closePath();
       ctx.fillStyle = strokeColor;
       ctx.fill();

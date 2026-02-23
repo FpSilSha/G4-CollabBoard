@@ -89,7 +89,8 @@ export function createStickyNote(options: {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     selectable: false,
     evented: false,
-    splitByGrapheme: true, // Break long words that exceed box width
+    // Default Textbox wraps at word boundaries (spaces) — whole words
+    // move to the next line. splitByGrapheme was breaking mid-word.
   });
 
   // Build the group
