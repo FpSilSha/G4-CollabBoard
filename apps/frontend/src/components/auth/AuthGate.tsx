@@ -45,7 +45,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <div className={styles.container}>
         <div className={styles.content}>
-          <h1 className={styles.title}>G4 CollabBoard</h1>
+          <h1 className={styles.title}>NoteTime</h1>
           <div className={styles.spinner} />
           <p className={styles.subtitle}>Authenticating...</p>
         </div>
@@ -58,7 +58,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <div className={styles.container}>
         <div className={styles.content}>
-          <h1 className={styles.title}>G4 CollabBoard</h1>
+          <h1 className={styles.title}>NoteTime</h1>
           <p className={styles.errorMessage}>Authentication failed</p>
           <p className={styles.errorDetail}>{error.message}</p>
           <button
@@ -77,7 +77,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <div className={styles.container}>
         <div className={styles.content}>
-          <h1 className={styles.title}>G4 CollabBoard</h1>
+          <h1 className={styles.title}>NoteTime</h1>
           <p className={styles.subtitle}>Real-time collaborative whiteboard</p>
           <button
             className={styles.loginButton}

@@ -5,6 +5,16 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* Decorative background shapes — non-interactive, behind content */
+.decoLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
 }
 
 /* ============================
@@ -17,6 +27,8 @@
   justify-content: space-between;
   padding: 16px 32px;
   border-bottom: 1px solid var(--sidebar-border);
+  position: relative;
+  z-index: 1;
 }
 
 .logo {
@@ -86,6 +98,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0; /* allow flex child to shrink below content size */
+  position: relative;
+  z-index: 1;
 }
 
 .enterpriseBanner {
