@@ -31,6 +31,9 @@ setInterval(() => {
  */
 export function rateLimit(action: string, limit: number, windowMs: number) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Skip rate limiting during E2E tests to avoid 429s across many sequential tests
+    if (process.env.E2E_TEST_AUTH === 'true') { next(); return; }
+
     const userId = (req as AuthenticatedRequest).user?.sub || req.ip || 'unknown';
     const bucket = Math.floor(Date.now() / windowMs);
     const key = `ratelimit:${action}:${userId}:${bucket}`;

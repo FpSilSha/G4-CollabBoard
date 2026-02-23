@@ -327,6 +327,11 @@ export function AuthGate({ children }: AuthGateProps) {
     });
   };
 
+  // State 0: E2E test mode — bypass Auth0 entirely
+  if (import.meta.env.VITE_TEST_MODE === 'true') {
+    return <>{children}</>;
+  }
+
   // State 1: Demo mode active — bypass Auth0 entirely
   if (isDemoMode) {
     return <>{children}</>;

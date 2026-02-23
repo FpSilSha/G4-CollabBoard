@@ -22,14 +22,27 @@ export function createUserService(repo: UserRepository = prismaUserRepository) {
         const displayName = name || email?.split('@')[0] || auth0Id.split('|').pop() || 'User';
         const displayEmail = email || `${auth0Id}@clients.auth0.local`;
 
-        user = await repo.create({
-          id: auth0Id,
-          email: displayEmail,
-          name: displayName,
-          avatar: generateAvatar(displayName),
-          color: generateColorFromUserId(auth0Id),
-          subscriptionTier: 'ENTERPRISE', // All users get Enterprise until Stripe is integrated
-        });
+        try {
+          user = await repo.create({
+            id: auth0Id,
+            email: displayEmail,
+            name: displayName,
+            avatar: generateAvatar(displayName),
+            color: generateColorFromUserId(auth0Id),
+            subscriptionTier: 'ENTERPRISE', // All users get Enterprise until Stripe is integrated
+          });
+        } catch (createErr: any) {
+          // Handle race condition: concurrent requests can both get null from
+          // findById then both try to create. Catch the unique constraint
+          // violation (Prisma P2002) and retry the lookup.
+          if (createErr?.code === 'P2002') {
+            user = await repo.findById(auth0Id);
+            if (!user && email) user = await repo.findByEmail(email);
+            if (!user) throw createErr;
+          } else {
+            throw createErr;
+          }
+        }
       } else {
         // Recompute color on every login — ensures hash function changes
         // propagate immediately (e.g., FNV-1a migration from old Java hash).

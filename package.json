@@ -12,9 +12,11 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint apps/backend/src apps/frontend/src",
-    "lint:fix": "eslint apps/backend/src apps/frontend/src --fix"
+    "lint:fix": "eslint apps/backend/src apps/frontend/src --fix",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
     "eslint": "^9.39.3",

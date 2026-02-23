@@ -39,10 +39,12 @@ export function App() {
   // In demo mode, the hook returns a null socketRef and no-ops.
   const { socketRef, joinBoard, leaveBoard } = useSocket();
 
+  const isTestMode = import.meta.env.VITE_TEST_MODE === 'true';
+
   // SECONDARY auth check — defense in depth
   // AuthGate is the primary boundary; this catches edge cases.
-  // Demo mode bypasses this check (AuthGate already validated).
-  if (!isLoading && !isAuthenticated && !isDemoMode) {
+  // Demo mode and test mode bypass this check.
+  if (!isLoading && !isAuthenticated && !isDemoMode && !isTestMode) {
     console.error('SECURITY: App rendered without authentication');
     return (
       <div className={styles.loadingScreen}>
@@ -54,7 +56,7 @@ export function App() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading && !isDemoMode && !isTestMode) {
     return (
       <div className={styles.loadingScreen}>
         <div className={styles.loadingContent}>

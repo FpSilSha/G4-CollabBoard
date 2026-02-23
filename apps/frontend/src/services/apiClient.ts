@@ -152,8 +152,14 @@ export function useApiClient(): ApiClient {
   const isDemoMode = useDemoStore((s) => s.isDemoMode);
   const demoBoardId = useDemoStore((s) => s.demoBoardId);
   // Always call useAuth0() unconditionally (React hook rules).
-  // In demo mode we simply don't use its return value.
+  // In demo mode and test mode we simply don't use its return value.
   const { getAccessTokenSilently } = useAuth0();
+
+  // E2E test mode: use a static test token against the real backend
+  if (import.meta.env.VITE_TEST_MODE === 'true') {
+    const testToken = localStorage.getItem('E2E_TEST_TOKEN') || 'e2e-user-1';
+    return createApiClient(() => Promise.resolve(testToken));
+  }
 
   if (isDemoMode) {
     return createDemoApiClient(demoBoardId);

@@ -64,6 +64,29 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
       return next(new Error('Authentication token required'));
     }
 
+    // E2E test bypass: accept any token as a synthetic user identity.
+    // Only active when E2E_TEST_AUTH=true — never in development or production.
+    // Separate from NODE_ENV=test which Vitest also sets for unit tests.
+    if (process.env.E2E_TEST_AUTH === 'true') {
+      try {
+        const user = await userService.findOrCreateUser(
+          `test|${token}`,
+          `${token}@test.local`,
+          `Test User ${token}`
+        );
+        socket.data.userId = user.id;
+        socket.data.userName = user.name;
+        socket.data.avatar = user.avatar;
+        socket.data.color = user.color;
+        await presenceService.setSession(socket.id, user.id);
+        logger.info(`WebSocket test auth: ${user.id} (${user.name})`);
+        return next();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Test auth failed';
+        return next(new Error(message));
+      }
+    }
+
     try {
       const decoded = await verifyAuth0Token(token);
 
