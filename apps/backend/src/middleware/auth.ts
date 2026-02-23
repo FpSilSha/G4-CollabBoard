@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { auditService, AuditAction, getClientIp } from '../services/auditService';
 import { verifyAuth0Token } from '../utils/auth0';
+import { userService } from '../services/userService';
 
 export interface AuthenticatedRequest extends Request {
   user: {
@@ -27,6 +28,28 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 
   const token = authHeader.split(' ')[1];
+
+  // E2E test bypass: accept any Bearer token as a synthetic user identity.
+  // Only active when E2E_TEST_AUTH=true — never in development or production.
+  // Separate from NODE_ENV=test which Vitest also sets for unit tests.
+  if (process.env.E2E_TEST_AUTH === 'true') {
+    const sub = `test|${token}`;
+    const email = `${token}@test.local`;
+    const name = `Test User ${token}`;
+    // Ensure user exists in DB (board creation etc. require it)
+    userService.findOrCreateUser(sub, email, name).then((user) => {
+      (req as AuthenticatedRequest).user = {
+        sub: user.id,
+        email,
+        name: user.name,
+      };
+      next();
+    }).catch((err: Error) => {
+      logger.warn('E2E test auth user creation failed:', err.message);
+      res.status(500).json({ error: 'Test auth failed' });
+    });
+    return;
+  }
 
   verifyAuth0Token(token).then((decoded) => {
     // Runtime validation: ensure decoded payload has a non-empty sub claim

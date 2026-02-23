@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import type { Socket } from 'socket.io-client';
 import { useCanvas } from '../../hooks/useCanvas';
 import { useObjectCreation } from '../../hooks/useObjectCreation';
@@ -34,6 +34,32 @@ export function Canvas({ socketRef }: CanvasProps) {
 
   // Bridge Fabric.js events <-> WebSocket events
   useCanvasSync(socketRef, fabricRef);
+
+  // --- E2E test bridge: expose Fabric.js canvas instance to Playwright ---
+  // fabricRef.current is set asynchronously by useCanvas after mount.
+  // A ref change doesn't trigger re-renders, so we poll until it's ready.
+  useEffect(() => {
+    if (import.meta.env.VITE_TEST_MODE !== 'true') return;
+
+    // If already available, set it immediately
+    if (fabricRef.current) {
+      (window as any).__TEST_FABRIC = fabricRef.current;
+      return () => { delete (window as any).__TEST_FABRIC; };
+    }
+
+    // Poll until the Fabric canvas is initialized
+    const interval = setInterval(() => {
+      if (fabricRef.current) {
+        (window as any).__TEST_FABRIC = fabricRef.current;
+        clearInterval(interval);
+      }
+    }, 50);
+
+    return () => {
+      clearInterval(interval);
+      delete (window as any).__TEST_FABRIC;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Tool-specific cursor ---
   // When the dropper tool is active, show a dropper cursor on the canvas.

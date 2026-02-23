@@ -61,9 +61,51 @@ export function useSocket() {
     setLocalUser('demo-user', 'Demo User', '#6366f1');
   }, [isDemoMode, setConnectionStatus, setLocalUser]);
 
-  // Connect when authenticated (skip in demo mode)
+  // E2E test mode: connect with a static test token (no Auth0)
+  const isTestMode = import.meta.env.VITE_TEST_MODE === 'true';
   useEffect(() => {
-    if (isDemoMode || !isAuthenticated) return;
+    if (!isTestMode) return;
+    if (socketRef.current?.connected || connectingRef.current) return;
+    connectingRef.current = true;
+
+    const testToken = localStorage.getItem('E2E_TEST_TOKEN') || 'e2e-user-1';
+    const socket = io(WS_URL, {
+      auth: { token: testToken, name: 'Test User', email: 'test@test.local' },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+    socketRef.current = socket;
+    setSocketRef(socket);
+    setConnectionStatus('connecting');
+
+    socket.on('connect', () => {
+      setConnectionStatus('connected');
+      connectingRef.current = false;
+      startHeartbeat(socket);
+      const boardId = useBoardStore.getState().boardId;
+      const isOnBoardRoute = window.location.pathname.startsWith('/board/');
+      if (boardId && isOnBoardRoute) {
+        socket.emit(WebSocketEvent.BOARD_JOIN, { boardId });
+      }
+    });
+    socket.on(WebSocketEvent.AUTH_SUCCESS, (payload: AuthSuccessPayload) => {
+      setLocalUser(payload.userId, payload.name, payload.color);
+    });
+    socket.on('disconnect', () => { setConnectionStatus('disconnected'); stopHeartbeat(); });
+    socket.on('connect_error', (err) => {
+      setConnectionStatus('disconnected');
+      connectingRef.current = false;
+      console.error('Socket connection error:', err.message);
+    });
+    return () => {};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMode]);
+
+  // Connect when authenticated (skip in demo mode and test mode)
+  useEffect(() => {
+    if (isDemoMode || isTestMode || !isAuthenticated) return;
 
     // Guard: if we already have a live socket, don't create another
     if (socketRef.current?.connected || connectingRef.current) {
