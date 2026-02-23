@@ -638,7 +638,7 @@ async function executeChangeColor(
 async function executeDeleteObject(
   input: Record<string, unknown>,
   boardId: string,
-  userId: string
+  _userId: string
 ): Promise<ToolExecutionResult> {
   const objectId = input.objectId as string;
 

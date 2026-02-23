@@ -64,7 +64,7 @@ export function rateLimit(action: string, limit: number, windowMs: number) {
       }
 
       next();
-    } catch (err) {
+    } catch {
       // Redis is down — fall back to in-memory rate limiting
       logger.warn(`Redis rate-limit unavailable, using in-memory fallback for ${action}`);
 

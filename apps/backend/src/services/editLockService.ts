@@ -1,7 +1,6 @@
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { scanKeys } from '../utils/redisScan';
 import { EDIT_LOCK_CONFIG } from 'shared';
-import { logger } from '../utils/logger';
 
 /**
  * Multi-user Redis-backed edit lock for sticky note text editing.

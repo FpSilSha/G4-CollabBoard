@@ -159,7 +159,7 @@ function setupSelectionStyle(): void {
   const mtrControl = fabric.Object.prototype.controls.mtr;
   mtrControl.sizeX = 24;
   mtrControl.sizeY = 24;
-  mtrControl.render = function (ctx, left, top, _styleOverride, fabricObj) {
+  mtrControl.render = function (ctx, left, top, _styleOverride, _fabricObj) {
     const radius = 11;
     ctx.save();
     ctx.translate(left, top);

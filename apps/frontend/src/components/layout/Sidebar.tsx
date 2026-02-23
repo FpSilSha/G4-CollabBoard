@@ -1,5 +1,5 @@
 import { fabric } from 'fabric';
-import { useUIStore, Tool, type ShapeTool } from '../../stores/uiStore';
+import { useUIStore, Tool } from '../../stores/uiStore';
 import { useBoardStore } from '../../stores/boardStore';
 import { ColorPicker } from '../canvas/ColorPicker';
 import { ToolOptionsPanel } from '../toolbar/ToolOptionsPanel';
@@ -489,21 +489,6 @@ function RectangleIcon() {
   );
 }
 
-function CircleIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <circle cx="12" cy="12" r="9" />
-    </svg>
-  );
-}
-
 function TextIcon() {
   return (
     <svg
@@ -533,36 +518,6 @@ function FrameIcon() {
     >
       <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 2" />
       <text x="6" y="10" fontSize="6" fill="currentColor" stroke="none">F</text>
-    </svg>
-  );
-}
-
-/** Thick directional arrow shape (polygon) */
-function ArrowShapeIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      stroke="none"
-    >
-      <polygon points="2,10 14,10 14,5 22,12 14,19 14,14 2,14" />
-    </svg>
-  );
-}
-
-/** Five-point star */
-function StarIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      stroke="none"
-    >
-      <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
     </svg>
   );
 }

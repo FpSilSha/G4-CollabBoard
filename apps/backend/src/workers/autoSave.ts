@@ -1,4 +1,3 @@
-import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { scanKeys } from '../utils/redisScan';
 import { boardService } from '../services/boardService';
 import { versionService } from '../services/versionService';

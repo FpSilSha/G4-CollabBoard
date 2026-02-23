@@ -383,7 +383,6 @@ export function useObjectCreation(
     let startX = 0;
     let startY = 0;
     let startSnapId = '';   // Object ID snapped at start point
-    let endSnapId = '';     // Object ID snapped at end point
 
     /**
      * Show/hide a snap indicator circle at the snap target center.
@@ -439,7 +438,6 @@ export function useObjectCreation(
       }
 
       isDragging = true;
-      endSnapId = '';
 
       // Create a dashed preview line
       previewLine = new fabric.Line([startX, startY, startX, startY], {
@@ -466,11 +464,9 @@ export function useObjectCreation(
       if (snap) {
         // Snap the preview line's end to the target center
         previewLine.set({ x2: snap.center.x, y2: snap.center.y });
-        endSnapId = snap.objectId;
         showSnapIndicator(snap.center);
       } else {
         previewLine.set({ x2: pointer.x, y2: pointer.y });
-        endSnapId = '';
         showSnapIndicator(null);
       }
 

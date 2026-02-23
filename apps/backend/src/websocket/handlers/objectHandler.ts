@@ -56,7 +56,7 @@ export function registerObjectHandlers(io: Server, socket: AuthenticatedSocket):
       return;
     }
 
-    const { boardId, object, timestamp } = parsed.data;
+    const { boardId, object } = parsed.data;
     const userId = socket.data.userId;
 
     // Verify user is in this board room

@@ -319,8 +319,6 @@ export function useCanvasSync(
     // INBOUND: socket.on -> update canvas
     // =========================================================
 
-    const localUserId = usePresenceStore.getState().localUserId;
-
     // --- board:state (initial load + reconnect) ---
     // Per .clauderules: reconnect = full re-render, do NOT merge with local state.
     // Exception: if the local user is editing a sticky (textarea open),

@@ -3,7 +3,6 @@ import { Server as HttpServer } from 'http';
 import { WEBSOCKET_CONFIG, WebSocketEvent } from 'shared';
 import { presenceService } from '../services/presenceService';
 import { userService } from '../services/userService';
-import { generateColorFromUserId, generateAvatar } from '../utils/helpers';
 import { logger } from '../utils/logger';
 import { registerConnectionHandlers } from './handlers/connectionHandler';
 import { registerCursorHandlers } from './handlers/cursorHandler';

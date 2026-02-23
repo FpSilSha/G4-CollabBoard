@@ -2,7 +2,6 @@ import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
 import { scanKeys } from '../utils/redisScan';
 import { WEBSOCKET_CONFIG } from 'shared';
 import type { BoardUserInfo } from 'shared';
-import { logger } from '../utils/logger';
 
 const PRESENCE_TTL = WEBSOCKET_CONFIG.PRESENCE_TTL; // 30 seconds
 
