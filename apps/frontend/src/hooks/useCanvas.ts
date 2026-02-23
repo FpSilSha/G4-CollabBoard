@@ -89,6 +89,9 @@ export function useCanvas(
     // --- Rotation mode: exit on deselect/selection change ---
     const cleanupRotationMode = setupRotationModeListeners(canvas);
 
+    // --- Minimum size constraint: prevent shapes from being scaled too small ---
+    const cleanupMinSize = setupMinimumSizeConstraint(canvas);
+
     // --- Resize observer ---
     // Debounced so sidebar collapse/expand CSS transitions (250ms) don't
     // cause rapid re-renders that flash objects. Only the final size matters.
@@ -118,6 +121,7 @@ export function useCanvas(
       cleanupFrameControls();
       cleanupSelectionTracking();
       cleanupRotationMode();
+      cleanupMinSize();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       canvas.dispose();
@@ -608,6 +612,46 @@ function setupSelectionGlow(canvas: fabric.Canvas): () => void {
     canvas.off('selection:updated', onSelectionUpdated);
     canvas.off('selection:cleared', onSelectionCleared);
     canvas.off('object:modified', onObjectModified);
+  };
+}
+
+// ============================================================
+// Minimum Size Constraint
+// ============================================================
+
+/**
+ * Prevents shapes from being scaled so small that their stroke/border
+ * overtakes the fill, making them appear black. Enforces a minimum
+ * rendered dimension of 10px in each axis during live scaling.
+ *
+ * This runs on `object:scaling` (live during drag) so the user sees
+ * the constraint in real-time. Registered here in useCanvas so it
+ * works in both authenticated and demo mode (useCanvasSync requires
+ * a socket connection, which demo mode doesn't have).
+ */
+function setupMinimumSizeConstraint(canvas: fabric.Canvas): () => void {
+  const MIN_RENDERED_DIM = 10;
+
+  const handleScaling = (opt: fabric.IEvent) => {
+    const target = opt.target;
+    if (!target) return;
+
+    // Skip connectors and lines — they don't have fill/stroke overlap issues
+    const objType = target.data?.type;
+    if (objType === 'connector' || objType === 'line') return;
+
+    const baseW = target.width ?? 1;
+    const baseH = target.height ?? 1;
+    const minScaleX = MIN_RENDERED_DIM / baseW;
+    const minScaleY = MIN_RENDERED_DIM / baseH;
+
+    if ((target.scaleX ?? 1) < minScaleX) target.set('scaleX', minScaleX);
+    if ((target.scaleY ?? 1) < minScaleY) target.set('scaleY', minScaleY);
+  };
+
+  canvas.on('object:scaling', handleScaling);
+  return () => {
+    canvas.off('object:scaling', handleScaling);
   };
 }
 
