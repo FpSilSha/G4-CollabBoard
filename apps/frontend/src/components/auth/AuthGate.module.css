@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--canvas-bg);
+  background: #D8DCE2;
   position: relative;
   overflow: hidden;
 }
@@ -57,6 +57,14 @@
   }
 }
 
+/* Border pattern layer — stationary shapes along canvas edges */
+.borderLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* Floating shapes layer — sits above dots, below card */
 .shapesLayer {
   position: absolute;
@@ -65,14 +73,18 @@
   overflow: hidden;
 }
 
-/* Individual floating shape — animated from bottom-left to top-right */
+/* Individual floating shape — two diagonal flows */
 .floatingShape {
   position: absolute;
-  animation: floatAcross var(--duration) linear var(--delay) infinite;
   opacity: 0;
 }
 
-@keyframes floatAcross {
+/* Flow A: bottom-left → top-right */
+.floatBL {
+  animation: floatBLtoTR var(--duration) linear var(--delay) infinite;
+}
+
+@keyframes floatBLtoTR {
   0% {
     opacity: 0;
     transform: translate(0, 0) rotate(var(--start-rotation));
@@ -85,10 +97,34 @@
   }
   100% {
     opacity: 0;
-    /* Travel diagonally from bottom-left to top-right */
     transform: translate(
       calc(85vw + 100px),
       calc(-80vh - 100px)
+    ) rotate(calc(var(--start-rotation) + 45deg));
+  }
+}
+
+/* Flow B: top-left → bottom-right */
+.floatTL {
+  animation: floatTLtoBR var(--duration) linear var(--delay) infinite;
+}
+
+@keyframes floatTLtoBR {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(var(--start-rotation));
+  }
+  5% {
+    opacity: var(--shape-opacity);
+  }
+  90% {
+    opacity: var(--shape-opacity);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+      calc(85vw + 100px),
+      calc(80vh + 100px)
     ) rotate(calc(var(--start-rotation) + 45deg));
   }
 }
