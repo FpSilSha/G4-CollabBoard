@@ -139,6 +139,7 @@ export const boardController = {
    */
   async saveThumbnail(req: Request, res: Response, next: NextFunction) {
     try {
+      const { sub } = (req as AuthenticatedRequest).user;
       const { id } = req.params;
       const { thumbnail, version } = req.body;
 
@@ -155,6 +156,7 @@ export const boardController = {
 
       const result = await boardService.saveThumbnail(
         id,
+        sub,
         thumbnail,
         typeof version === 'number' ? version : undefined,
       );

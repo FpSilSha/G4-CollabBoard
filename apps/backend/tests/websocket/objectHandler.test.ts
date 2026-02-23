@@ -11,10 +11,21 @@ vi.mock('../../src/services/boardService', () => ({
     removeObjectFromRedis: vi.fn(),
     getOrLoadBoardState: vi.fn(),
     saveBoardStateToRedis: vi.fn(),
+    loadBoardToRedis: vi.fn(),
     getBoard: vi.fn(),
     flushRedisToPostgres: vi.fn(),
     removeBoardFromRedis: vi.fn(),
   },
+  boardStateKey: vi.fn((boardId: string) => `board:${boardId}:state`),
+}));
+
+vi.mock('../../src/utils/redisAtomicOps', () => ({
+  atomicAddObject: vi.fn(),
+  atomicUpdateObject: vi.fn(),
+  atomicRemoveObject: vi.fn(),
+  atomicBatchAddObjects: vi.fn(),
+  atomicBatchUpdateObjects: vi.fn(),
+  atomicBatchRemoveObjects: vi.fn(),
 }));
 
 vi.mock('../../src/services/editLockService', () => ({
@@ -48,6 +59,11 @@ import { registerObjectHandlers } from '../../src/websocket/handlers/objectHandl
 import { boardService } from '../../src/services/boardService';
 import { editLockService } from '../../src/services/editLockService';
 import { trackedEmit } from '../../src/websocket/wsMetrics';
+import {
+  atomicBatchUpdateObjects,
+  atomicBatchAddObjects,
+  atomicBatchRemoveObjects,
+} from '../../src/utils/redisAtomicOps';
 import { AppError } from '../../src/middleware/errorHandler';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -413,10 +429,7 @@ describe('objectHandler', () => {
       vi.mocked(socket.to).mockReturnValue(toEmit as any);
       const getHandler = setupHandler(socket);
 
-      const obj = makeBoardObject({ id: OBJECT_ID });
-      const cachedState = makeCachedBoardState({ objects: [obj] });
-      vi.mocked(boardService.getOrLoadBoardState).mockResolvedValue(cachedState as any);
-      vi.mocked(boardService.saveBoardStateToRedis).mockResolvedValue(undefined as any);
+      vi.mocked(atomicBatchUpdateObjects).mockResolvedValue(1);
 
       await getHandler(WebSocketEvent.OBJECTS_BATCH_UPDATE)({
         boardId: BOARD_ID,
@@ -424,10 +437,9 @@ describe('objectHandler', () => {
         timestamp: Date.now(),
       });
 
-      expect(boardService.getOrLoadBoardState).toHaveBeenCalledWith(BOARD_ID);
-      expect(boardService.saveBoardStateToRedis).toHaveBeenCalledWith(
-        BOARD_ID,
-        expect.objectContaining({ objects: expect.any(Array) })
+      expect(atomicBatchUpdateObjects).toHaveBeenCalledWith(
+        `board:${BOARD_ID}:state`,
+        expect.any(String)
       );
       expect(trackedEmit).toHaveBeenCalledWith(
         toEmit,
@@ -452,22 +464,25 @@ describe('objectHandler', () => {
       );
     });
 
-    it('skips objects not found in board state without error', async () => {
+    it('retries after loading from Postgres when atomicBatchUpdateObjects returns -2', async () => {
       const socket = makeJoinedSocket();
+      const toEmit = { emit: vi.fn() };
+      vi.mocked(socket.to).mockReturnValue(toEmit as any);
       const getHandler = setupHandler(socket);
 
-      const cachedState = makeCachedBoardState({ objects: [] });
-      vi.mocked(boardService.getOrLoadBoardState).mockResolvedValue(cachedState as any);
-      vi.mocked(boardService.saveBoardStateToRedis).mockResolvedValue(undefined as any);
+      vi.mocked(atomicBatchUpdateObjects)
+        .mockResolvedValueOnce(-2)  // no state
+        .mockResolvedValueOnce(0);  // retry succeeds
+      vi.mocked(boardService.loadBoardToRedis).mockResolvedValue(undefined as any);
 
-      // Move a non-existent object — should not throw
       await getHandler(WebSocketEvent.OBJECTS_BATCH_UPDATE)({
         boardId: BOARD_ID,
         moves: [{ objectId: 'nonexistent', x: 100, y: 200 }],
         timestamp: Date.now(),
       });
 
-      expect(boardService.saveBoardStateToRedis).toHaveBeenCalled();
+      expect(atomicBatchUpdateObjects).toHaveBeenCalledTimes(2);
+      expect(boardService.loadBoardToRedis).toHaveBeenCalledWith(BOARD_ID);
       expect(socket.emit).not.toHaveBeenCalledWith(
         WebSocketEvent.BOARD_ERROR,
         expect.anything()
@@ -485,9 +500,7 @@ describe('objectHandler', () => {
       vi.mocked(io.to).mockReturnValue(toEmit as any);
       const getHandler = setupHandler(socket, io);
 
-      const cachedState = makeCachedBoardState({ objects: [] });
-      vi.mocked(boardService.getOrLoadBoardState).mockResolvedValue(cachedState as any);
-      vi.mocked(boardService.saveBoardStateToRedis).mockResolvedValue(undefined as any);
+      vi.mocked(atomicBatchAddObjects).mockResolvedValue(1);
 
       const newObjId = '33333333-3333-3333-3333-333333333333';
       await getHandler(WebSocketEvent.OBJECTS_BATCH_CREATE)({
@@ -496,7 +509,11 @@ describe('objectHandler', () => {
         timestamp: Date.now(),
       });
 
-      expect(boardService.saveBoardStateToRedis).toHaveBeenCalled();
+      expect(atomicBatchAddObjects).toHaveBeenCalledWith(
+        `board:${BOARD_ID}:state`,
+        expect.any(String),
+        expect.any(Number)
+      );
       expect(trackedEmit).toHaveBeenCalledWith(
         toEmit,
         WebSocketEvent.OBJECTS_BATCH_CREATED,
@@ -548,11 +565,7 @@ describe('objectHandler', () => {
       vi.mocked(socket.to).mockReturnValue(toEmit as any);
       const getHandler = setupHandler(socket);
 
-      const obj1 = makeBoardObject({ id: 'aaa-111' });
-      const obj2 = makeBoardObject({ id: 'bbb-222' });
-      const cachedState = makeCachedBoardState({ objects: [obj1, obj2] });
-      vi.mocked(boardService.getOrLoadBoardState).mockResolvedValue(cachedState as any);
-      vi.mocked(boardService.saveBoardStateToRedis).mockResolvedValue(undefined as any);
+      vi.mocked(atomicBatchRemoveObjects).mockResolvedValue(1);
 
       await getHandler(WebSocketEvent.OBJECTS_BATCH_DELETE)({
         boardId: BOARD_ID,
@@ -560,11 +573,10 @@ describe('objectHandler', () => {
         timestamp: Date.now(),
       });
 
-      // Only obj2 should remain
-      const saveCall = vi.mocked(boardService.saveBoardStateToRedis).mock.calls[0];
-      const savedState = saveCall[1] as ReturnType<typeof makeCachedBoardState>;
-      expect(savedState.objects).toHaveLength(1);
-      expect((savedState.objects[0] as { id: string }).id).toBe('bbb-222');
+      expect(atomicBatchRemoveObjects).toHaveBeenCalledWith(
+        `board:${BOARD_ID}:state`,
+        JSON.stringify(['aaa-111'])
+      );
 
       expect(trackedEmit).toHaveBeenCalledWith(
         toEmit,

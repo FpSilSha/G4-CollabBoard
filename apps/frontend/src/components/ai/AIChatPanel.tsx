@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
 import type { AICommandResponse, AIStatusResponse, AIOperation } from 'shared';
+import { useApiClient, ApiError } from '../../services/apiClient';
 import { useAIStore, nextMessageId } from '../../stores/aiStore';
 import { useBoardStore } from '../../stores/boardStore';
+import { useDemoStore } from '../../stores/demoStore';
 import styles from './AIChatPanel.module.css';
 
 // ============================================================
@@ -47,9 +48,10 @@ export function AIChatPanel() {
   const handleResponse = useAIStore((s) => s.handleResponse);
   const setStatus = useAIStore((s) => s.setStatus);
   const setOpen = useAIStore((s) => s.setOpen);
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
 
   const boardId = useBoardStore((s) => s.boardId);
-  const { getAccessTokenSilently } = useAuth0();
+  const api = useApiClient();
 
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -75,28 +77,15 @@ export function AIChatPanel() {
 
     async function fetchStatus() {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const token = await getAccessTokenSilently({
-          authorizationParams: {
-            audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-          },
-        });
-
-        const res = await fetch(`${apiUrl}/ai/status`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (res.ok) {
-          const data: AIStatusResponse = await res.json();
-          setStatus(data);
-        }
+        const data = await api.get<AIStatusResponse>('/ai/status');
+        setStatus(data);
       } catch {
         // Non-fatal — keep optimistic defaults
       }
     }
 
     fetchStatus();
-  }, [isOpen, getAccessTokenSilently, setStatus]);
+  }, [isOpen, api, setStatus]);
 
   // Send command
   const handleSend = useCallback(async () => {
@@ -124,44 +113,26 @@ export function AIChatPanel() {
     setProcessing(true);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const token = await getAccessTokenSilently({
-        authorizationParams: {
-          audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-        },
-      });
-
       const viewport = getViewportBounds();
 
-      const res = await fetch(`${apiUrl}/ai/execute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          boardId,
-          command,
-          viewport,
-        }),
+      const data = await api.post<AICommandResponse>('/ai/execute', {
+        boardId,
+        command,
+        viewport,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        const errorMsg = errorData?.error?.message || errorData?.message || `Server error (${res.status})`;
-        useAIStore.getState().updateLastAssistantMessage(errorMsg);
-        setProcessing(false);
-        return;
-      }
-
-      const data: AICommandResponse = await res.json();
       handleResponse(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to reach the server';
-      useAIStore.getState().updateLastAssistantMessage(message);
+      if (err instanceof ApiError) {
+        const errorData = err.body as { error?: { message?: string }; message?: string } | null;
+        const errorMsg = errorData?.error?.message || errorData?.message || `Server error (${err.status})`;
+        useAIStore.getState().updateLastAssistantMessage(errorMsg);
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to reach the server';
+        useAIStore.getState().updateLastAssistantMessage(message);
+      }
       setProcessing(false);
     }
-  }, [inputValue, boardId, isProcessing, addMessage, setProcessing, handleResponse, getAccessTokenSilently]);
+  }, [inputValue, boardId, isProcessing, addMessage, setProcessing, handleResponse, api]);
 
   // Enter to send (Shift+Enter for newline)
   const handleKeyDown = useCallback(
@@ -175,6 +146,37 @@ export function AIChatPanel() {
   );
 
   if (!isOpen) return null;
+
+  // Demo mode: show locked state — AI requires authentication
+  if (isDemoMode) {
+    return (
+      <div className={styles.panel}>
+        <div className={styles.header}>
+          <span className={styles.headerTitle}>Tacky - AI Assistant</span>
+          <button
+            className={styles.closeButton}
+            onClick={() => setOpen(false)}
+            title="Close"
+            aria-label="Close AI chat panel"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div className={styles.messages}>
+          <div className={styles.disabledBanner}>
+            <div className={styles.emptyTitle}>Authentication Needed for AI</div>
+            <div className={styles.emptyHint}>
+              Sign up for free to unlock Tacky, your AI whiteboard assistant!
+              Tacky can create sticky notes, shapes, frames, and much more.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.panel}>

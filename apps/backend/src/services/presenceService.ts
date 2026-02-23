@@ -1,7 +1,7 @@
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
+import { scanKeys } from '../utils/redisScan';
 import { WEBSOCKET_CONFIG } from 'shared';
 import type { BoardUserInfo } from 'shared';
-import { logger } from '../utils/logger';
 
 const PRESENCE_TTL = WEBSOCKET_CONFIG.PRESENCE_TTL; // 30 seconds
 
@@ -56,7 +56,7 @@ export const presenceService = {
    */
   async getBoardUsers(boardId: string): Promise<BoardUserInfo[]> {
     const pattern = `presence:${boardId}:*`;
-    const keys = await redis.keys(pattern);
+    const keys = await scanKeys(pattern);
 
     if (keys.length === 0) return [];
 
@@ -90,7 +90,7 @@ export const presenceService = {
    */
   async removeUserFromAllBoards(userId: string): Promise<string[]> {
     const pattern = `presence:*:${userId}`;
-    const keys = await redis.keys(pattern);
+    const keys = await scanKeys(pattern);
     const boardIds: string[] = [];
 
     if (keys.length > 0) {

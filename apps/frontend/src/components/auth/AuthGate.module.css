@@ -80,3 +80,44 @@
   max-width: 360px;
   word-break: break-word;
 }
+
+/* ── Demo mode ── */
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 220px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-primary);
+}
+
+.demoButton {
+  padding: 12px 32px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--focus-blue);
+  background: transparent;
+  border: 2px solid var(--focus-blue);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.demoButton:hover {
+  background: var(--focus-blue);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.demoButton:active {
+  transform: translateY(0);
+}

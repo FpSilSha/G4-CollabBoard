@@ -1,7 +1,9 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './swagger';
 import {
   CreateBoardSchema,
   UpdateBoardSchema,
@@ -60,9 +62,17 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// --- Metrics Endpoint (no auth — standard for metrics scraping) ---
-// Returns JSON for programmatic consumers, HTML dashboard for browsers.
-app.get('/metrics', async (req, res) => {
+// --- Metrics Endpoint ---
+// When METRICS_TOKEN is set, requires X-Metrics-Token header.
+// When unset (local dev), endpoint stays open.
+app.get('/metrics', (req, res, next) => {
+  const expectedToken = process.env.METRICS_TOKEN;
+  if (expectedToken && req.headers['x-metrics-token'] !== expectedToken) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  next();
+}, async (req, res) => {
   try {
     const snapshot = await metricsService.getAll();
 
@@ -94,6 +104,32 @@ app.get('/metrics', async (req, res) => {
     res.status(500).json({ error: 'Failed to retrieve metrics' });
   }
 });
+
+// --- API Documentation ---
+// When METRICS_TOKEN is set, requires X-Metrics-Token header (same guard as /metrics).
+// In local dev (no token), both endpoints are open.
+app.get('/api-docs/swagger.json', (req, res) => {
+  const expectedToken = process.env.METRICS_TOKEN;
+  if (expectedToken && req.headers['x-metrics-token'] !== expectedToken) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  res.json(swaggerSpec);
+});
+
+app.use(
+  '/api-docs',
+  (req: Request, res: Response, next: NextFunction) => {
+    const expectedToken = process.env.METRICS_TOKEN;
+    if (expectedToken && req.headers['x-metrics-token'] !== expectedToken) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+    next();
+  },
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec),
+);
 
 // --- Auth Routes ---
 app.get('/auth/me', requireAuth, userController.getMe);

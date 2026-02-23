@@ -3,6 +3,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { useFlagStore } from '../../stores/flagStore';
 import { useBoardStore } from '../../stores/boardStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useDemoStore } from '../../stores/demoStore';
 import { getSocketRef } from '../../stores/socketRef';
 import { teleportTo, FLAG_COLORS } from '../../utils/fabricHelpers';
 import { WebSocketEvent } from 'shared';
@@ -29,8 +30,11 @@ export function TeleportFlagList() {
   const canvas = useBoardStore((s) => s.canvas);
   const updateFlag = useFlagStore((s) => s.updateFlag);
   const deleteFlag = useFlagStore((s) => s.deleteFlag);
+  const updateFlagLocal = useFlagStore((s) => s.updateFlagLocal);
+  const deleteFlagLocal = useFlagStore((s) => s.deleteFlagLocal);
   const activeTool = useUIStore((s) => s.activeTool);
   const setActiveTool = useUIStore((s) => s.setActiveTool);
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
 
   const [colorPickerId, setColorPickerId] = useState<string | null>(null);
 
@@ -84,6 +88,11 @@ export function TeleportFlagList() {
 
       if (!newLabel || newLabel === flag.label) return;
 
+      if (isDemoMode) {
+        updateFlagLocal(flag.id, { label: newLabel });
+        return;
+      }
+
       try {
         const token = await getToken();
         await updateFlag(boardId, flag.id, { label: newLabel }, token);
@@ -91,36 +100,49 @@ export function TeleportFlagList() {
         console.error('[TeleportFlagList] updateFlag error:', err);
       }
     },
-    [boardId, updateFlag, getToken],
+    [boardId, isDemoMode, updateFlag, updateFlagLocal, getToken],
   );
 
   const handleDelete = useCallback(
     async (flagId: string) => {
       if (!boardId || !canvas) return;
-      try {
-        // Remove canvas marker
+
+      if (isDemoMode) {
+        // Demo mode: local-only, no API
+        deleteFlagLocal(flagId);
         const objects = canvas.getObjects();
         const marker = objects.find((o) => o.data?.flagId === flagId);
         if (marker) {
           canvas.remove(marker);
           canvas.requestRenderAll();
         }
+        return;
+      }
+
+      try {
         const token = await getToken();
+        // Await server confirmation BEFORE removing from canvas
         await deleteFlag(boardId, flagId, token);
+        // Server confirmed — now remove canvas marker
+        const objects = canvas.getObjects();
+        const marker = objects.find((o) => o.data?.flagId === flagId);
+        if (marker) {
+          canvas.remove(marker);
+          canvas.requestRenderAll();
+        }
       } catch (err) {
         console.error('[TeleportFlagList] deleteFlag error:', err);
       }
     },
-    [boardId, canvas, deleteFlag, getToken],
+    [boardId, canvas, isDemoMode, deleteFlag, deleteFlagLocal, getToken],
   );
 
   const handleColorChange = useCallback(
     async (flagId: string, color: string) => {
       if (!boardId || !canvas) return;
-      try {
-        const token = await getToken();
-        await updateFlag(boardId, flagId, { color }, token);
-        // Update canvas marker pennant color
+
+      // Update canvas marker pennant color (shared logic for both modes)
+      const updateCanvasMarker = () => {
         const objects = canvas.getObjects();
         const marker = objects.find((o) => o.data?.flagId === flagId);
         if (marker && marker.type === 'group') {
@@ -133,11 +155,23 @@ export function TeleportFlagList() {
           }
         }
         setColorPickerId(null);
+      };
+
+      if (isDemoMode) {
+        updateFlagLocal(flagId, { color });
+        updateCanvasMarker();
+        return;
+      }
+
+      try {
+        const token = await getToken();
+        await updateFlag(boardId, flagId, { color }, token);
+        updateCanvasMarker();
       } catch (err) {
         console.error('[TeleportFlagList] colorChange error:', err);
       }
     },
-    [boardId, canvas, updateFlag, getToken],
+    [boardId, canvas, isDemoMode, updateFlag, updateFlagLocal, getToken],
   );
 
   const handlePlaceFlag = useCallback(() => {

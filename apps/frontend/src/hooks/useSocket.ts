@@ -5,6 +5,7 @@ import { WebSocketEvent, WEBSOCKET_CONFIG, type AuthSuccessPayload, type AIThink
 import { usePresenceStore } from '../stores/presenceStore';
 import { useBoardStore } from '../stores/boardStore';
 import { useAIStore } from '../stores/aiStore';
+import { useDemoStore } from '../stores/demoStore';
 import { setSocketRef } from '../stores/socketRef';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3001';
@@ -37,6 +38,7 @@ export function useSocket() {
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectingRef = useRef(false); // guard against double-connect
   const displacedRef = useRef(false);  // true once session:replaced received
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
   const { getAccessTokenSilently, isAuthenticated, user } = useAuth0();
 
   // Store getAccessTokenSilently in a ref so the socket's auth callback
@@ -52,9 +54,16 @@ export function useSocket() {
   const setConnectionStatus = usePresenceStore((s) => s.setConnectionStatus);
   const setLocalUser = usePresenceStore((s) => s.setLocalUser);
 
-  // Connect when authenticated
+  // Demo mode: set synthetic connection state, no real socket
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isDemoMode) return;
+    setConnectionStatus('connected');
+    setLocalUser('demo-user', 'Demo User', '#6366f1');
+  }, [isDemoMode, setConnectionStatus, setLocalUser]);
+
+  // Connect when authenticated (skip in demo mode)
+  useEffect(() => {
+    if (isDemoMode || !isAuthenticated) return;
 
     // Guard: if we already have a live socket, don't create another
     if (socketRef.current?.connected || connectingRef.current) {
@@ -113,11 +122,15 @@ export function useSocket() {
           // Start heartbeat
           startHeartbeat(socket);
 
-          // If we had a board, re-join it (reconnection scenario)
+          // On reconnect: re-join the board only if still on a board route.
+          // If the user navigated away, clear the stale boardId instead.
           // Per .clauderules: reconnect = full re-render via board:state
           const boardId = useBoardStore.getState().boardId;
-          if (boardId) {
+          const isOnBoardRoute = window.location.pathname.startsWith('/board/');
+          if (boardId && isOnBoardRoute) {
             socket.emit(WebSocketEvent.BOARD_JOIN, { boardId });
+          } else if (boardId && !isOnBoardRoute) {
+            useBoardStore.getState().setBoardId(null);
           }
         });
 
@@ -180,7 +193,7 @@ export function useSocket() {
     // remounts. The socket will be cleaned up on logout or page unload.
     return () => {};
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isDemoMode]);
 
   function startHeartbeat(socket: Socket) {
     stopHeartbeat();

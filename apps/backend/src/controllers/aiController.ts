@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { aiService } from '../services/aiService';
 import { aiBudgetService } from '../services/aiBudgetService';
-import { logger } from '../utils/logger';
 
 // ============================================================
 // AI Controller — REST Endpoints

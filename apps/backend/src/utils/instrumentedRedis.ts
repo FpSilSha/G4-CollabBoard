@@ -23,6 +23,7 @@ const TRACKED_COMMANDS = new Set([
   'get', 'set', 'setex', 'del', 'incr', 'expire',
   'keys', 'pipeline', 'hset', 'hget', 'hgetall',
   'hincrby', 'hdel', 'exists', 'ttl', 'mget',
+  'eval', 'scan',
 ]);
 
 // Flag to prevent recursive instrumentation

@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../../src/utils/redisScan', () => ({
+  scanKeys: vi.fn(),
+}));
+
 import { instrumentedRedis as redis } from '../../src/utils/instrumentedRedis';
+import { scanKeys } from '../../src/utils/redisScan';
 import { logger } from '../../src/utils/logger';
 
 // Import service AFTER mocks are set up via setup.ts
@@ -353,17 +359,17 @@ describe('aiChatService.purgeBoardChats', () => {
       'ai:chat:board-1:user-A:convId',
       'ai:chat:board-1:user-B:messages',
     ];
-    vi.mocked(redis.keys).mockResolvedValue(keys);
+    vi.mocked(scanKeys).mockResolvedValue(keys);
     vi.mocked(redis.del).mockResolvedValue(3);
 
     await aiChatService.purgeBoardChats('board-1');
 
-    expect(redis.keys).toHaveBeenCalledWith('ai:chat:board-1:*');
+    expect(scanKeys).toHaveBeenCalledWith('ai:chat:board-1:*');
     expect(redis.del).toHaveBeenCalledWith(...keys);
   });
 
   it('skips the del call when no keys are found', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await aiChatService.purgeBoardChats('board-1');
 
@@ -372,7 +378,7 @@ describe('aiChatService.purgeBoardChats', () => {
 
   it('logs at debug level and reports key count when keys are found', async () => {
     const keys = ['ai:chat:board-1:user-A:messages', 'ai:chat:board-1:user-A:convId'];
-    vi.mocked(redis.keys).mockResolvedValue(keys);
+    vi.mocked(scanKeys).mockResolvedValue(keys);
     vi.mocked(redis.del).mockResolvedValue(2);
 
     await aiChatService.purgeBoardChats('board-1');
@@ -381,7 +387,7 @@ describe('aiChatService.purgeBoardChats', () => {
   });
 
   it('logs an error but does not throw when Redis.keys fails', async () => {
-    vi.mocked(redis.keys).mockRejectedValue(new Error('SCAN failed'));
+    vi.mocked(scanKeys).mockRejectedValue(new Error('SCAN failed'));
 
     await expect(aiChatService.purgeBoardChats('board-1')).resolves.toBeUndefined();
 
@@ -389,10 +395,10 @@ describe('aiChatService.purgeBoardChats', () => {
   });
 
   it('passes the correct board-scoped pattern to keys', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await aiChatService.purgeBoardChats('board-unique-42');
 
-    expect(redis.keys).toHaveBeenCalledWith('ai:chat:board-unique-42:*');
+    expect(scanKeys).toHaveBeenCalledWith('ai:chat:board-unique-42:*');
   });
 });

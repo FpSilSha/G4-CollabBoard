@@ -52,7 +52,7 @@ export const teleportFlagController = {
     try {
       const { sub } = (req as AuthenticatedRequest).user;
       const { id: boardId, flagId } = req.params;
-      const result = await teleportFlagService.updateFlag(boardId, flagId, req.body);
+      const result = await teleportFlagService.updateFlag(boardId, flagId, sub, req.body);
 
       // Broadcast to all clients in the board room (including sender).
       // Frontend skips the event if userId matches local user (already updated optimistically).
@@ -77,7 +77,7 @@ export const teleportFlagController = {
     try {
       const { sub } = (req as AuthenticatedRequest).user;
       const { id: boardId, flagId } = req.params;
-      const result = await teleportFlagService.deleteFlag(boardId, flagId);
+      const result = await teleportFlagService.deleteFlag(boardId, flagId, sub);
 
       // Broadcast to all clients in the board room (including sender).
       // Uses io.to() because this is a REST controller — no socket context.

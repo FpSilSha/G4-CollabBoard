@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { BoardObject, Connector, TextElement } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
+import { useDemoStore } from '../stores/demoStore';
+import { createApiClient } from '../services/apiClient';
 
 /** 5-minute cooldown between thumbnail captures (matches backend). */
 const COOLDOWN_MS = 5 * 60 * 1000;
@@ -148,6 +150,7 @@ function findDensestRegion(
 export function useThumbnailCapture(
   cachedTokenRef: React.MutableRefObject<string | null>,
 ): { capture: () => void } {
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
   const lastCaptureRef = useRef<number>(0);
 
   // Initialise cooldown from server-provided timestamp (once, on first render)
@@ -162,6 +165,9 @@ export function useThumbnailCapture(
   // Core capture function (synchronous viewport manipulation + async upload)
   // -----------------------------------------------------------------------
   function capture() {
+    // Demo mode: no backend to upload to
+    if (isDemoMode) return;
+
     // Cooldown check (frontend)
     const now = Date.now();
     const elapsed = now - lastCaptureRef.current;
@@ -239,19 +245,14 @@ export function useThumbnailCapture(
       lastCaptureRef.current = now;
 
       // Fire-and-forget upload
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      fetch(`${apiUrl}/boards/${boardId}/thumbnail`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ thumbnail, version: boardVersion }),
-      }).then((res) => {
-        console.debug(`[Thumbnail] Upload response: ${res.status}`);
-      }).catch((err) => {
-        console.warn('[Thumbnail] Upload failed:', err);
-      });
+      const apiClient = createApiClient(() => Promise.resolve(token));
+      apiClient.put(`/boards/${boardId}/thumbnail`, { thumbnail, version: boardVersion })
+        .then(() => {
+          console.debug('[Thumbnail] Upload response: ok');
+        })
+        .catch((err) => {
+          console.warn('[Thumbnail] Upload failed:', err);
+        });
     } catch (err) {
       console.warn('[Thumbnail] Capture failed:', err);
     }
@@ -263,7 +264,7 @@ export function useThumbnailCapture(
   const boardStateLoaded = useBoardStore((s) => s.boardStateLoaded);
 
   useEffect(() => {
-    if (!boardStateLoaded) return;
+    if (isDemoMode || !boardStateLoaded) return;
 
     console.debug('[Thumbnail] boardStateLoaded=true, scheduling capture...');
 

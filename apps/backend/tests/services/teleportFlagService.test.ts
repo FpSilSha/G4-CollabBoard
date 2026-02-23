@@ -220,7 +220,7 @@ describe('teleportFlagService.updateFlag', () => {
     getTeleportFlagMock().findUnique.mockResolvedValue(null);
 
     await expect(
-      teleportFlagService.updateFlag('board-1', 'nonexistent-flag', { label: 'Updated' })
+      teleportFlagService.updateFlag('board-1', 'nonexistent-flag', 'user-1', { label: 'Updated' })
     ).rejects.toMatchObject({ statusCode: 404, message: 'Flag not found' });
   });
 
@@ -229,17 +229,17 @@ describe('teleportFlagService.updateFlag', () => {
     getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
 
     await expect(
-      teleportFlagService.updateFlag('board-1', 'flag-1', { label: 'New' })
+      teleportFlagService.updateFlag('board-1', 'flag-1', 'user-1', { label: 'New' })
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it('calls prisma.teleportFlag.update with correct data', async () => {
-    const flag = makeFlag({ boardId: 'board-1' });
+  it('allows flag creator to update', async () => {
+    const flag = makeFlag({ boardId: 'board-1', createdBy: 'user-1' });
     getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
     const updated = makeFlag({ label: 'Updated Label', x: 300, y: 400 });
     getTeleportFlagMock().update.mockResolvedValue(updated as never);
 
-    await teleportFlagService.updateFlag('board-1', 'flag-1', { label: 'Updated Label', x: 300, y: 400 });
+    await teleportFlagService.updateFlag('board-1', 'flag-1', 'user-1', { label: 'Updated Label', x: 300, y: 400 });
 
     expect(getTeleportFlagMock().update).toHaveBeenCalledWith({
       where: { id: 'flag-1' },
@@ -247,13 +247,35 @@ describe('teleportFlagService.updateFlag', () => {
     });
   });
 
+  it('allows board owner to update another user\'s flag', async () => {
+    const flag = makeFlag({ boardId: 'board-1', createdBy: 'other-user' });
+    getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
+    vi.mocked(prisma.board.findUnique).mockResolvedValue({ ownerId: 'board-owner' } as never);
+    const updated = makeFlag({ label: 'Owner Updated' });
+    getTeleportFlagMock().update.mockResolvedValue(updated as never);
+
+    await teleportFlagService.updateFlag('board-1', 'flag-1', 'board-owner', { label: 'Owner Updated' });
+
+    expect(getTeleportFlagMock().update).toHaveBeenCalled();
+  });
+
+  it('throws 403 when user is neither flag creator nor board owner', async () => {
+    const flag = makeFlag({ boardId: 'board-1', createdBy: 'creator' });
+    getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
+    vi.mocked(prisma.board.findUnique).mockResolvedValue({ ownerId: 'board-owner' } as never);
+
+    await expect(
+      teleportFlagService.updateFlag('board-1', 'flag-1', 'random-user', { label: 'Nope' })
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
   it('returns the updated flag shape with all expected fields', async () => {
-    const flag = makeFlag({ boardId: 'board-1' });
+    const flag = makeFlag({ boardId: 'board-1', createdBy: 'user-1' });
     getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
     const updated = makeFlag({ label: 'New Label', color: '#00FF00' });
     getTeleportFlagMock().update.mockResolvedValue(updated as never);
 
-    const result = await teleportFlagService.updateFlag('board-1', 'flag-1', { label: 'New Label', color: '#00FF00' });
+    const result = await teleportFlagService.updateFlag('board-1', 'flag-1', 'user-1', { label: 'New Label', color: '#00FF00' });
 
     expect(result).toMatchObject({
       id: 'flag-1',
@@ -266,12 +288,12 @@ describe('teleportFlagService.updateFlag', () => {
   });
 
   it('allows partial updates (only updating label, leaving x/y/color unchanged)', async () => {
-    const flag = makeFlag({ boardId: 'board-1' });
+    const flag = makeFlag({ boardId: 'board-1', createdBy: 'user-1' });
     getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
     const updated = makeFlag({ label: 'Only Label Changed' });
     getTeleportFlagMock().update.mockResolvedValue(updated as never);
 
-    await teleportFlagService.updateFlag('board-1', 'flag-1', { label: 'Only Label Changed' });
+    await teleportFlagService.updateFlag('board-1', 'flag-1', 'user-1', { label: 'Only Label Changed' });
 
     expect(getTeleportFlagMock().update).toHaveBeenCalledWith({
       where: { id: 'flag-1' },
@@ -283,7 +305,7 @@ describe('teleportFlagService.updateFlag', () => {
     getTeleportFlagMock().findUnique.mockResolvedValue(null);
 
     await expect(
-      teleportFlagService.updateFlag('board-1', 'bad-flag', {})
+      teleportFlagService.updateFlag('board-1', 'bad-flag', 'user-1', {})
     ).rejects.toBeInstanceOf(AppError);
   });
 });
@@ -299,7 +321,7 @@ describe('teleportFlagService.deleteFlag', () => {
     getTeleportFlagMock().findUnique.mockResolvedValue(null);
 
     await expect(
-      teleportFlagService.deleteFlag('board-1', 'nonexistent-flag')
+      teleportFlagService.deleteFlag('board-1', 'nonexistent-flag', 'user-1')
     ).rejects.toMatchObject({ statusCode: 404, message: 'Flag not found' });
   });
 
@@ -308,28 +330,49 @@ describe('teleportFlagService.deleteFlag', () => {
     getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
 
     await expect(
-      teleportFlagService.deleteFlag('board-1', 'flag-1')
+      teleportFlagService.deleteFlag('board-1', 'flag-1', 'user-1')
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it('calls prisma.teleportFlag.delete with correct flagId', async () => {
-    const flag = makeFlag({ id: 'flag-1', boardId: 'board-1' });
+  it('allows flag creator to delete', async () => {
+    const flag = makeFlag({ id: 'flag-1', boardId: 'board-1', createdBy: 'user-1' });
     getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
     getTeleportFlagMock().delete.mockResolvedValue(flag as never);
 
-    await teleportFlagService.deleteFlag('board-1', 'flag-1');
+    await teleportFlagService.deleteFlag('board-1', 'flag-1', 'user-1');
 
     expect(getTeleportFlagMock().delete).toHaveBeenCalledWith({
       where: { id: 'flag-1' },
     });
   });
 
+  it('allows board owner to delete another user\'s flag', async () => {
+    const flag = makeFlag({ id: 'flag-1', boardId: 'board-1', createdBy: 'other-user' });
+    getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
+    vi.mocked(prisma.board.findUnique).mockResolvedValue({ ownerId: 'board-owner' } as never);
+    getTeleportFlagMock().delete.mockResolvedValue(flag as never);
+
+    await teleportFlagService.deleteFlag('board-1', 'flag-1', 'board-owner');
+
+    expect(getTeleportFlagMock().delete).toHaveBeenCalled();
+  });
+
+  it('throws 403 when user is neither flag creator nor board owner', async () => {
+    const flag = makeFlag({ boardId: 'board-1', createdBy: 'creator' });
+    getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
+    vi.mocked(prisma.board.findUnique).mockResolvedValue({ ownerId: 'board-owner' } as never);
+
+    await expect(
+      teleportFlagService.deleteFlag('board-1', 'flag-1', 'random-user')
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
   it('returns { success: true } on successful delete', async () => {
-    const flag = makeFlag({ boardId: 'board-1' });
+    const flag = makeFlag({ boardId: 'board-1', createdBy: 'user-1' });
     getTeleportFlagMock().findUnique.mockResolvedValue(flag as never);
     getTeleportFlagMock().delete.mockResolvedValue(flag as never);
 
-    const result = await teleportFlagService.deleteFlag('board-1', 'flag-1');
+    const result = await teleportFlagService.deleteFlag('board-1', 'flag-1', 'user-1');
 
     expect(result).toEqual({ success: true });
   });
@@ -338,7 +381,7 @@ describe('teleportFlagService.deleteFlag', () => {
     getTeleportFlagMock().findUnique.mockResolvedValue(null);
 
     await expect(
-      teleportFlagService.deleteFlag('board-1', 'bad-flag')
+      teleportFlagService.deleteFlag('board-1', 'bad-flag', 'user-1')
     ).rejects.toBeInstanceOf(AppError);
   });
 });

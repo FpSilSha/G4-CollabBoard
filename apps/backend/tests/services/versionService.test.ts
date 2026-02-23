@@ -22,13 +22,22 @@ describe('versionService.listVersions', () => {
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it('throws 403 AppError when requesting user is not the board owner', async () => {
+  it('allows non-owner to list versions (any board member can view history)', async () => {
     const board = makeBoard({ ownerId: 'owner-user', id: 'board-1' });
+    vi.mocked(prisma.board.findUnique).mockResolvedValue(board as never);
+    vi.mocked(prisma.boardVersion.findMany).mockResolvedValue([]);
+
+    const result = await versionService.listVersions('board-1', 'different-user');
+    expect(result.versions).toEqual([]);
+  });
+
+  it('throws 404 AppError when board is soft-deleted', async () => {
+    const board = makeBoard({ ownerId: 'user-1', id: 'board-1', isDeleted: true });
     vi.mocked(prisma.board.findUnique).mockResolvedValue(board as never);
 
     await expect(
-      versionService.listVersions('board-1', 'different-user')
-    ).rejects.toMatchObject({ statusCode: 403 });
+      versionService.listVersions('board-1', 'user-1')
+    ).rejects.toMatchObject({ statusCode: 404, message: 'Board has been deleted' });
   });
 
   it('returns empty versions array when no snapshots exist', async () => {

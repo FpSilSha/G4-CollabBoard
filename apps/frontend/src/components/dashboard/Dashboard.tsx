@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from './Dashboard.module.css';
+import { useApiClient, ApiError } from '../../services/apiClient';
+import { useDemoStore } from '../../stores/demoStore';
 
 interface BoardSummary {
   id: string;
@@ -23,13 +25,6 @@ interface BoardListResponse {
 }
 
 type DashboardTab = 'owned' | 'linked';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-const AUTH_PARAMS = {
-  authorizationParams: {
-    audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
-  },
-};
 
 /** Strict UUID v4 pattern */
 const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -60,8 +55,11 @@ function extractBoardId(input: string): string | null {
  * No tier/enterprise limits — all users have full access.
  */
 export function Dashboard() {
-  const { getAccessTokenSilently, logout, user } = useAuth0();
+  const { logout, user } = useAuth0();
+  const api = useApiClient();
   const navigate = useNavigate();
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
+  const exitDemoMode = useDemoStore((s) => s.exitDemoMode);
   const [ownedBoards, setOwnedBoards] = useState<BoardSummary[]>([]);
   const [linkedBoards, setLinkedBoards] = useState<BoardSummary[]>([]);
   const [tab, setTab] = useState<DashboardTab>('owned');
@@ -89,12 +87,7 @@ export function Dashboard() {
 
     async function fetchBoards() {
       try {
-        const token = await getAccessTokenSilently(AUTH_PARAMS);
-        const res = await fetch(`${API_URL}/boards`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        const data: BoardListResponse = await res.json();
+        const data = await api.get<BoardListResponse>('/boards');
         if (!cancelled) {
           setOwnedBoards(data.ownedBoards.filter((b) => !b.isDeleted));
           setLinkedBoards(data.linkedBoards.filter((b) => !b.isDeleted));
@@ -123,20 +116,7 @@ export function Dashboard() {
     setCreating(true);
     setError(null);
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: 'Untitled Board' }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || 'Failed to create board');
-      }
-      const created = await res.json();
+      const created = await api.post<{ id: string; title?: string; slot?: number }>('/boards', { title: 'Untitled Board' });
 
       const newBoard: BoardSummary = {
         id: created.id,
@@ -157,7 +137,12 @@ export function Dashboard() {
       setRenameDraft('');
       setRenamingBoardId(created.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create board');
+      if (err instanceof ApiError) {
+        const body = err.body as { message?: string } | null;
+        setError(body?.message || 'Failed to create board');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to create board');
+      }
     } finally {
       setCreating(false);
     }
@@ -181,15 +166,7 @@ export function Dashboard() {
     );
 
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      await fetch(`${API_URL}/boards/${boardId}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: finalTitle }),
-      });
+      await api.patch(`/boards/${boardId}`, { title: finalTitle });
     } catch (err) {
       console.error('[Dashboard] Failed to rename board:', err);
     }
@@ -201,16 +178,13 @@ export function Dashboard() {
     setDeletingBoardId(null);
 
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards/${boardId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        console.error('[Dashboard] Failed to delete board:', res.status);
-      }
+      await api.del(`/boards/${boardId}`);
     } catch (err) {
-      console.error('[Dashboard] Failed to delete board:', err);
+      if (err instanceof ApiError) {
+        console.error('[Dashboard] Failed to delete board:', err.status);
+      } else {
+        console.error('[Dashboard] Failed to delete board:', err);
+      }
     }
   };
 
@@ -220,16 +194,13 @@ export function Dashboard() {
     setUnlinkingBoardId(null);
 
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards/${boardId}/link`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        console.error('[Dashboard] Failed to unlink board:', res.status);
-      }
+      await api.del(`/boards/${boardId}/link`);
     } catch (err) {
-      console.error('[Dashboard] Failed to unlink board:', err);
+      if (err instanceof ApiError) {
+        console.error('[Dashboard] Failed to unlink board:', err.status);
+      } else {
+        console.error('[Dashboard] Failed to unlink board:', err);
+      }
     }
   };
 
@@ -256,32 +227,32 @@ export function Dashboard() {
 
     setLinkLoading(true);
     try {
-      const token = await getAccessTokenSilently(AUTH_PARAMS);
-      const res = await fetch(`${API_URL}/boards/${boardId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          setLinkError('Board not found. Check the link and try again.');
-        } else {
-          setLinkError(`Failed to load board (${res.status}).`);
-        }
-        return;
-      }
+      await api.get(`/boards/${boardId}`);
 
       // Board exists — navigate to it (auto-links via getBoard)
       setLinkInput('');
       navigate(`/board/${boardId}`);
     } catch (err) {
-      console.error('[Dashboard] Failed to add linked board:', err);
-      setLinkError('Network error. Try again.');
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          setLinkError('Board not found. Check the link and try again.');
+        } else {
+          setLinkError(`Failed to load board (${err.status}).`);
+        }
+      } else {
+        console.error('[Dashboard] Failed to add linked board:', err);
+        setLinkError('Network error. Try again.');
+      }
     } finally {
       setLinkLoading(false);
     }
   };
 
   const handleLogout = () => {
+    if (isDemoMode) {
+      exitDemoMode();
+      return;
+    }
     logout({ logoutParams: { returnTo: window.location.origin } });
   };
 
@@ -303,39 +274,53 @@ export function Dashboard() {
       <header className={styles.header}>
         <h1 className={styles.logo}>G4 CollabBoard</h1>
         <div className={styles.headerRight}>
-          <Link to="/admin" className={styles.adminLink}>Admin Metrics</Link>
-          <span className={styles.userName}>{user?.name || user?.email || 'User'}</span>
+          {!isDemoMode && <Link to="/admin" className={styles.adminLink}>Admin Metrics</Link>}
+          <span className={styles.userName}>
+            {isDemoMode ? 'Demo User' : (user?.name || user?.email || 'User')}
+          </span>
           <button className={styles.signOutButton} onClick={handleLogout}>
-            Sign Out
+            {isDemoMode ? 'Exit Demo' : 'Sign Out'}
           </button>
         </div>
       </header>
 
       <main className={styles.main}>
-        {/* Tab row */}
-        <div className={styles.tabRow}>
-          <button
-            className={`${styles.tab} ${tab === 'owned' ? styles.tabActive : ''}`}
-            onClick={() => setTab('owned')}
-          >
-            Your Boards
-            {ownedBoards.length > 0 && (
-              <span className={styles.tabBadge}>{ownedBoards.length}</span>
-            )}
-          </button>
-          <button
-            className={`${styles.tab} ${tab === 'linked' ? styles.tabActive : ''}`}
-            onClick={() => setTab('linked')}
-          >
-            Shared With You
-            {linkedBoards.length > 0 && (
-              <span className={styles.tabBadge}>{linkedBoards.length}</span>
-            )}
-          </button>
-        </div>
+        {isDemoMode ? (
+          <div className={styles.enterpriseBanner} style={{ background: '#eef2ff', borderColor: '#c7d2fe' }}>
+            You're in demo mode. Sign up to save your boards and unlock all features!
+          </div>
+        ) : (
+          <div className={styles.enterpriseBanner}>
+            🚀 Enterprise tier unlocked for all users until next major release. Enjoy!
+          </div>
+        )}
 
-        {/* Link input — shown on Linked Boards tab */}
-        {tab === 'linked' && (
+        {/* Tab row — hidden in demo mode (only one board, no sharing) */}
+        {!isDemoMode && (
+          <div className={styles.tabRow}>
+            <button
+              className={`${styles.tab} ${tab === 'owned' ? styles.tabActive : ''}`}
+              onClick={() => setTab('owned')}
+            >
+              Your Boards
+              {ownedBoards.length > 0 && (
+                <span className={styles.tabBadge}>{ownedBoards.length}</span>
+              )}
+            </button>
+            <button
+              className={`${styles.tab} ${tab === 'linked' ? styles.tabActive : ''}`}
+              onClick={() => setTab('linked')}
+            >
+              Shared With You
+              {linkedBoards.length > 0 && (
+                <span className={styles.tabBadge}>{linkedBoards.length}</span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Link input — shown on Linked Boards tab (hidden in demo mode) */}
+        {!isDemoMode && tab === 'linked' && (
           <div className={styles.linkInputRow}>
             <input
               className={styles.linkInput}
@@ -365,7 +350,7 @@ export function Dashboard() {
             </button>
           </div>
         )}
-        {linkError && tab === 'linked' && (
+        {!isDemoMode && linkError && tab === 'linked' && (
           <p className={styles.linkError}>{linkError}</p>
         )}
 
@@ -544,8 +529,8 @@ export function Dashboard() {
               </div>
             ))}
 
-            {/* New board card — only on "Your Boards" tab */}
-            {tab === 'owned' && (
+            {/* New board card — only on "Your Boards" tab, hidden in demo */}
+            {!isDemoMode && tab === 'owned' && (
               <button
                 className={styles.newBoardCard}
                 onClick={handleCreateBoard}

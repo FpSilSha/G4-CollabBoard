@@ -9,8 +9,10 @@ import {
   getObjectsInsideFrame,
   fabricToBoardObject,
   applyConnectorLockState,
+  findFabricObjectById,
 } from '../utils/fabricHelpers';
 import { findEdgeLockTarget } from '../utils/edgeGeometry';
+import { updateAttachedConnectors } from '../utils/connectorAttachment';
 import { setupRotationModeListeners } from './useKeyboardShortcuts';
 import type { Socket } from 'socket.io-client';
 
@@ -159,7 +161,7 @@ function setupSelectionStyle(): void {
   const mtrControl = fabric.Object.prototype.controls.mtr;
   mtrControl.sizeX = 24;
   mtrControl.sizeY = 24;
-  mtrControl.render = function (ctx, left, top, _styleOverride, fabricObj) {
+  mtrControl.render = function (ctx, left, top, _styleOverride, _fabricObj) {
     const radius = 11;
     ctx.save();
     ctx.translate(left, top);
@@ -707,15 +709,19 @@ function setupDragState(
   function deleteObject(obj: fabric.Object): void {
     if (obj.data?.pinned) return;
 
-    // Teleport flags use flagId, not id — handle separately via REST API
+    // Teleport flags use flagId, not id — handle separately via REST API.
+    // Only remove from canvas AFTER server confirms (prevents ghost deletes on 403).
     if (obj.data?.type === 'teleportFlag') {
       const flagId = obj.data?.flagId as string | undefined;
       const boardId = useBoardStore.getState().boardId;
       const token = useBoardStore.getState().cachedAuthToken;
       if (flagId && boardId && token) {
-        canvas.remove(obj);
-        useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+        useFlagStore.getState().deleteFlag(boardId, flagId, token).then(() => {
+          canvas.remove(obj);
+          canvas.requestRenderAll();
+        }).catch((err) => {
           console.error('[drag-to-trash] Flag delete failed:', err);
+          useUIStore.getState().showToast('Cannot delete this flag — you are not the creator or board owner');
         });
       }
       return;
@@ -796,15 +802,20 @@ function setupDragState(
         for (const obj of objects) {
           if (obj.data?.pinned) continue;
 
-          // Teleport flags use flagId — handle separately via REST API
+          // Teleport flags use flagId — handle separately via REST API.
+          // Only remove from canvas AFTER server confirms.
           if (obj.data?.type === 'teleportFlag') {
             const flagId = obj.data?.flagId as string | undefined;
             const boardId = useBoardStore.getState().boardId;
             const token = useBoardStore.getState().cachedAuthToken;
             if (flagId && boardId && token) {
-              canvas.remove(obj);
-              useFlagStore.getState().deleteFlag(boardId, flagId, token).catch((err) => {
+              const flagObj = obj; // capture reference for async callback
+              useFlagStore.getState().deleteFlag(boardId, flagId, token).then(() => {
+                canvas.remove(flagObj);
+                canvas.requestRenderAll();
+              }).catch((err) => {
                 console.error('[drag-to-trash] Flag delete failed:', err);
+                useUIStore.getState().showToast('Cannot delete this flag — you are not the creator or board owner');
               });
             }
             continue;
@@ -1231,8 +1242,18 @@ function setupFrameControlHandlers(
 
     if (corner === 'editTitle') {
       const currentTitle = target.data.title ?? 'Frame';
-      const newTitle = prompt('Frame title:', currentTitle);
-      if (newTitle !== null && newTitle !== currentTitle) {
+
+      // Use async IIFE — the TextInputModal is Promise-based, but
+      // onMouseDown handles multiple control types and must stay sync.
+      (async () => {
+        const newTitle = await useUIStore.getState().openTextInputModal({
+          title: 'Edit Frame Title',
+          initialValue: currentTitle,
+          placeholder: 'Frame title...',
+          maxLength: 255,
+        });
+        if (newTitle === null || newTitle === currentTitle) return;
+
         const trimmed = newTitle.slice(0, 255);
         target.data.title = trimmed;
 
@@ -1252,7 +1273,7 @@ function setupFrameControlHandlers(
         useBoardStore.getState().updateObject(target.data.id, { title: trimmed });
 
         canvas.requestRenderAll();
-      }
+      })();
       return;
     }
   };
@@ -1319,6 +1340,18 @@ function setupFrameControlHandlers(
       }
     }
 
+    // Third pass: update connectors attached to any moved children.
+    // This handles both cases:
+    //   - Both endpoints inside frame → connector translates with the frame
+    //   - One endpoint inside frame → connector stretches (attached end follows, free end stays)
+    for (const obj of allObjects) {
+      const fid = obj.data?.frameId;
+      if (!fid || !movedFrameIds.has(fid)) continue;
+      if (obj.data?.type === 'connector') continue;
+      updateAttachedConnectors(canvas, obj.data.id);
+    }
+    canvas.requestRenderAll();
+
     // Update tracked position
     frameDragStart.set(frameId, {
       left: target.left ?? 0,
@@ -1330,10 +1363,15 @@ function setupFrameControlHandlers(
   const onMouseUp = () => {
     if (frameDragStart.size === 0) return;
 
+    // Track connector IDs already emitted to avoid duplicates
+    // (a connector can have BOTH endpoints attached to objects inside the same frame)
+    const emittedConnectorIds = new Set<string>();
+
     // Emit final positions for all moved frames, their children, and grandchildren
     for (const [frameId] of frameDragStart) {
       const allObjects = canvas.getObjects();
       const movedFrameIds = new Set<string>([frameId]);
+      const movedChildIds: string[] = [];
 
       // First pass: emit for direct children, collect nested frame IDs
       for (const obj of allObjects) {
@@ -1345,6 +1383,7 @@ function setupFrameControlHandlers(
           if (obj.data?.type === 'frame') {
             movedFrameIds.add(obj.data.id);
           }
+          movedChildIds.push(obj.data.id);
         }
       }
 
@@ -1357,7 +1396,29 @@ function setupFrameControlHandlers(
             const y = obj.top ?? 0;
             emitObjectUpdate(obj.data.id, { x, y });
             useBoardStore.getState().updateObject(obj.data.id, { x, y });
+            movedChildIds.push(obj.data.id);
           }
+        }
+      }
+
+      // Third pass: update and emit connectors attached to moved children.
+      // updateAttachedConnectors repositions endpoints based on current object geometry.
+      // We call it one final time to ensure endpoints are exact before serialization.
+      for (const childId of movedChildIds) {
+        const updatedConnectorIds = updateAttachedConnectors(canvas, childId);
+        for (const connId of updatedConnectorIds) {
+          if (emittedConnectorIds.has(connId)) continue;
+          emittedConnectorIds.add(connId);
+
+          const connObj = findFabricObjectById(canvas, connId);
+          if (!connObj) continue;
+
+          // Emit full connector state (x, y, x2, y2, anchors, etc.)
+          const boardObj = fabricToBoardObject(connObj);
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id: _id, createdBy, createdAt, type: _type, ...connUpdates } = boardObj as unknown as Record<string, unknown>;
+          emitObjectUpdate(connId, connUpdates);
+          useBoardStore.getState().updateObject(connId, connUpdates as Record<string, unknown>);
         }
       }
     }

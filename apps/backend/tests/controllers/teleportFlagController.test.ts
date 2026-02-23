@@ -183,6 +183,7 @@ describe('teleportFlagController', () => {
       expect(teleportFlagService.updateFlag).toHaveBeenCalledWith(
         'board-1',
         'flag-1',
+        'auth0|user-1',
         { label: 'Updated Label' }
       );
       expect(trackedEmit).toHaveBeenCalled();
@@ -260,7 +261,7 @@ describe('teleportFlagController', () => {
 
       await teleportFlagController.deleteFlag(req, res, next);
 
-      expect(teleportFlagService.deleteFlag).toHaveBeenCalledWith('board-1', 'flag-1');
+      expect(teleportFlagService.deleteFlag).toHaveBeenCalledWith('board-1', 'flag-1', 'auth0|user-1');
       expect(trackedEmit).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(result);
       expect(next).not.toHaveBeenCalled();

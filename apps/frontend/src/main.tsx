@@ -4,6 +4,7 @@ import { BrowserRouter, useNavigate } from 'react-router-dom';
 import { Auth0Provider, type AppState } from '@auth0/auth0-react';
 import { AuthGate } from './components/auth/AuthGate';
 import { App } from './App';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import './index.css';
 
 // Auth0 configuration from environment variables.
@@ -56,12 +57,14 @@ function Auth0ProviderWithNavigate({ children }: { children: React.ReactNode }) 
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <Auth0ProviderWithNavigate>
-        <AuthGate>
-          <App />
-        </AuthGate>
-      </Auth0ProviderWithNavigate>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Auth0ProviderWithNavigate>
+          <AuthGate>
+            <App />
+          </AuthGate>
+        </Auth0ProviderWithNavigate>
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>
 );

@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
+
+vi.mock('../../src/utils/redisScan', () => ({
+  scanKeys: vi.fn(),
+}));
+
 import { presenceService } from '../../src/services/presenceService';
 import { instrumentedRedis as redis } from '../../src/utils/instrumentedRedis';
+import { scanKeys } from '../../src/utils/redisScan';
 
 // PRESENCE_TTL from shared is 30 seconds
 const PRESENCE_TTL = 30;
@@ -162,7 +168,7 @@ describe('presenceService.getBoardUsers', () => {
   });
 
   it('returns empty array when no presence keys exist', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     const result = await presenceService.getBoardUsers('board-abc');
 
@@ -171,7 +177,7 @@ describe('presenceService.getBoardUsers', () => {
   });
 
   it('returns empty array when pipeline returns null results', async () => {
-    vi.mocked(redis.keys).mockResolvedValue(['presence:board-abc:user-1']);
+    vi.mocked(scanKeys).mockResolvedValue(['presence:board-abc:user-1']);
     mockPipeline.exec.mockResolvedValue(null);
 
     const result = await presenceService.getBoardUsers('board-abc');
@@ -182,7 +188,7 @@ describe('presenceService.getBoardUsers', () => {
   it('returns parsed users from valid pipeline results', async () => {
     const user1 = makeUser({ userId: 'user-1', name: 'Alice' });
     const user2 = makeUser({ userId: 'user-2', name: 'Bob', color: '#0000FF' });
-    vi.mocked(redis.keys).mockResolvedValue([
+    vi.mocked(scanKeys).mockResolvedValue([
       'presence:board-abc:user-1',
       'presence:board-abc:user-2',
     ]);
@@ -200,7 +206,7 @@ describe('presenceService.getBoardUsers', () => {
 
   it('skips entries with errors in pipeline results', async () => {
     const user1 = makeUser({ userId: 'user-1' });
-    vi.mocked(redis.keys).mockResolvedValue([
+    vi.mocked(scanKeys).mockResolvedValue([
       'presence:board-abc:user-1',
       'presence:board-abc:user-bad',
     ]);
@@ -216,7 +222,7 @@ describe('presenceService.getBoardUsers', () => {
   });
 
   it('skips null values in pipeline results', async () => {
-    vi.mocked(redis.keys).mockResolvedValue(['presence:board-abc:user-gone']);
+    vi.mocked(scanKeys).mockResolvedValue(['presence:board-abc:user-gone']);
     mockPipeline.exec.mockResolvedValue([
       [null, null],
     ]);
@@ -227,7 +233,7 @@ describe('presenceService.getBoardUsers', () => {
   });
 
   it('skips malformed JSON in pipeline results without throwing', async () => {
-    vi.mocked(redis.keys).mockResolvedValue(['presence:board-abc:user-corrupt']);
+    vi.mocked(scanKeys).mockResolvedValue(['presence:board-abc:user-corrupt']);
     mockPipeline.exec.mockResolvedValue([
       [null, 'not-valid-json{{{'],
     ]);
@@ -236,16 +242,16 @@ describe('presenceService.getBoardUsers', () => {
   });
 
   it('uses the correct key pattern for the board', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await presenceService.getBoardUsers('board-XYZ');
 
-    expect(redis.keys).toHaveBeenCalledWith('presence:board-XYZ:*');
+    expect(scanKeys).toHaveBeenCalledWith('presence:board-XYZ:*');
   });
 
   it('result does not include lastHeartbeat (strips internal field)', async () => {
     const user1 = makeUser({ userId: 'user-1' });
-    vi.mocked(redis.keys).mockResolvedValue(['presence:board-abc:user-1']);
+    vi.mocked(scanKeys).mockResolvedValue(['presence:board-abc:user-1']);
     mockPipeline.exec.mockResolvedValue([[null, serializePresence(user1)]]);
 
     const result = await presenceService.getBoardUsers('board-abc');
@@ -262,7 +268,7 @@ describe('presenceService.removeUserFromAllBoards', () => {
   });
 
   it('returns empty array and does not call del when user has no presence keys', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     const result = await presenceService.removeUserFromAllBoards('user-ghost');
 
@@ -271,7 +277,7 @@ describe('presenceService.removeUserFromAllBoards', () => {
   });
 
   it('extracts boardIds from matching presence keys', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([
+    vi.mocked(scanKeys).mockResolvedValue([
       'presence:board-1:user-1',
       'presence:board-2:user-1',
     ]);
@@ -286,7 +292,7 @@ describe('presenceService.removeUserFromAllBoards', () => {
 
   it('calls redis.del with all found keys', async () => {
     const keys = ['presence:board-1:user-1', 'presence:board-2:user-1'];
-    vi.mocked(redis.keys).mockResolvedValue(keys);
+    vi.mocked(scanKeys).mockResolvedValue(keys);
     vi.mocked(redis.del).mockResolvedValue(2);
 
     await presenceService.removeUserFromAllBoards('user-1');
@@ -295,16 +301,16 @@ describe('presenceService.removeUserFromAllBoards', () => {
   });
 
   it('uses correct pattern to find user keys across all boards', async () => {
-    vi.mocked(redis.keys).mockResolvedValue([]);
+    vi.mocked(scanKeys).mockResolvedValue([]);
 
     await presenceService.removeUserFromAllBoards('user-42');
 
-    expect(redis.keys).toHaveBeenCalledWith('presence:*:user-42');
+    expect(scanKeys).toHaveBeenCalledWith('presence:*:user-42');
   });
 
   it('ignores keys that do not match the expected 3-part format', async () => {
     // Malformed key should not crash and should not be included in boardIds
-    vi.mocked(redis.keys).mockResolvedValue([
+    vi.mocked(scanKeys).mockResolvedValue([
       'presence:board-1:user-1',
       'presence:boardwithcolons:extra:user-1', // 4 parts — boardId extraction skipped
     ]);

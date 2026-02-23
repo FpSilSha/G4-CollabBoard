@@ -1,4 +1,5 @@
 import { instrumentedRedis as redis } from '../utils/instrumentedRedis';
+import { scanKeys } from '../utils/redisScan';
 import { AI_CONFIG } from 'shared';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -137,7 +138,7 @@ export const aiChatService = {
     try {
       // Find all chat keys for this board
       const pattern = `ai:chat:${boardId}:*`;
-      const keys = await redis.keys(pattern);
+      const keys = await scanKeys(pattern);
       if (keys.length > 0) {
         await redis.del(...keys);
         logger.debug(`Purged ${keys.length} AI chat keys for board ${boardId}`);

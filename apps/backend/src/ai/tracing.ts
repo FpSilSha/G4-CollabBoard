@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { traceable } from 'langsmith/traceable';
 import type { ViewportBounds, AICommandResponse } from 'shared';
-import { logger } from '../utils/logger';
 
 // ============================================================
 // LangSmith Tracing Wrappers
