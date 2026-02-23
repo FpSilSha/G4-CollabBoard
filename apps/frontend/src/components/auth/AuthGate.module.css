@@ -1,3 +1,8 @@
+/* ============================================================
+   AuthGate — Landing Page with Animated Background
+   ============================================================ */
+
+/* Outer page — full viewport, centers everything */
 .container {
   height: 100vh;
   width: 100vw;
@@ -5,14 +10,105 @@
   align-items: center;
   justify-content: center;
   background: var(--canvas-bg);
+  position: relative;
+  overflow: hidden;
 }
 
+/* ── Animated canvas area ── */
+/* Large rounded box behind the card — looks like a whiteboard canvas */
+.canvasArea {
+  position: absolute;
+  width: 85vw;
+  height: 80vh;
+  max-width: 1200px;
+  max-height: 800px;
+  border-radius: 24px;
+  background: var(--canvas-bg);
+  overflow: hidden;
+  /* Center the canvas area */
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.04);
+}
+
+/* Dot grid layer — tiled via radial-gradient, animates diagonally */
+.dotGrid {
+  position: absolute;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  /* 1px dots every 20px, matching the real canvas grid */
+  background-image: radial-gradient(circle, #9AA3B2 1px, transparent 1px);
+  background-size: 20px 20px;
+  opacity: 0.35;
+  animation: driftDots 30s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes driftDots {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    /* Move diagonally: bottom-left → top-right */
+    transform: translate(600px, -600px);
+  }
+}
+
+/* Floating shapes layer — sits above dots, below card */
+.shapesLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Individual floating shape — animated from bottom-left to top-right */
+.floatingShape {
+  position: absolute;
+  animation: floatAcross var(--duration) linear var(--delay) infinite;
+  opacity: 0;
+}
+
+@keyframes floatAcross {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(var(--start-rotation));
+  }
+  5% {
+    opacity: var(--shape-opacity);
+  }
+  90% {
+    opacity: var(--shape-opacity);
+  }
+  100% {
+    opacity: 0;
+    /* Travel diagonally from bottom-left to top-right */
+    transform: translate(
+      calc(85vw + 100px),
+      calc(-80vh - 100px)
+    ) rotate(calc(var(--start-rotation) + 45deg));
+  }
+}
+
+/* ── Card (elevated center panel) ── */
 .content {
+  position: relative;
+  z-index: 2;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
+  padding: 48px 56px;
+  background: var(--canvas-bg);
+  border-radius: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .title {
