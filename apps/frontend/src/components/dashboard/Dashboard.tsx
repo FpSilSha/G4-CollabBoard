@@ -1,9 +1,101 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from './Dashboard.module.css';
 import { useApiClient, ApiError } from '../../services/apiClient';
 import { useDemoStore } from '../../stores/demoStore';
+
+// ============================================================
+// Decorative Background Shapes
+// ============================================================
+
+const SHAPE_COLORS = [
+  '#FFEB3B', '#FF9800', '#F44336', '#E91E63', '#9C27B0',
+  '#3F51B5', '#2196F3', '#00BCD4', '#4CAF50', '#8BC34A',
+];
+
+interface DecoShape {
+  type: 'circle' | 'rect' | 'triangle';
+  x: number;      // percentage from left
+  y: number;      // percentage from top
+  size: number;    // px
+  color: string;
+  rotation: number;
+  opacity: number;
+}
+
+function generateShapes(count: number): DecoShape[] {
+  // Seeded pseudo-random so shapes are stable across re-renders
+  let seed = 42;
+  const rand = () => { seed = (seed * 16807 + 0) % 2147483647; return seed / 2147483647; };
+
+  const types: DecoShape['type'][] = ['circle', 'rect', 'triangle'];
+  const shapes: DecoShape[] = [];
+
+  for (let i = 0; i < count; i++) {
+    // Keep shapes in the side gutters: x < 10% or x > 90%
+    const onLeft = rand() < 0.5;
+    const x = onLeft ? rand() * 12 : 88 + rand() * 12;
+
+    shapes.push({
+      type: types[Math.floor(rand() * types.length)],
+      x,
+      y: 5 + rand() * 85,
+      size: 20 + rand() * 50,
+      color: SHAPE_COLORS[Math.floor(rand() * SHAPE_COLORS.length)],
+      rotation: Math.floor(rand() * 360),
+      opacity: 0.15 + rand() * 0.2,
+    });
+  }
+  return shapes;
+}
+
+function DecorativeShapes() {
+  const shapes = useMemo(() => generateShapes(18), []);
+
+  return (
+    <div className={styles.decoLayer} aria-hidden="true">
+      {shapes.map((s, i) => {
+        const base: React.CSSProperties = {
+          position: 'absolute',
+          left: `${s.x}%`,
+          top: `${s.y}%`,
+          width: s.size,
+          height: s.size,
+          opacity: s.opacity,
+          transform: `rotate(${s.rotation}deg)`,
+        };
+
+        if (s.type === 'circle') {
+          return (
+            <div key={i} style={{ ...base, borderRadius: '50%', background: s.color }} />
+          );
+        }
+        if (s.type === 'rect') {
+          return (
+            <div key={i} style={{ ...base, borderRadius: 4, background: s.color }} />
+          );
+        }
+        // triangle via CSS border trick
+        const half = s.size / 2;
+        return (
+          <div
+            key={i}
+            style={{
+              ...base,
+              width: 0,
+              height: 0,
+              background: 'transparent',
+              borderLeft: `${half}px solid transparent`,
+              borderRight: `${half}px solid transparent`,
+              borderBottom: `${s.size}px solid ${s.color}`,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 interface BoardSummary {
   id: string;
@@ -271,8 +363,9 @@ export function Dashboard() {
 
   return (
     <div className={styles.container}>
+      <DecorativeShapes />
       <header className={styles.header}>
-        <h1 className={styles.logo}>G4 CollabBoard</h1>
+        <h1 className={styles.logo}>NoteTime</h1>
         <div className={styles.headerRight}>
           {!isDemoMode && <Link to="/admin" className={styles.adminLink}>Admin Metrics</Link>}
           <span className={styles.userName}>

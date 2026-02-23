@@ -270,7 +270,7 @@ function Header({ countdown }: { countdown: number }) {
   return (
     <header className={styles.header}>
       <Link to="/" className={styles.backLink}>&larr; Dashboard</Link>
-      <h1 className={styles.title}>CollabBoard Admin Metrics</h1>
+      <h1 className={styles.title}>NoteTime Admin Metrics</h1>
       <span className={styles.countdown}>Next refresh: {countdown}s</span>
     </header>
   );
