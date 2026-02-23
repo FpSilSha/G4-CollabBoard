@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { BoardObject, Connector, TextElement } from 'shared';
 import { useBoardStore } from '../stores/boardStore';
+import { useDemoStore } from '../stores/demoStore';
 import { createApiClient } from '../services/apiClient';
 
 /** 5-minute cooldown between thumbnail captures (matches backend). */
@@ -149,6 +150,7 @@ function findDensestRegion(
 export function useThumbnailCapture(
   cachedTokenRef: React.MutableRefObject<string | null>,
 ): { capture: () => void } {
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
   const lastCaptureRef = useRef<number>(0);
 
   // Initialise cooldown from server-provided timestamp (once, on first render)
@@ -163,6 +165,9 @@ export function useThumbnailCapture(
   // Core capture function (synchronous viewport manipulation + async upload)
   // -----------------------------------------------------------------------
   function capture() {
+    // Demo mode: no backend to upload to
+    if (isDemoMode) return;
+
     // Cooldown check (frontend)
     const now = Date.now();
     const elapsed = now - lastCaptureRef.current;
@@ -259,7 +264,7 @@ export function useThumbnailCapture(
   const boardStateLoaded = useBoardStore((s) => s.boardStateLoaded);
 
   useEffect(() => {
-    if (!boardStateLoaded) return;
+    if (isDemoMode || !boardStateLoaded) return;
 
     console.debug('[Thumbnail] boardStateLoaded=true, scheduling capture...');
 

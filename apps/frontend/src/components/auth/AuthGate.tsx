@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
+import { useDemoStore } from '../../stores/demoStore';
 import styles from './AuthGate.module.css';
 
 interface AuthGateProps {
@@ -9,12 +10,13 @@ interface AuthGateProps {
 /**
  * PRIMARY authentication boundary.
  *
- * Wraps the entire app and manages four states:
+ * Wraps the entire app and manages five states:
  *
- *   1. Landing   — unauthenticated, shows login button (no auto-redirects)
- *   2. Loading   — Auth0 SDK initializing or processing callback
- *   3. Error     — authentication failed, shows retry button
- *   4. Authenticated — renders children (the full app)
+ *   1. Demo      — demo mode active, bypasses Auth0 entirely
+ *   2. Landing   — unauthenticated, shows login + demo buttons (no auto-redirects)
+ *   3. Loading   — Auth0 SDK initializing or processing callback
+ *   4. Error     — authentication failed, shows retry button
+ *   5. Authenticated — renders children (the full app)
  *
  * SECURITY: This is the first gate. App.tsx has a secondary defensive check.
  *
@@ -24,12 +26,19 @@ interface AuthGateProps {
  */
 export function AuthGate({ children }: AuthGateProps) {
   const { isLoading, isAuthenticated, error, loginWithRedirect } = useAuth0();
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
+  const enterDemoMode = useDemoStore((s) => s.enterDemoMode);
 
   const handleLogin = () => {
     loginWithRedirect({
       appState: { returnTo: window.location.pathname },
     });
   };
+
+  // State 1: Demo mode active — bypass Auth0 entirely
+  if (isDemoMode) {
+    return <>{children}</>;
+  }
 
   // State 2: SDK initializing or processing Auth0 callback (?code=&state=)
   if (isLoading) {
@@ -63,7 +72,7 @@ export function AuthGate({ children }: AuthGateProps) {
     );
   }
 
-  // State 1: Not authenticated — show landing with login button
+  // State 4: Not authenticated — show landing with login + demo buttons
   if (!isAuthenticated) {
     return (
       <div className={styles.container}>
@@ -75,6 +84,15 @@ export function AuthGate({ children }: AuthGateProps) {
             onClick={handleLogin}
           >
             Login with Auth0
+          </button>
+          <div className={styles.divider}>
+            <span>or</span>
+          </div>
+          <button
+            className={styles.demoButton}
+            onClick={enterDemoMode}
+          >
+            Try Demo — No Account Needed
           </button>
         </div>
       </div>

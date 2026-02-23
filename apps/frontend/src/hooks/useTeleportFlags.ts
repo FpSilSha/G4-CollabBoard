@@ -4,6 +4,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { useFlagStore } from '../stores/flagStore';
 import { useBoardStore } from '../stores/boardStore';
 import { useUIStore } from '../stores/uiStore';
+import { useDemoStore } from '../stores/demoStore';
 import { createFlagMarker, FLAG_COLORS } from '../utils/fabricHelpers';
 
 const AUTH_PARAMS = {
@@ -55,12 +56,22 @@ export function useTeleportFlags() {
       const color = FLAG_COLORS[useFlagStore.getState().flags.length % FLAG_COLORS.length];
 
       try {
-        const token = await getAccessTokenSilently(AUTH_PARAMS);
-        const flag = await useFlagStore.getState().createFlag(
-          currentBoardId,
-          { label, x, y, color },
-          token,
-        );
+        // Demo mode: create locally, no API
+        const currentIsDemoMode = useDemoStore.getState().isDemoMode;
+        let flag;
+        if (currentIsDemoMode) {
+          flag = useFlagStore.getState().createFlagLocal(
+            currentBoardId,
+            { label, x, y, color },
+          );
+        } else {
+          const token = await getAccessTokenSilently(AUTH_PARAMS);
+          flag = await useFlagStore.getState().createFlag(
+            currentBoardId,
+            { label, x, y, color },
+            token,
+          );
+        }
 
         // Add marker to canvas
         const marker = createFlagMarker({
@@ -100,13 +111,17 @@ export function useTeleportFlags() {
       const newX = target.left ?? 0;
       const newY = target.top ?? 0;
 
+      // Update local store optimistically
+      useFlagStore.getState().updateFlagLocal(flagId, { x: newX, y: newY });
+
+      // Demo mode: local-only, no API persist needed
+      const currentIsDemoMode = useDemoStore.getState().isDemoMode;
+      if (currentIsDemoMode) return;
+
       // Remember original position for rollback on auth failure
       const flag = useFlagStore.getState().flags.find((f) => f.id === flagId);
       const origX = flag?.x ?? newX;
       const origY = flag?.y ?? newY;
-
-      // Update local store optimistically
-      useFlagStore.getState().updateFlagLocal(flagId, { x: newX, y: newY });
 
       // Persist to API
       const currentBoardId = useBoardStore.getState().boardId;

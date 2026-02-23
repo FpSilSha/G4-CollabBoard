@@ -1,4 +1,5 @@
 import { useAuth0 } from '@auth0/auth0-react';
+import { useDemoStore } from '../stores/demoStore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -50,6 +51,9 @@ async function request(
   return res;
 }
 
+/** Shape of the API client returned by createApiClient / createDemoApiClient */
+export type ApiClient = ReturnType<typeof createApiClient>;
+
 /**
  * Creates an API client bound to a token getter function.
  * Each method handles token injection, base URL, Content-Type, and error normalization.
@@ -84,12 +88,77 @@ export function createApiClient(getToken: GetToken) {
   };
 }
 
+// ============================================================
+// Demo API Client — returns mock data, no network calls
+// ============================================================
+
+function createDemoApiClient(demoBoardId: string | null): ApiClient {
+  const mockBoard = {
+    id: demoBoardId,
+    title: 'Demo Board',
+    ownerId: 'demo-user',
+    maxObjectsPerBoard: 100,
+    version: 0,
+    slot: 1,
+    lastAccessedAt: new Date().toISOString(),
+    objectCount: 0,
+    isDeleted: false,
+    thumbnail: null,
+    isOwned: true,
+    thumbnailVersion: -1,
+  };
+
+  const demoError = (path: string) =>
+    new ApiError(403, null, `Demo mode: ${path} requires authentication`);
+
+  return {
+    async get<T>(path: string): Promise<T> {
+      if (path === '/boards') {
+        return { ownedBoards: [mockBoard], linkedBoards: [] } as T;
+      }
+      if (demoBoardId && path === `/boards/${demoBoardId}`) {
+        return mockBoard as T;
+      }
+      throw demoError(path);
+    },
+    async post<T>(path: string, _body?: unknown): Promise<T> {
+      throw demoError(path);
+    },
+    async patch<T>(path: string, body?: unknown): Promise<T> {
+      // Allow local-only board title rename
+      if (demoBoardId && path === `/boards/${demoBoardId}` && body && typeof body === 'object') {
+        return { ...mockBoard, ...(body as Record<string, unknown>) } as T;
+      }
+      throw demoError(path);
+    },
+    async put<T>(path: string, _body?: unknown): Promise<T> {
+      throw demoError(path);
+    },
+    async del(path: string): Promise<void> {
+      throw demoError(path);
+    },
+    async raw(_method: string, path: string, _body?: unknown): Promise<Response> {
+      throw demoError(path);
+    },
+  };
+}
+
 /**
  * React hook that returns an API client bound to the current Auth0 token.
+ * In demo mode, returns a mock client that serves local data.
  * Use this in components/hooks that have access to the Auth0 context.
  */
-export function useApiClient() {
+export function useApiClient(): ApiClient {
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
+  const demoBoardId = useDemoStore((s) => s.demoBoardId);
+  // Always call useAuth0() unconditionally (React hook rules).
+  // In demo mode we simply don't use its return value.
   const { getAccessTokenSilently } = useAuth0();
+
+  if (isDemoMode) {
+    return createDemoApiClient(demoBoardId);
+  }
+
   const getToken = () => getAccessTokenSilently(AUTH_PARAMS);
   return createApiClient(getToken);
 }

@@ -6,6 +6,7 @@ import { useUIStore, Tool } from '../stores/uiStore';
 import { useBoardStore } from '../stores/boardStore';
 import { usePresenceStore } from '../stores/presenceStore';
 import { useFlagStore } from '../stores/flagStore';
+import { useDemoStore } from '../stores/demoStore';
 import { WebSocketEvent, THROTTLE_CONFIG } from 'shared';
 import {
   createStickyNote,
@@ -740,12 +741,21 @@ export function useObjectCreation(
           ];
 
           try {
-            const token = await getAccessTokenSilently(AUTH_PARAMS);
-            const flag = await useFlagStore.getState().createFlag(
-              currentBoardId,
-              { label, x, y, color: flagColor },
-              token,
-            );
+            const currentIsDemoMode = useDemoStore.getState().isDemoMode;
+            let flag;
+            if (currentIsDemoMode) {
+              flag = useFlagStore.getState().createFlagLocal(
+                currentBoardId,
+                { label, x, y, color: flagColor },
+              );
+            } else {
+              const token = await getAccessTokenSilently(AUTH_PARAMS);
+              flag = await useFlagStore.getState().createFlag(
+                currentBoardId,
+                { label, x, y, color: flagColor },
+                token,
+              );
+            }
             const marker = createFlagMarker({
               x: flag.x,
               y: flag.y,

@@ -8,6 +8,7 @@ import { useBoardStore } from '../../stores/boardStore';
 import { usePresenceStore, type ConnectionStatus } from '../../stores/presenceStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useAIStore } from '../../stores/aiStore';
+import { useDemoStore } from '../../stores/demoStore';
 import { teleportTo } from '../../utils/fabricHelpers';
 import styles from './Header.module.css';
 
@@ -31,9 +32,11 @@ export function Header() {
   const connectionStatus = usePresenceStore((s) => s.connectionStatus);
   const localUserId = usePresenceStore((s) => s.localUserId);
   const remoteUsers = usePresenceStore((s) => s.remoteUsers);
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
   const api = useApiClient();
 
-  const isOwner = !!(boardOwnerId && localUserId && boardOwnerId === localUserId);
+  // In demo mode, treat the demo user as the owner (allows title editing)
+  const isOwner = isDemoMode || !!(boardOwnerId && localUserId && boardOwnerId === localUserId);
 
   const handleZoom = (newZoom: number) => {
     if (!canvas) return;
@@ -90,14 +93,15 @@ export function Header() {
     setIsEditingTitle(false);
     setBoardTitle(finalTitle);
 
-    if (!boardId) return;
+    // Demo mode: title update is local-only, no API call
+    if (!boardId || isDemoMode) return;
 
     try {
       await api.patch(`/boards/${boardId}`, { title: finalTitle });
     } catch (err) {
       console.error('[Header] Failed to rename board:', err);
     }
-  }, [boardId, api, setBoardTitle]);
+  }, [boardId, isDemoMode, api, setBoardTitle]);
 
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -185,8 +189,14 @@ export function Header() {
       </div>
 
       <div className={styles.right}>
-        <ConnectionBadge status={connectionStatus} />
-        <PresenceAvatars remoteUsers={remoteUsers} />
+        {isDemoMode ? (
+          <span className={`${styles.connectionBadge} ${styles.demoModeBadge}`}>
+            Demo Mode
+          </span>
+        ) : (
+          <ConnectionBadge status={connectionStatus} />
+        )}
+        {!isDemoMode && <PresenceAvatars remoteUsers={remoteUsers} />}
         <UserMenu />
       </div>
     </header>
@@ -307,11 +317,19 @@ function UserMenu() {
   const { user, logout } = useAuth0();
   const localUserName = usePresenceStore((s) => s.localUserName);
   const localUserColor = usePresenceStore((s) => s.localUserColor);
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
+  const exitDemoMode = useDemoStore((s) => s.exitDemoMode);
 
-  const displayName = localUserName || user?.name || user?.email || 'User';
+  const displayName = isDemoMode
+    ? 'Demo User'
+    : (localUserName || user?.name || user?.email || 'User');
   const initial = displayName.charAt(0).toUpperCase();
 
   const handleLogout = () => {
+    if (isDemoMode) {
+      exitDemoMode();
+      return;
+    }
     logout({ logoutParams: { returnTo: window.location.origin } });
   };
 
@@ -327,8 +345,8 @@ function UserMenu() {
       <button
         className={styles.logoutButton}
         onClick={handleLogout}
-        title="Sign out"
-        aria-label="Sign out"
+        title={isDemoMode ? 'Exit Demo' : 'Sign out'}
+        aria-label={isDemoMode ? 'Exit Demo' : 'Sign out'}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />

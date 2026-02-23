@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from './Dashboard.module.css';
 import { useApiClient, ApiError } from '../../services/apiClient';
+import { useDemoStore } from '../../stores/demoStore';
 
 interface BoardSummary {
   id: string;
@@ -57,6 +58,8 @@ export function Dashboard() {
   const { logout, user } = useAuth0();
   const api = useApiClient();
   const navigate = useNavigate();
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
+  const exitDemoMode = useDemoStore((s) => s.exitDemoMode);
   const [ownedBoards, setOwnedBoards] = useState<BoardSummary[]>([]);
   const [linkedBoards, setLinkedBoards] = useState<BoardSummary[]>([]);
   const [tab, setTab] = useState<DashboardTab>('owned');
@@ -246,6 +249,10 @@ export function Dashboard() {
   };
 
   const handleLogout = () => {
+    if (isDemoMode) {
+      exitDemoMode();
+      return;
+    }
     logout({ logoutParams: { returnTo: window.location.origin } });
   };
 
@@ -267,43 +274,53 @@ export function Dashboard() {
       <header className={styles.header}>
         <h1 className={styles.logo}>G4 CollabBoard</h1>
         <div className={styles.headerRight}>
-          <Link to="/admin" className={styles.adminLink}>Admin Metrics</Link>
-          <span className={styles.userName}>{user?.name || user?.email || 'User'}</span>
+          {!isDemoMode && <Link to="/admin" className={styles.adminLink}>Admin Metrics</Link>}
+          <span className={styles.userName}>
+            {isDemoMode ? 'Demo User' : (user?.name || user?.email || 'User')}
+          </span>
           <button className={styles.signOutButton} onClick={handleLogout}>
-            Sign Out
+            {isDemoMode ? 'Exit Demo' : 'Sign Out'}
           </button>
         </div>
       </header>
 
       <main className={styles.main}>
-        <div className={styles.enterpriseBanner}>
-          🚀 Enterprise tier unlocked for all users until next major release. Enjoy!
-        </div>
+        {isDemoMode ? (
+          <div className={styles.enterpriseBanner} style={{ background: '#eef2ff', borderColor: '#c7d2fe' }}>
+            You're in demo mode. Sign up to save your boards and unlock all features!
+          </div>
+        ) : (
+          <div className={styles.enterpriseBanner}>
+            🚀 Enterprise tier unlocked for all users until next major release. Enjoy!
+          </div>
+        )}
 
-        {/* Tab row */}
-        <div className={styles.tabRow}>
-          <button
-            className={`${styles.tab} ${tab === 'owned' ? styles.tabActive : ''}`}
-            onClick={() => setTab('owned')}
-          >
-            Your Boards
-            {ownedBoards.length > 0 && (
-              <span className={styles.tabBadge}>{ownedBoards.length}</span>
-            )}
-          </button>
-          <button
-            className={`${styles.tab} ${tab === 'linked' ? styles.tabActive : ''}`}
-            onClick={() => setTab('linked')}
-          >
-            Shared With You
-            {linkedBoards.length > 0 && (
-              <span className={styles.tabBadge}>{linkedBoards.length}</span>
-            )}
-          </button>
-        </div>
+        {/* Tab row — hidden in demo mode (only one board, no sharing) */}
+        {!isDemoMode && (
+          <div className={styles.tabRow}>
+            <button
+              className={`${styles.tab} ${tab === 'owned' ? styles.tabActive : ''}`}
+              onClick={() => setTab('owned')}
+            >
+              Your Boards
+              {ownedBoards.length > 0 && (
+                <span className={styles.tabBadge}>{ownedBoards.length}</span>
+              )}
+            </button>
+            <button
+              className={`${styles.tab} ${tab === 'linked' ? styles.tabActive : ''}`}
+              onClick={() => setTab('linked')}
+            >
+              Shared With You
+              {linkedBoards.length > 0 && (
+                <span className={styles.tabBadge}>{linkedBoards.length}</span>
+              )}
+            </button>
+          </div>
+        )}
 
-        {/* Link input — shown on Linked Boards tab */}
-        {tab === 'linked' && (
+        {/* Link input — shown on Linked Boards tab (hidden in demo mode) */}
+        {!isDemoMode && tab === 'linked' && (
           <div className={styles.linkInputRow}>
             <input
               className={styles.linkInput}
@@ -333,7 +350,7 @@ export function Dashboard() {
             </button>
           </div>
         )}
-        {linkError && tab === 'linked' && (
+        {!isDemoMode && linkError && tab === 'linked' && (
           <p className={styles.linkError}>{linkError}</p>
         )}
 
@@ -512,8 +529,8 @@ export function Dashboard() {
               </div>
             ))}
 
-            {/* New board card — only on "Your Boards" tab */}
-            {tab === 'owned' && (
+            {/* New board card — only on "Your Boards" tab, hidden in demo */}
+            {!isDemoMode && tab === 'owned' && (
               <button
                 className={styles.newBoardCard}
                 onClick={handleCreateBoard}

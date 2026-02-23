@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useApiClient } from '../../services/apiClient';
+import { useDemoStore } from '../../stores/demoStore';
 import type { Socket } from 'socket.io-client';
 import { Sidebar } from '../layout/Sidebar';
 import { RightSidebar } from '../layout/RightSidebar';
@@ -54,6 +55,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   const navigate = useNavigate();
   const { getAccessTokenSilently } = useAuth0();
   const api = useApiClient();
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
   const connectionStatus = usePresenceStore((s) => s.connectionStatus);
   const hasEverConnected = usePresenceStore((s) => s.hasEverConnected);
   const storeBoardId = useBoardStore((s) => s.boardId);
@@ -73,6 +75,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   useTeleportFlags();
 
   // Validate board exists via REST API, set title, set boardId in store.
+  // In demo mode, skip the API call and set metadata locally.
   // Uses cancelled flag for StrictMode safety (no ref guards that deadlock).
   useEffect(() => {
     if (!boardId) {
@@ -82,6 +85,17 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
 
     mountedRef.current = true;
     let cancelled = false;
+
+    // Demo mode: set board metadata locally, no API call needed.
+    // The DemoBoardGuard in App.tsx already verified boardId === demoBoardId.
+    if (isDemoMode) {
+      clearObjects();
+      setBoardId(boardId);
+      setBoardTitle('Demo Board');
+      setBoardOwnerId('demo-user');
+      setMaxObjectsPerBoard(100);
+      return;
+    }
 
     async function validateAndSetBoard() {
       try {
@@ -135,8 +149,10 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
   // Pre-fetch an auth token while the component is still mounted so the
   // unmount cleanup (thumbnail upload) can use it without relying on the
   // Auth0 React hook after the component tree has been torn down.
+  // Skip in demo mode — no Auth0 session to fetch from.
   const cachedTokenRef = useRef<string | null>(null);
   useEffect(() => {
+    if (isDemoMode) return;
     getAccessTokenSilently({
       authorizationParams: {
         audience: import.meta.env.VITE_AUTH0_AUDIENCE || 'https://collabboard-api',
@@ -214,8 +230,9 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
       <TackButton />
 
       {/* Offline overlay — blocks interaction when socket loses connection.
-          Only show AFTER we've connected at least once (not on initial load). */}
-      {connectionStatus === 'disconnected' && hasEverConnected && (
+          Only show AFTER we've connected at least once (not on initial load).
+          Never shown in demo mode (no real socket). */}
+      {!isDemoMode && connectionStatus === 'disconnected' && hasEverConnected && (
         <div className={styles.offlineOverlay}>
           <div className={styles.offlineContent}>
             <svg
@@ -235,7 +252,7 @@ export function BoardView({ socketRef, joinBoard, leaveBoard }: BoardViewProps) 
       )}
 
       {/* Displaced overlay — another tab/browser took over this session */}
-      {connectionStatus === 'displaced' && (
+      {!isDemoMode && connectionStatus === 'displaced' && (
         <div className={styles.offlineOverlay}>
           <div className={styles.offlineContent}>
             <svg

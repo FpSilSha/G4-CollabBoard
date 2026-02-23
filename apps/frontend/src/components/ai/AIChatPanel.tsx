@@ -3,6 +3,7 @@ import type { AICommandResponse, AIStatusResponse, AIOperation } from 'shared';
 import { useApiClient, ApiError } from '../../services/apiClient';
 import { useAIStore, nextMessageId } from '../../stores/aiStore';
 import { useBoardStore } from '../../stores/boardStore';
+import { useDemoStore } from '../../stores/demoStore';
 import styles from './AIChatPanel.module.css';
 
 // ============================================================
@@ -47,6 +48,7 @@ export function AIChatPanel() {
   const handleResponse = useAIStore((s) => s.handleResponse);
   const setStatus = useAIStore((s) => s.setStatus);
   const setOpen = useAIStore((s) => s.setOpen);
+  const isDemoMode = useDemoStore((s) => s.isDemoMode);
 
   const boardId = useBoardStore((s) => s.boardId);
   const api = useApiClient();
@@ -144,6 +146,37 @@ export function AIChatPanel() {
   );
 
   if (!isOpen) return null;
+
+  // Demo mode: show locked state — AI requires authentication
+  if (isDemoMode) {
+    return (
+      <div className={styles.panel}>
+        <div className={styles.header}>
+          <span className={styles.headerTitle}>Tacky - AI Assistant</span>
+          <button
+            className={styles.closeButton}
+            onClick={() => setOpen(false)}
+            title="Close"
+            aria-label="Close AI chat panel"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div className={styles.messages}>
+          <div className={styles.disabledBanner}>
+            <div className={styles.emptyTitle}>Authentication Needed for AI</div>
+            <div className={styles.emptyHint}>
+              Sign up for free to unlock Tacky, your AI whiteboard assistant!
+              Tacky can create sticky notes, shapes, frames, and much more.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.panel}>
